@@ -17,7 +17,7 @@ export function renderTabBar() {
   const currentRoute = Store.get('route');
   const routeKey = currentRoute.startsWith('/studio') ? '/studio' : currentRoute;
 
-  const nav = el('nav', { className: 'tab-bar' });
+  const nav = el('nav', { className: 'tab-bar', 'aria-label': '主导航' });
 
   for (const tab of TABS) {
     const isActive = routeKey === tab.id;
@@ -25,6 +25,8 @@ export function renderTabBar() {
     const btn = el('button', {
       className: `tab-item${isActive ? ' active' : ''}`,
       dataset: { route: tab.id },
+      'aria-label': tab.label,
+      'aria-current': isActive ? 'page' : null,
       onClick: () => navigate(tab.id),
     }, [
       el('span', { className: 'tab-icon', textContent: tab.icon }),

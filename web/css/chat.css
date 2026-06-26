@@ -12,6 +12,7 @@
   height: var(--app-h, 100vh);
   background: var(--mist-50);
   overflow: hidden;
+  position: relative;
 }
 
 /* ═══ 顶栏 — 玻璃态 ═══ */
@@ -274,6 +275,30 @@
 
 .typing.show {
   display: inline-flex;
+}
+
+/* ─── 新消息悬浮提示 ─── */
+.new-msg-toast {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--glass-bg-heavy);
+  color: var(--sakura-600);
+  padding: 8px 16px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  box-shadow: var(--elevation-2);
+  cursor: pointer;
+  z-index: 100;
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+  border: 0.5px solid var(--sakura-300);
+}
+
+.new-msg-toast:hover {
+  background: #fff;
 }
 
 .typing-dot {
