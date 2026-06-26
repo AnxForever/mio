@@ -4,9 +4,9 @@ import { Store } from '../store.js';
 import { api } from '../api.js';
 import { wsManager } from '../ws.js';
 import { navigate } from '../router.js';
-import { renderTabBar } from '../components/tab-bar.js';
 import { EmotionBall } from '../components/emotion-ball.js';
 import { toast } from '../components/toast.js';
+import { ICONS } from '../utils/icons.js';
 
 const VALID_MODS = ['girlfriend', 'boyfriend'];
 
@@ -24,9 +24,10 @@ export class StudioView extends BaseView {
     const header = el('header', { className: 'studio-header' });
     const backBtn = el('button', {
       className: 'studio-back-btn',
-      innerHTML: '<svg width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>',
+      'aria-label': '返回聊天',
       onClick: () => navigate('/chat'),
     });
+    backBtn.appendChild(ICONS.back(18));
     const title = el('h1', { className: 'studio-header-title', textContent: this.params.id ? '编辑人格' : '人格工作室' });
     const newBtn = el('button', {
       className: 'studio-new-btn',
@@ -41,7 +42,6 @@ export class StudioView extends BaseView {
 
     const content = el('div', { className: 'studio-content', id: 'studio-content' });
     this.el.appendChild(content);
-    this.el.appendChild(renderTabBar());
 
     return this.el;
   }

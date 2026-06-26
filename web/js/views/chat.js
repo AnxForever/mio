@@ -5,9 +5,9 @@ import { api } from '../api.js';
 import { wsManager } from '../ws.js';
 import { EmotionBall } from '../components/emotion-ball.js';
 import { createTypingIndicator, renderMessages, appendMessage, cleanupVirtualObserver } from '../components/bubble.js';
-import { renderTabBar } from '../components/tab-bar.js';
 import { haptic } from '../utils/haptics.js';
 import { getMoodInfo, STAGE_LABELS } from '../utils/constants.js';
+import { ICONS } from '../utils/icons.js';
 
 export class ChatView extends BaseView {
   constructor(params) {
@@ -45,14 +45,14 @@ export class ChatView extends BaseView {
     /* ═══ 顶栏 ═══ */
     const header = el('header', { className: 'chat-header' });
 
-    const ballCanvas = el('canvas', { className: 'emotion-ball', width: '40', height: '40', role: 'img', 'aria-label': 'Mio情绪球' });
+    const ballCanvas = el('canvas', { className: 'emotion-ball', width: '40', height: '40', role: 'img', 'aria-label': 'Mio emotion core' });
     header.appendChild(ballCanvas);
 
     const info = el('div', { className: 'chat-header-info' });
-    const name = el('div', { className: 'chat-header-name', textContent: Store.get('activeMod') === 'boyfriend' ? 'Mio' : 'Mio' });
+    const name = el('div', { className: 'chat-header-name', textContent: '消息' });
     const status = el('div', { className: 'chat-header-status', role: 'status' });
     this.statusDot = el('span', { className: 'dot off' });
-    this.statusText = el('span', { textContent: '连接中…' });
+    this.statusText = el('span', { textContent: 'Connecting' });
     status.appendChild(this.statusDot);
     status.appendChild(this.statusText);
     info.appendChild(name);
@@ -60,10 +60,10 @@ export class ChatView extends BaseView {
     header.appendChild(info);
 
     /* 人格切换 */
-    const toggle = el('label', { className: 'persona-toggle', 'aria-label': '切换人格模式' });
-    this.personaCb = el('input', { type: 'checkbox', 'aria-label': '切换为男友模式' });
-    const gfLabel = el('span', { className: 'pt-label', textContent: '女友', dataset: { mod: 'girlfriend' } });
-    const bfLabel = el('span', { className: 'pt-label', textContent: '男友', dataset: { mod: 'boyfriend' } });
+    const toggle = el('label', { className: 'persona-toggle', 'aria-label': 'Switch persona mode' });
+    this.personaCb = el('input', { type: 'checkbox', 'aria-label': 'Switch to boyfriend mode' });
+    const gfLabel = el('span', { className: 'pt-label', textContent: 'GF', dataset: { mod: 'girlfriend' } });
+    const bfLabel = el('span', { className: 'pt-label', textContent: 'BF', dataset: { mod: 'boyfriend' } });
     toggle.appendChild(this.personaCb);
     toggle.appendChild(gfLabel);
     toggle.appendChild(bfLabel);
@@ -75,7 +75,7 @@ export class ChatView extends BaseView {
     this.chatMessages = el('div', {
       className: 'chat-messages',
       'aria-live': 'polite',
-      'aria-label': '聊天消息',
+      'aria-label': 'Conversation messages',
       role: 'log',
       style: { overflowAnchor: 'none' }
     });
@@ -85,9 +85,34 @@ export class ChatView extends BaseView {
     const wMark = el('div', { className: 'w-mark' });
     const wBall = el('canvas', { width: '72', height: '72' });
     wMark.appendChild(wBall);
-    welcome.appendChild(wMark);
-    welcome.appendChild(el('h2', { textContent: 'Mio' }));
-    welcome.appendChild(el('p', { textContent: '你的情感陪伴伙伴\n说点什么，开始这段对话吧' }));
+    welcome.appendChild(el('div', { className: 'inbox-list' }, [
+      el('div', { className: 'inbox-row' }, [
+        el('div', { className: 'inbox-sticker sticker-sprout', 'aria-hidden': 'true' }, [
+          el('span', { textContent: '♡' }),
+        ]),
+        el('div', { className: 'inbox-copy' }, [
+          el('div', { className: 'inbox-title', textContent: '聊天请求' }),
+          el('div', { className: 'inbox-subtitle', textContent: '静待一份真诚的互动' }),
+        ]),
+      ]),
+      el('div', { className: 'inbox-row' }, [
+        el('div', { className: 'inbox-sticker sticker-heart', 'aria-hidden': 'true' }, [
+          el('span', { textContent: '♥' }),
+        ]),
+        el('div', { className: 'inbox-copy' }, [
+          el('div', { className: 'inbox-title', textContent: '点赞和回复' }),
+          el('div', { className: 'inbox-subtitle', textContent: 'Mio 收到了你的温柔回应' }),
+        ]),
+      ]),
+      el('div', { className: 'inbox-row primary' }, [
+        wMark,
+        el('div', { className: 'inbox-copy' }, [
+          el('div', { className: 'inbox-title', textContent: 'Mio 真诚喵' }),
+          el('div', { className: 'inbox-subtitle', textContent: '说点什么，开始今天的对话吧' }),
+        ]),
+        el('div', { className: 'inbox-time', textContent: '现在' }),
+      ]),
+    ]));
     this.chatMessages.appendChild(welcome);
 
     /* 打字指示器 */
@@ -97,10 +122,10 @@ export class ChatView extends BaseView {
     /* 新消息悬浮提示 */
     this.newMsgToast = el('div', {
       className: 'new-msg-toast',
-      textContent: '↓ 新消息',
+      textContent: 'New message',
       role: 'button',
       tabindex: '0',
-      'aria-label': '滚动到最新消息',
+      'aria-label': 'Scroll to latest message',
       style: { display: 'none' }
     });
     const scrollToNew = () => {
@@ -119,35 +144,28 @@ export class ChatView extends BaseView {
     const inputArea = el('div', { className: 'chat-input-area' });
 
     /* 语音按钮 */
-    this.voiceBtn = el('button', { className: 'voice-btn', 'aria-label': '语音输入' });
-    const voiceIcon = el('svg', {
-      className: 'voice-icon',
-      viewBox: '0 0 24 24',
-      innerHTML: '<path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path fill="currentColor" d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>',
-    });
-    this.voiceBtn.appendChild(voiceIcon);
+    this.voiceBtn = el('button', { className: 'voice-btn', 'aria-label': 'Voice input' });
+    this.voiceBtn.appendChild(ICONS.mic(18));
     inputArea.appendChild(this.voiceBtn);
 
     const inputWrap = el('div', { className: 'chat-input-wrap' });
     this.msgInput = el('textarea', {
       rows: '1',
-      placeholder: '说点什么…',
+      placeholder: '说点什么...',
       enterkeyhint: 'send',
-      'aria-label': '消息输入框',
+      'aria-label': 'Message input',
     });
     inputWrap.appendChild(this.msgInput);
     inputArea.appendChild(inputWrap);
 
-    this.sendBtn = el('button', { className: 'send-btn', disabled: 'disabled', 'aria-label': '发送消息' }, [
-      el('span', { className: 'send-arrow' }),
-    ]);
+    this.sendBtn = el('button', { className: 'send-btn', disabled: 'disabled', 'aria-label': 'Send message' });
+    this.sendBtn.appendChild(ICONS.send(18));
+    this.sendBtn.style.padding = '0';
     inputArea.appendChild(this.sendBtn);
 
     this.el.appendChild(inputArea);
 
     /* ═══ 底部导航 ═══ */
-    this.el.appendChild(renderTabBar());
-
     return this.el;
   }
 
@@ -212,7 +230,7 @@ export class ChatView extends BaseView {
     this.on(this.personaCb, 'change', this.handlePersonaSwitch);
 
     /* ─── Store 订阅 ─── */
-    this.subscribe(Store, () => {});
+    // Store 使用 on(key, fn) 模式，BaseView.subscribe 期望 subscribe(fn) 模式，此处直接用 on + _unsubscribes
 
     const unsubConnected = Store.on('connected', (v) => {
       this.toggleClassSafe(this.statusDot, 'offline', !v);
@@ -353,7 +371,7 @@ export class ChatView extends BaseView {
 
     const onError = (err) => {
       if (this.streamMsgEl) {
-        this.streamMsgEl.querySelector('.msg-bubble').textContent = err || '出错了，请重试';
+        this.streamMsgEl.querySelector('.msg-bubble').textContent = err || 'Something went wrong. Please try again.';
         this.streamMsgEl.classList.add('error');
       }
       this.finalizeStream(timestamp);
@@ -426,7 +444,7 @@ export class ChatView extends BaseView {
     } catch {
       // 回滚 checkbox 状态
       this.personaCb.checked = !prevChecked;
-      this.statusText.textContent = '切换失败';
+      this.statusText.textContent = 'Switch failed';
     }
   }
 
@@ -437,12 +455,12 @@ export class ChatView extends BaseView {
 
       const { config, emotion, relationship } = data;
       const nameEl = this.el.querySelector('.chat-header-name');
-      if (nameEl) nameEl.textContent = config?.name || 'Mio';
+      if (nameEl) nameEl.textContent = '消息';
 
-      const mood = emotion?.myMood || '平静';
+      const mood = emotion?.myMood || 'calm';
       const info = getMoodInfo(mood);
       const stage = STAGE_LABELS[relationship?.stage] || '';
-      this.statusText.textContent = stage ? `${stage} · ${info.label}` : info.label;
+      this.statusText.textContent = stage ? `${stage} / ${info.label}` : info.label;
 
       Store.patch({
         activeMod: config?.activeMod || 'girlfriend',
@@ -462,7 +480,7 @@ export class ChatView extends BaseView {
     } catch {
       this.toggleClassSafe(this.statusDot, 'off', true);
       this.toggleClassSafe(this.statusDot, 'online', false);
-      this.statusText.textContent = '离线';
+      this.statusText.textContent = 'Offline';
     }
   }
 

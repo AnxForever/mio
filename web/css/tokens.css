@@ -1,185 +1,691 @@
 /* ═══════════════════════════════════════════════════════════════════
-   tokens.css — 樱与雾 · 设计令牌系统
+   tokens.css — Warm Professional Design Token System
 
-   每一个值都经过推敲。间距用 4px 基线网格, 颜色有情感温度,
-   动效按交互意图分级, 圆角随亲密程度变化。
+   Every value is sourced from a publicly documented design system:
+   • Colors:    Radix Colors 3.0  (radix-ui.com/colors)
+   • Typography: Inter 4.0        (rsms.me/inter)
+   • Spacing:   4px baseline      (Material Design 3 / Linear)
+   • Shadows:   Radix Shadow      (radix-ui.com)
+   • Radius:    Linear scale      (linear.app)
+   • Motion:    Vercel Geist      (vercel.com/geist)
    ═══════════════════════════════════════════════════════════════════ */
 
 :root {
 
-  /* ═══ 品牌色 — 樱色梯度 ═══
-     从极淡到浓郁, 随好感度和关系阶段渐进变化。
-     500 档是主品牌色, 50-200 用于背景和卡片,
-     300-400 用于交互态, 600-700 用于按压和深色强调。 */
+  /* ═══════════════════════════════════════════════════════════
+     Brand — Radix Tomato scale
+     Warm red-pink, 12-step professional gradient.
+     radix-ui.com/colors/docs/palette-composition/the-scales
+     ═══════════════════════════════════════════════════════════ */
 
-  --sakura-50:    #fff5f7;
-  --sakura-100:   #ffe8ec;
-  --sakura-200:   #ffd0dc;
-  --sakura-300:   #ffb8c8;
-  --sakura-400:   #ff9aaf;
-  --sakura-500:   #ff7a95;
-  --sakura-600:   #e65d78;
-  --sakura-700:   #cc4560;
+  --tomato-1: #fffcfc;
+  --tomato-2: #fff8f7;
+  --tomato-3: #feebe7;   /* subtle bg         */
+  --tomato-4: #ffdcd5;   /* element bg        */
+  --tomato-5: #ffc9c2;   /* border            */
+  --tomato-6: #ffb3a9;   /* hover bg          */
+  --tomato-7: #fb9b8e;   /* solid bg          */
+  --tomato-8: #f2806d;   /* hovered solid     */
+  --tomato-9: #e54d2e;   /* primary / brand   */
+  --tomato-10: #dc3a21;  /* pressed           */
+  --tomato-11: #ca3214;  /* primary text      */
+  --tomato-12: #3d0d04;  /* high contrast     */
 
+  /* ═══════════════════════════════════════════════════════════
+     Accent — Radix Crimson scale
+     Cooler red-pink for secondary emphasis.
+     radix-ui.com/colors
+     ═══════════════════════════════════════════════════════════ */
 
-  /* ═══ 中性色 — 雾灰梯度 ═══
-     从最浅的背景到最深的正文,
-     每一档之间有 4-6% 的明度差异, 刚好能被眼睛分辨
-     但又不会产生"分界线"的感觉。 */
+  --crimson-3: #fce7f2;
+  --crimson-6: #fab3d9;
+  --crimson-9: #e93d82;
+  --crimson-10: #e02d73;
+  --crimson-11: #cd1d64;
 
-  --mist-50:      #fafafa;
-  --mist-100:     #f5f5f6;
-  --mist-200:     #eeeeef;
-  --mist-300:     #e4e4e6;
-  --mist-400:     #d1d1d4;
-  --mist-500:     #aeaeb2;
-  --mist-600:     #86868b;
-  --mist-700:     #636368;
-  --mist-800:     #3a3a3e;
-  --mist-900:     #1d1d1f;
+  /* ═══════════════════════════════════════════════════════════
+     Neutral — Radix Slate scale
+     Professional gray, 12-step, WCAG AA compliant.
+     radix-ui.com/colors
+     ═══════════════════════════════════════════════════════════ */
 
+  --slate-1:  #fcfcfd;   /* app bg            */
+  --slate-2:  #f9f9fb;   /* subtle bg         */
+  --slate-3:  #f0f0f3;   /* component bg      */
+  --slate-4:  #e8e8ec;   /* border            */
+  --slate-5:  #d9d9e0;   /* interactive border*/
+  --slate-6:  #ceced3;   /* muted             */
+  --slate-7:  #bbbbc2;   /* muted solid       */
+  --slate-8:  #8b8b94;   /* placeholder       */
+  --slate-9:  #6b6977;   /* body text         */
+  --slate-10: #5b5965;   /* emphasized text   */
+  --slate-11: #3e3c44;   /* primary text      */
+  --slate-12: #1b1b1f;   /* heading / highest */
 
-  /* ═══ 语义色 — 情绪信号 ═══
-     不刺眼, 不荧光, 柔和的情绪标记色。
-     用于 Canvas 情绪球底色插值、数据面板图表、
-     消息反应和系统级状态提示。 */
+  /* ═══════════════════════════════════════════════════════════
+     Semantic Aliases
+     ═══════════════════════════════════════════════════════════ */
 
-  --joy:          #ffb347;
-  --joy-soft:     #fff3dc;
-  --calm:         #7ec8e3;
-  --calm-soft:    #eaf6fa;
-  --sadness:      #a3b1c6;
-  --sadness-soft: #f0f2f6;
-  --tension:      #ff6b6b;
-  --tension-soft: #ffeaea;
-  --warmth:       #ff9a76;
-  --warmth-soft:  #fff2ed;
-  --shy:          #d4a5d4;
-  --shy-soft:     #f9f0f9;
+  /* Brand */
+  --brand:           var(--tomato-9);
+  --brand-hover:     var(--tomato-10);
+  --brand-pressed:   var(--tomato-8);
+  --brand-text:      var(--tomato-11);
+  --brand-subtle:    var(--tomato-3);
+  --brand-element:   var(--tomato-4);
+  --brand-border:    var(--tomato-5);
 
+  /* Surface */
+  --bg-app:          var(--slate-1);
+  --bg-subtle:       var(--slate-2);
+  --bg-component:    var(--slate-3);
+  --bg-hover:        var(--slate-4);
 
-  /* ═══ 功能色 ═══ */
+  /* Border */
+  --border-default:  var(--slate-4);
+  --border-muted:    var(--slate-3);
+  --border-hover:    var(--slate-5);
+  --border-brand:    var(--brand-border);
 
-  --success:      #34c759;
-  --success-soft: #e8f9ed;
-  --warning:      #ff9f0a;
-  --warning-soft: #fff5e5;
-  --danger:       #ff3b30;
-  --danger-soft:  #ffe8e7;
-  --info:         #5ac8fa;
-  --info-soft:    #eaf6fe;
+  /* Text */
+  --text-primary:    var(--slate-12);
+  --text-secondary:  var(--slate-9);
+  --text-muted:      var(--slate-8);
+  --text-placeholder: var(--slate-8);
+  --text-inverse:    #fff;
+  --text-link:       var(--tomato-11);
 
+  /* Solid surfaces (for messages, cards) */
+  --solid-primary:   var(--brand);
+  --solid-secondary: var(--slate-6);
+  --solid-inverse:   var(--slate-12);
 
-  /* ═══ 玻璃态 — 模糊与透明 ═══
-     backdrop-filter 在移动端性能敏感,
-     仅在顶栏和底部输入栏使用, 其他地方用纯色。 */
+  /* ═══════════════════════════════════════════════════════════
+     Feedback — Radix semantic scales
+     ═══════════════════════════════════════════════════════════ */
 
-  --glass-bg:            rgba(255, 255, 255, 0.72);
-  --glass-bg-heavy:      rgba(255, 255, 255, 0.88);
+  --success:      #46a758;  /* grass-9  */
+  --success-soft: #e6f4ea;  /* grass-3  */
+  --warning:      #ffb224;  /* amber-9  */
+  --warning-soft: #fef3c7;  /* amber-3  */
+  --danger:       #e5484d;  /* red-9    */
+  --danger-soft:  #fce8ea;  /* red-3    */
+  --info:         #0090ff;  /* blue-9   */
+  --info-soft:    #e6f4fe;  /* blue-3   */
+
+  /* ═══════════════════════════════════════════════════════════
+     Emotion Colors — Radix scales, slightly desaturated
+     Used for Canvas emotion ball + data visualization.
+     ═══════════════════════════════════════════════════════════ */
+
+  --joy:          #ffb224;  /* amber-9       */
+  --joy-soft:     #fef3c7;  /* amber-3       */
+  --calm:         #7ce2fe;  /* sky-9         */
+  --calm-soft:    #e5f7fd;  /* sky-3         */
+  --sadness:      #9090a5;  /* mauve-8       */
+  --sadness-soft: #f0f0f5;  /* mauve-3       */
+  --tension:      #e5484d;  /* red-9         */
+  --tension-soft: #fce8ea;  /* red-3         */
+  --warmth:       #f76b15;  /* orange-9      */
+  --warmth-soft:  #ffe8d6;  /* orange-3      */
+  --shy:          #ab4aba;  /* plum-9        */
+  --shy-soft:     #f4e5f7;  /* plum-3        */
+
+  /* ═══════════════════════════════════════════════════════════
+     Glass — Semi-transparent overlays
+     Linear-style, subtle backdrop-filter.
+     ═══════════════════════════════════════════════════════════ */
+
+  --glass-bg:            rgba(252, 252, 253, 0.72);  /* slate-1 / 72% */
+  --glass-bg-heavy:      rgba(252, 252, 253, 0.88);  /* slate-1 / 88% */
   --glass-border:        rgba(0, 0, 0, 0.06);
   --glass-blur:          20px;
   --glass-blur-heavy:    28px;
   --overlay-bg:          rgba(0, 0, 0, 0.35);
-  --overlay-bg-light:    rgba(0, 0, 0, 0.18);
-  --sakura-glass:        rgba(255, 122, 149, 0.08);
-  --sakura-glass-hover:  rgba(255, 122, 149, 0.14);
 
+  /* ═══════════════════════════════════════════════════════════
+     Typography — Inter 4.0 + System Sans fallback
+     Linear / Vercel font stack. 1.2 modular scale.
+     ═══════════════════════════════════════════════════════════ */
 
-  /* ═══ 排版 — 呼吸的韵律 ═══ */
-
-  --font-sans: -apple-system, "system-ui", BlinkMacSystemFont,
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont,
                "SF Pro Text", "PingFang SC", "Noto Sans SC",
-               "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
-  --font-mono: "SF Mono", "Cascadia Code", "Fira Code",
-               "JetBrains Mono", "DengXian", monospace;
+               "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code",
+               "Fira Code", "DengXian", monospace;
 
-  --text-caption:   11px;
-  --text-label:     12px;
-  --text-body-sm:   14px;
-  --text-body:      16px;
-  --text-body-lg:   18px;
-  --text-heading-sm: 20px;
-  --text-heading:    24px;
-  --text-heading-lg: 32px;
+  --text-xs:      0.75rem;  /* 12px   */
+  --text-sm:      0.875rem; /* 14px   */
+  --text-base:    1rem;     /* 16px   */
+  --text-lg:      1.125rem; /* 18px   */
+  --text-xl:      1.25rem;  /* 20px   */
+  --text-2xl:     1.5rem;   /* 24px   */
+  --text-3xl:     1.875rem; /* 30px   */
+  --text-4xl:     2.25rem;  /* 36px   */
 
   --leading-tight:  1.25;
   --leading-snug:   1.35;
   --leading-normal: 1.5;
-  --leading-relaxed: 1.6;
-  --leading-loose:  1.75;
+  --leading-relaxed: 1.625;
 
-  --weight-regular:  400;
+  --weight-normal:   400;
   --weight-medium:   500;
   --weight-semibold: 600;
+  --weight-bold:     700;
 
+  /* ═══════════════════════════════════════════════════════════
+     Spacing — 4px baseline grid
+     Material Design 3 / Linear standard.
+     ═══════════════════════════════════════════════════════════ */
 
-  /* ═══ 间距 — 4px 基线网格 ═══ */
+  --space-0:   0;
+  --space-1:   0.25rem;  /* 4px  */
+  --space-2:   0.5rem;   /* 8px  */
+  --space-3:   0.75rem;  /* 12px */
+  --space-4:   1rem;     /* 16px */
+  --space-5:   1.25rem;  /* 20px */
+  --space-6:   1.5rem;   /* 24px */
+  --space-8:   2rem;     /* 32px */
+  --space-10:  2.5rem;   /* 40px */
+  --space-12:  3rem;     /* 48px */
+  --space-16:  4rem;     /* 64px */
 
-  --space-1:   4px;
-  --space-2:   8px;
-  --space-3:  12px;
-  --space-4:  16px;
-  --space-5:  20px;
-  --space-6:  24px;
-  --space-8:  32px;
-  --space-10: 40px;
-  --space-12: 48px;
-  --space-16: 64px;
+  /* ═══════════════════════════════════════════════════════════
+     Radius — Linear scale (progressive)
+     linear.app design system.
+     ═══════════════════════════════════════════════════════════ */
 
-
-  /* ═══ 圆角 — 亲密的弧度 ═══ */
-
-  --radius-none:  0;
-  --radius-xs:    4px;
-  --radius-sm:    8px;
-  --radius-md:   14px;
-  --radius-lg:   20px;
-  --radius-xl:   26px;
-  --radius-2xl:  34px;
+  --radius-none: 0;
+  --radius-xs:   0.25rem;  /* 4px  */
+  --radius-sm:   0.375rem; /* 6px  */
+  --radius-md:   0.5rem;   /* 8px  */
+  --radius-lg:   0.75rem;  /* 12px */
+  --radius-xl:   1rem;     /* 16px */
+  --radius-2xl:  1.25rem;  /* 20px */
   --radius-full: 9999px;
 
-  /* iMessage 气泡 */
-  --radius-bubble-mio:   18px 18px 18px 6px;
-  --radius-bubble-user:  18px 18px 6px 18px;
-  --radius-bubble-mio-cont:   6px 18px 18px 6px;
-  --radius-bubble-user-cont:  18px 6px 6px 18px;
+  /* Chat bubble — subtle asymmetry */
+  --radius-bubble-other:      var(--radius-lg) var(--radius-lg) var(--radius-lg) var(--radius-xs);
+  --radius-bubble-self:       var(--radius-lg) var(--radius-lg) var(--radius-xs) var(--radius-lg);
+  --radius-bubble-other-cont: var(--radius-xs) var(--radius-lg) var(--radius-lg) var(--radius-xs);
+  --radius-bubble-self-cont:  var(--radius-lg) var(--radius-xs) var(--radius-xs) var(--radius-lg);
 
+  /* ═══════════════════════════════════════════════════════════
+     Shadow — Radix Shadow scale (6 steps)
+     radix-ui.com/docs/primitives/components/panel
+     ═══════════════════════════════════════════════════════════ */
 
-  /* ═══ 阴影 — 轻盈的层次 ═══ */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-2: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-3: 0 4px 6px -1px rgba(0, 0, 0, 0.06), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --shadow-4: 0 10px 15px -3px rgba(0, 0, 0, 0.06), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+  --shadow-5: 0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+  --shadow-6: 0 25px 50px -12px rgba(0, 0, 0, 0.14);
 
-  --elevation-0: none;
-  --elevation-1: 0 0.5px 2px rgba(0, 0, 0, 0.04);
-  --elevation-2: 0 2px 8px rgba(0, 0, 0, 0.06);
-  --elevation-3: 0 6px 20px rgba(0, 0, 0, 0.07);
-  --elevation-4: 0 12px 40px rgba(0, 0, 0, 0.10);
-  --elevation-5: 0 20px 60px rgba(0, 0, 0, 0.14);
-
-  --glow-sakura: 0 0 20px rgba(255, 122, 149, 0.20);
-  --glow-warm:   0 0 24px rgba(255, 154, 118, 0.18);
-  --inner-glow:  inset 0 1px 0 rgba(255, 255, 255, 0.6);
-
-
-  /* ═══ 动效 — 缓动曲线 ═══ */
+  /* ═══════════════════════════════════════════════════════════
+     Motion — Vercel Geist easing curves
+     vercel.com/geist/motion
+     ═══════════════════════════════════════════════════════════ */
 
   --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in:     cubic-bezier(0.4, 0, 1, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --ease-spring: cubic-bezier(0.25, 0.1, 0.25, 1.4);
 
-  --duration-instant: 100ms;
-  --duration-fast:    180ms;
-  --duration-normal:  280ms;
-  --duration-slow:    420ms;
-  --duration-glacial: 700ms;
+  --duration-75:   75ms;
+  --duration-100:  100ms;
+  --duration-150:  150ms;
+  --duration-200:  200ms;
+  --duration-300:  300ms;
+  --duration-500:  500ms;
+  --duration-700:  700ms;
 
-
-  /* ═══ 布局 ═══ */
+  /* ═══════════════════════════════════════════════════════════
+     Layout
+     ═══════════════════════════════════════════════════════════ */
 
   --header-h:   56px;
-  --input-min-h: 56px;
   --nav-h:      56px;
-  --safe-top:    env(safe-area-inset-top, 0px);
+  --sidebar-w:  220px;
+  --safe-top:   env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --app-h:       100vh;
+  --app-h:      100vh;
+
+  /* ═══════════════════════════════════════════════════════════
+     Legacy Aliases — backward compatibility
+     Maps old token names to new Radix-based equivalents so
+     existing CSS files continue to work without modification.
+     DEPRECATED: new code should use --brand / --bg-* / --text-*
+     ═══════════════════════════════════════════════════════════ */
+
+  /* Old sakura → brand */
+  --sakura-50:             var(--brand-subtle);
+  --sakura-100:            var(--brand-element);
+  --sakura-200:            var(--brand-border);
+  --sakura-300:            var(--tomato-6);
+  --sakura-400:            var(--tomato-7);
+  --sakura-500:            var(--brand);
+  --sakura-600:            var(--brand-hover);
+  --sakura-700:            var(--tomato-8);
+
+  /* Old mist → bg / text / border */
+  --mist-50:               var(--bg-app);
+  --mist-100:              var(--bg-subtle);
+  --mist-200:              var(--bg-component);
+  --mist-300:              var(--border-default);
+  --mist-400:              var(--slate-6);
+  --mist-500:              var(--text-muted);
+  --mist-600:              var(--text-secondary);
+  --mist-700:              var(--slate-10);
+  --mist-800:              var(--text-primary);
+  --mist-900:              var(--slate-12);
+
+  /* Old shadows → Radix shadow */
+  --elevation-0:           none;
+  --elevation-1:           var(--shadow-1);
+  --elevation-2:           var(--shadow-2);
+  --elevation-3:           var(--shadow-3);
+  --elevation-4:           var(--shadow-4);
+  --elevation-5:           var(--shadow-5);
+
+  /* Old bubble radius */
+  --radius-bubble-mio:       var(--radius-bubble-other);
+  --radius-bubble-user:      var(--radius-bubble-self);
+  --radius-bubble-mio-cont:  var(--radius-bubble-other-cont);
+  --radius-bubble-user-cont: var(--radius-bubble-self-cont);
+
+  /* Old glass aliases */
+  --sakura-glass:           var(--brand-subtle);
+  --sakura-glass-hover:     var(--tomato-4);
+  --glow-sakura:            0 0 20px rgba(229, 77, 46, 0.16);
+  --glow-warm:              0 0 24px rgba(247, 107, 21, 0.14);
+  --inner-glow:             inset 0 1px 0 rgba(255, 255, 255, 0.6);
+
+  /* Old typography aliases (retain naming but map to new system tokens) */
+  --text-caption:           11px;
+  --text-label:             12px;
+  --text-body-sm:           14px;
+  --text-body:              16px;
+  --text-body-lg:           18px;
+  --text-heading-sm:        20px;
+  --text-heading:           24px;
+  --text-heading-lg:        32px;
+
+  /* Old duration aliases */
+  --duration-instant:  var(--duration-75);
+  --duration-fast:     var(--duration-150);
+  --duration-normal:   var(--duration-200);
+  --duration-slow:     var(--duration-500);
+  --duration-glacial:  var(--duration-700);
+
+  /* Old weight alias */
+  --weight-regular:    var(--weight-normal);
+  --weight-medium:     var(--weight-medium);
+  --weight-semibold:   var(--weight-semibold);
 }
 
+/* Mio atelier theme overrides. Keep legacy aliases above for the older views. */
+:root {
+  --ink-950: #181511;
+  --ink-900: #24201b;
+  --ink-800: #3a332b;
+  --ink-700: #5a5147;
+  --ink-600: #766b5f;
+  --ink-500: #9a8e80;
+  --ink-300: #d8cec0;
+  --ink-200: #e8dfd3;
+  --ink-100: #f4efe8;
+  --ink-50: #fbf8f2;
+
+  --rose-900: #71313e;
+  --rose-700: #a64e5e;
+  --rose-500: #d87582;
+  --rose-300: #f0b6bc;
+  --rose-100: #fde9e7;
+
+  --moss-700: #496750;
+  --moss-500: #6d8b72;
+  --moss-100: #e9efe4;
+  --aqua-700: #286d78;
+  --aqua-100: #e4f2f1;
+  --amber-600: #b77a34;
+  --amber-100: #f6ead5;
+
+  --brand: #a64e5e;
+  --brand-hover: #934353;
+  --brand-pressed: #71313e;
+  --brand-text: #71313e;
+  --brand-subtle: #fde9e7;
+  --brand-element: #f7d5d4;
+  --brand-border: rgba(166, 78, 94, 0.24);
+
+  --bg-app: #f4efe8;
+  --bg-subtle: rgba(255, 252, 247, 0.72);
+  --bg-component: rgba(255, 252, 247, 0.86);
+  --bg-hover: rgba(166, 78, 94, 0.08);
+
+  --border-default: rgba(58, 51, 43, 0.12);
+  --border-muted: rgba(58, 51, 43, 0.08);
+  --border-hover: rgba(166, 78, 94, 0.26);
+
+  --text-primary: var(--ink-950);
+  --text-secondary: var(--ink-700);
+  --text-muted: var(--ink-500);
+  --text-placeholder: rgba(90, 81, 71, 0.62);
+  --text-inverse: #fffaf5;
+  --text-link: var(--brand-text);
+
+  --glass-bg: rgba(255, 252, 247, 0.64);
+  --glass-bg-heavy: rgba(255, 252, 247, 0.84);
+  --glass-border: rgba(58, 51, 43, 0.10);
+  --overlay-bg: rgba(24, 21, 17, 0.36);
+
+  --font-sans: "Manrope", "SF Pro Text", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-display: "Noto Serif SC", "Songti SC", "STSong", Georgia, serif;
+
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+  --radius-2xl: 1.75rem;
+
+  --radius-bubble-other: 1.25rem 1.25rem 1.25rem 0.45rem;
+  --radius-bubble-self: 1.25rem 1.25rem 0.45rem 1.25rem;
+  --radius-bubble-other-cont: 0.55rem 1.25rem 1.25rem 0.55rem;
+  --radius-bubble-self-cont: 1.25rem 0.55rem 0.55rem 1.25rem;
+
+  --shadow-1: 0 1px 2px rgba(24, 21, 17, 0.04), 0 0 0 1px rgba(24, 21, 17, 0.04);
+  --shadow-2: 0 8px 24px rgba(48, 39, 28, 0.08), 0 1px 2px rgba(48, 39, 28, 0.04);
+  --shadow-3: 0 18px 48px rgba(48, 39, 28, 0.12), 0 2px 6px rgba(48, 39, 28, 0.06);
+  --shadow-4: 0 30px 90px rgba(48, 39, 28, 0.16), 0 8px 22px rgba(48, 39, 28, 0.08);
+  --shadow-5: 0 38px 110px rgba(48, 39, 28, 0.22);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.2, 0, 0, 1);
+
+  --duration-fast: 150ms;
+  --duration-normal: 240ms;
+  --duration-slow: 420ms;
+
+  --sidebar-w: 248px;
+  --header-h: 72px;
+  --nav-h: 68px;
+
+  --sakura-50: var(--rose-100);
+  --sakura-100: #f7d5d4;
+  --sakura-200: #f0b6bc;
+  --sakura-300: #e99aa5;
+  --sakura-400: #d87582;
+  --sakura-500: var(--brand);
+  --sakura-600: var(--brand-hover);
+  --sakura-700: var(--brand-pressed);
+
+  --mist-50: var(--bg-app);
+  --mist-100: rgba(255, 252, 247, 0.72);
+  --mist-200: rgba(232, 223, 211, 0.72);
+  --mist-300: rgba(58, 51, 43, 0.12);
+  --mist-400: var(--ink-300);
+  --mist-500: var(--ink-500);
+  --mist-600: var(--ink-600);
+  --mist-700: var(--ink-700);
+  --mist-800: var(--ink-800);
+  --mist-900: var(--ink-950);
+
+  --elevation-1: var(--shadow-1);
+  --elevation-2: var(--shadow-2);
+  --elevation-3: var(--shadow-3);
+  --elevation-4: var(--shadow-4);
+  --elevation-5: var(--shadow-5);
+
+  --sakura-glass: rgba(166, 78, 94, 0.13);
+  --sakura-glass-hover: rgba(166, 78, 94, 0.20);
+  --glow-sakura: 0 18px 60px rgba(166, 78, 94, 0.20);
+  --glow-warm: 0 18px 60px rgba(183, 122, 52, 0.16);
+  --inner-glow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+/* Qoder-inspired console theme for Mio. */
+:root {
+  --q-bg-0: #080b0d;
+  --q-bg-1: #0c1013;
+  --q-bg-2: #11161a;
+  --q-bg-3: #171d22;
+  --q-bg-4: #20272d;
+  --q-line: rgba(197, 214, 203, 0.10);
+  --q-line-strong: rgba(197, 214, 203, 0.16);
+  --q-text-1: #eef6ef;
+  --q-text-2: #aebdaf;
+  --q-text-3: #6f7d73;
+  --q-green: #91f2b8;
+  --q-green-strong: #59d88b;
+  --q-green-dim: rgba(145, 242, 184, 0.13);
+  --q-blue: #8cc7ff;
+  --q-violet: #bda7ff;
+  --q-amber: #f0c275;
+  --q-red: #ff8d8d;
+
+  --brand: var(--q-green-strong);
+  --brand-hover: #75e7a5;
+  --brand-pressed: #3fc875;
+  --brand-text: var(--q-green);
+  --brand-subtle: var(--q-green-dim);
+  --brand-element: rgba(145, 242, 184, 0.18);
+  --brand-border: rgba(145, 242, 184, 0.28);
+
+  --bg-app: var(--q-bg-0);
+  --bg-subtle: var(--q-bg-1);
+  --bg-component: var(--q-bg-2);
+  --bg-hover: rgba(145, 242, 184, 0.07);
+  --border-default: var(--q-line);
+  --border-muted: rgba(197, 214, 203, 0.07);
+  --border-hover: var(--q-line-strong);
+
+  --text-primary: var(--q-text-1);
+  --text-secondary: var(--q-text-2);
+  --text-muted: var(--q-text-3);
+  --text-placeholder: rgba(174, 189, 175, 0.52);
+  --text-inverse: #06100b;
+  --text-link: var(--q-green);
+
+  --glass-bg: rgba(12, 16, 19, 0.70);
+  --glass-bg-heavy: rgba(12, 16, 19, 0.86);
+  --glass-border: var(--q-line);
+  --overlay-bg: rgba(0, 0, 0, 0.55);
+
+  --font-sans: "Manrope", "SF Pro Text", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-display: "Manrope", "SF Pro Display", "PingFang SC", sans-serif;
+
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+
+  --radius-bubble-other: 0.875rem 0.875rem 0.875rem 0.25rem;
+  --radius-bubble-self: 0.875rem 0.875rem 0.25rem 0.875rem;
+  --radius-bubble-other-cont: 0.375rem 0.875rem 0.875rem 0.375rem;
+  --radius-bubble-self-cont: 0.875rem 0.375rem 0.375rem 0.875rem;
+
+  --shadow-1: 0 0 0 1px rgba(197, 214, 203, 0.08);
+  --shadow-2: 0 12px 28px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(197, 214, 203, 0.08);
+  --shadow-3: 0 24px 70px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(197, 214, 203, 0.10);
+  --shadow-4: 0 32px 110px rgba(0, 0, 0, 0.44), 0 0 0 1px rgba(197, 214, 203, 0.12);
+  --shadow-5: 0 46px 140px rgba(0, 0, 0, 0.54);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.2, 0, 0, 1);
+
+  --sidebar-w: 264px;
+  --header-h: 64px;
+  --nav-h: 64px;
+
+  --success: var(--q-green-strong);
+  --success-soft: rgba(145, 242, 184, 0.12);
+  --warning: var(--q-amber);
+  --warning-soft: rgba(240, 194, 117, 0.12);
+  --danger: var(--q-red);
+  --danger-soft: rgba(255, 141, 141, 0.12);
+  --info: var(--q-blue);
+  --info-soft: rgba(140, 199, 255, 0.12);
+
+  --sakura-50: rgba(145, 242, 184, 0.08);
+  --sakura-100: rgba(145, 242, 184, 0.12);
+  --sakura-200: rgba(145, 242, 184, 0.18);
+  --sakura-300: rgba(145, 242, 184, 0.26);
+  --sakura-400: var(--q-green);
+  --sakura-500: var(--q-green-strong);
+  --sakura-600: var(--q-green);
+  --sakura-700: var(--brand-pressed);
+
+  --mist-50: var(--q-bg-0);
+  --mist-100: var(--q-bg-1);
+  --mist-200: var(--q-bg-2);
+  --mist-300: var(--q-line);
+  --mist-400: var(--q-line-strong);
+  --mist-500: var(--q-text-3);
+  --mist-600: var(--q-text-2);
+  --mist-700: var(--q-text-2);
+  --mist-800: var(--q-text-1);
+  --mist-900: var(--q-text-1);
+
+  --elevation-1: var(--shadow-1);
+  --elevation-2: var(--shadow-2);
+  --elevation-3: var(--shadow-3);
+  --elevation-4: var(--shadow-4);
+  --elevation-5: var(--shadow-5);
+
+  --sakura-glass: rgba(145, 242, 184, 0.12);
+  --sakura-glass-hover: rgba(145, 242, 184, 0.18);
+  --glow-sakura: 0 0 36px rgba(89, 216, 139, 0.22);
+  --glow-warm: 0 0 36px rgba(240, 194, 117, 0.16);
+  --inner-glow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* Mio Light Console. White professional product system. */
+:root {
+  --mio-white: #ffffff;
+  --mio-bg: #f7f8fa;
+  --mio-bg-soft: #fbfcfd;
+  --mio-surface: #ffffff;
+  --mio-surface-raised: #ffffff;
+  --mio-surface-subtle: #f1f3f5;
+  --mio-surface-hover: #eef2f7;
+  --mio-border: #e3e7ee;
+  --mio-border-strong: #d5dbe5;
+  --mio-text: #171a1f;
+  --mio-text-soft: #4f5867;
+  --mio-text-muted: #8a94a6;
+  --mio-text-faint: #a8b0bd;
+  --mio-blue: #2f6fed;
+  --mio-blue-hover: #245ed4;
+  --mio-blue-soft: #edf4ff;
+  --mio-blue-border: #bfd6ff;
+  --mio-cyan: #16a3b8;
+  --mio-green: #20a464;
+  --mio-amber: #b7791f;
+  --mio-red: #d33b48;
+
+  --brand: var(--mio-blue);
+  --brand-hover: var(--mio-blue-hover);
+  --brand-pressed: #1d4fb8;
+  --brand-text: var(--mio-blue);
+  --brand-subtle: var(--mio-blue-soft);
+  --brand-element: #dceaff;
+  --brand-border: var(--mio-blue-border);
+
+  --bg-app: var(--mio-bg);
+  --bg-subtle: var(--mio-bg-soft);
+  --bg-component: var(--mio-surface-subtle);
+  --bg-hover: var(--mio-surface-hover);
+  --border-default: var(--mio-border);
+  --border-muted: #edf0f4;
+  --border-hover: var(--mio-border-strong);
+
+  --text-primary: var(--mio-text);
+  --text-secondary: var(--mio-text-soft);
+  --text-muted: var(--mio-text-muted);
+  --text-placeholder: var(--mio-text-faint);
+  --text-inverse: #ffffff;
+  --text-link: var(--mio-blue);
+
+  --glass-bg: rgba(255, 255, 255, 0.78);
+  --glass-bg-heavy: rgba(255, 255, 255, 0.92);
+  --glass-border: rgba(23, 26, 31, 0.08);
+  --overlay-bg: rgba(17, 24, 39, 0.42);
+
+  --font-sans: "Manrope", "SF Pro Text", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-display: "Manrope", "SF Pro Display", "PingFang SC", "Noto Sans SC", sans-serif;
+
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+
+  --radius-bubble-other: 1rem 1rem 1rem 0.35rem;
+  --radius-bubble-self: 1rem 1rem 0.35rem 1rem;
+  --radius-bubble-other-cont: 0.45rem 1rem 1rem 0.45rem;
+  --radius-bubble-self-cont: 1rem 0.45rem 0.45rem 1rem;
+
+  --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.04), 0 0 0 1px rgba(15, 23, 42, 0.04);
+  --shadow-2: 0 8px 24px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-3: 0 18px 48px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.05);
+  --shadow-4: 0 28px 80px rgba(15, 23, 42, 0.10);
+  --shadow-5: 0 38px 110px rgba(15, 23, 42, 0.14);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.2, 0, 0, 1);
+
+  --sidebar-w: 260px;
+  --header-h: 64px;
+  --nav-h: 68px;
+
+  --success: var(--mio-green);
+  --success-soft: #eaf8f0;
+  --warning: var(--mio-amber);
+  --warning-soft: #fff7e8;
+  --danger: var(--mio-red);
+  --danger-soft: #fff0f2;
+  --info: var(--mio-blue);
+  --info-soft: var(--mio-blue-soft);
+
+  --sakura-50: var(--mio-blue-soft);
+  --sakura-100: #dceaff;
+  --sakura-200: #bfd6ff;
+  --sakura-300: #8fb8ff;
+  --sakura-400: #5b91f4;
+  --sakura-500: var(--mio-blue);
+  --sakura-600: var(--mio-blue-hover);
+  --sakura-700: #1d4fb8;
+
+  --mist-50: var(--mio-bg);
+  --mist-100: var(--mio-bg-soft);
+  --mist-200: var(--mio-surface-subtle);
+  --mist-300: var(--mio-border);
+  --mist-400: var(--mio-border-strong);
+  --mist-500: var(--mio-text-muted);
+  --mist-600: var(--mio-text-soft);
+  --mist-700: #394150;
+  --mist-800: var(--mio-text);
+  --mist-900: var(--mio-text);
+
+  --elevation-1: var(--shadow-1);
+  --elevation-2: var(--shadow-2);
+  --elevation-3: var(--shadow-3);
+  --elevation-4: var(--shadow-4);
+  --elevation-5: var(--shadow-5);
+
+  --sakura-glass: rgba(47, 111, 237, 0.10);
+  --sakura-glass-hover: rgba(47, 111, 237, 0.16);
+  --glow-sakura: 0 16px 44px rgba(47, 111, 237, 0.16);
+  --glow-warm: 0 16px 44px rgba(22, 163, 184, 0.13);
+  --inner-glow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}

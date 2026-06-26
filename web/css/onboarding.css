@@ -7,7 +7,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: var(--app-h, 100vh);
+  flex: 1;
+  min-height: 0;
   background: #fff;
   padding: var(--space-10) var(--space-6);
   text-align: center;

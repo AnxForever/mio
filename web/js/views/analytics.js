@@ -2,8 +2,8 @@ import { BaseView } from './BaseView.js';
 import { el } from '../utils/dom.js';
 import { api } from '../api.js';
 import { navigate } from '../router.js';
-import { renderTabBar } from '../components/tab-bar.js';
 import { STAGE_LABELS } from '../utils/constants.js';
+import { ICONS } from '../utils/icons.js';
 
 export class AnalyticsView extends BaseView {
   constructor(params) {
@@ -16,16 +16,16 @@ export class AnalyticsView extends BaseView {
     const header = el('header', { className: 'analytics-header' });
     const backBtn = el('button', {
       className: 'studio-back-btn',
-      innerHTML: '<svg width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>',
+      'aria-label': '返回聊天',
       onClick: () => navigate('/chat'),
     });
+    backBtn.appendChild(ICONS.back(18));
     header.appendChild(backBtn);
     header.appendChild(el('h1', { className: 'studio-header-title', textContent: '我们的数据' }));
     this.el.appendChild(header);
 
     const content = el('div', { className: 'analytics-content', id: 'analytics-content' });
     this.el.appendChild(content);
-    this.el.appendChild(renderTabBar());
 
     return this.el;
   }

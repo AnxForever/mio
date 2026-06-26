@@ -59,7 +59,7 @@ export const Store = {
     const prev = _state[key];
     if (prev === value) return;
     _state[key] = value;
-    _notify(key, value, prev);
+    Store._notify(key, value, prev);
   },
 
   patch(obj) {
@@ -67,7 +67,7 @@ export const Store = {
       const prev = _state[k];
       if (prev === v) continue;
       _state[k] = v;
-      _notify(k, v, prev);
+      Store._notify(k, v, prev);
     }
   },
 

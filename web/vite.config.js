@@ -1,5 +1,9 @@
 import { defineConfig } from 'vite';
 
+const backendUrl = process.env.MIO_BACKEND_URL
+  || `http://localhost:${process.env.MIO_HTTP_PORT || 3000}`;
+const backendWsUrl = backendUrl.replace(/^http/, 'ws');
+
 export default defineConfig({
   root: '.',
   publicDir: 'assets',
@@ -10,20 +14,17 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // 代理 API 请求到后端开发服务器
       '/api': {
-        target: 'http://localhost:3000',
+        target: backendUrl,
         changeOrigin: true,
       },
-      // 代理 WebSocket 请求
       '/ws': {
-        target: 'ws://localhost:3000',
+        target: backendWsUrl,
         ws: true,
         changeOrigin: true,
       },
-      // 非 /api 前缀的后端接口（优先级低于 /api，但路径不冲突）
       '^/(health|status|avatar|onboarding|search|notify|admin)': {
-        target: 'http://localhost:3000',
+        target: backendUrl,
         changeOrigin: true,
       }
     },

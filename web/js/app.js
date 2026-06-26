@@ -1,17 +1,20 @@
 /**
  * app.js — 应用入口
  *
- * 检查认证 → 渲染页面 → 初始化路由 → 连接 WebSocket。
+ * 检查认证 → 构建响应式 App Shell (侧边栏+内容 / 底部导航) → 路由。
  */
 
 import { Store } from './store.js';
-import { initRouter, route } from './router.js';
+import { initRouter, route, navigate } from './router.js';
 import { checkAuth } from './auth.js';
 import { wsManager } from './ws.js';
-import { renderChat, mountChat, unmountChat } from './views/chat.js';
-import { renderStudio, mountStudio, unmountStudio } from './views/studio.js';
-import { renderAnalytics, mountAnalytics, unmountAnalytics } from './views/analytics.js';
-import { renderSettings, mountSettings, unmountSettings } from './views/settings.js';
+import { el } from './utils/dom.js';
+import { ICONS } from './utils/icons.js';
+import { EmotionBall } from './components/emotion-ball.js';
+import { renderChat,       mountChat,       unmountChat       } from './views/chat.js';
+import { renderStudio,     mountStudio,     unmountStudio     } from './views/studio.js';
+import { renderAnalytics,  mountAnalytics,  unmountAnalytics  } from './views/analytics.js';
+import { renderSettings,   mountSettings,   unmountSettings   } from './views/settings.js';
 import { renderOnboarding, mountOnboarding, unmountOnboarding } from './views/onboarding.js';
 import { renderAuth } from './views/auth.js';
 
@@ -28,7 +31,98 @@ if (window.visualViewport) {
 }
 setAppHeight();
 
-/* ─── 视图挂载/卸载管理 ─── */
+/* ═══════════════════════════════════════════════════
+   App Shell
+   ═══════════════════════════════════════════════════ */
+
+const NAV_ITEMS = [
+  { route: '/chat',      iconFn: ICONS.chat,      label: 'Chat' },
+  { route: '/studio',    iconFn: ICONS.studio,    label: 'Persona' },
+  { route: '/analytics', iconFn: ICONS.analytics, label: 'Signals' },
+  { route: '/settings',  iconFn: ICONS.settings,  label: 'Settings' },
+];
+
+let mainEl = null;
+let sidebarBrandBall = null;
+let currentRoute = '/chat';
+
+function buildShell() {
+  root.innerHTML = '';
+  const shell = el('div', { className: 'app-shell' });
+
+  /* ─── 侧边栏 (Desktop) ─── */
+  const sidebar = el('nav', { className: 'app-sidebar', 'aria-label': 'Main navigation' });
+
+  const brand = el('div', { className: 'app-sidebar-brand' });
+  const brandBall = el('canvas', { width: '36', height: '36' });
+  const brandText = el('div', {}, [
+    el('div', { className: 'app-sidebar-brand-text', textContent: 'Mio' }),
+    el('div', { className: 'app-sidebar-brand-sub', textContent: 'Agent console' }),
+  ]);
+  brand.appendChild(brandBall);
+  brand.appendChild(brandText);
+  sidebar.appendChild(brand);
+
+  for (const item of NAV_ITEMS) {
+    sidebar.appendChild(buildNavItem(item));
+  }
+
+  sidebar.appendChild(el('div', { className: 'app-sidebar-footer', textContent: 'v0.7' }));
+  shell.appendChild(sidebar);
+
+  /* ─── 主内容区 ─── */
+  mainEl = el('main', { className: 'app-main', id: 'app-main' });
+  shell.appendChild(mainEl);
+
+  /* ─── 底部导航 (Mobile) ─── */
+  const bottomNav = el('nav', { className: 'app-bottom-nav', 'aria-label': 'Mobile navigation' });
+  for (const item of NAV_ITEMS) {
+    bottomNav.appendChild(buildNavItem(item));
+  }
+  shell.appendChild(bottomNav);
+
+  root.appendChild(shell);
+
+  /* 侧边栏情绪球 */
+  setTimeout(() => {
+    if (brandBall.isConnected) {
+      sidebarBrandBall = new EmotionBall(brandBall, { size: 36 });
+      sidebarBrandBall.setState('calm', Store.get('affection') || 0);
+      sidebarBrandBall.start();
+    }
+  }, 100);
+}
+
+function buildNavItem({ route, iconFn, label }) {
+  const iconEl = el('span', { className: 'app-nav-icon' });
+  iconEl.appendChild(iconFn(20));
+  return el('button', {
+    className: `app-nav-item`,
+    'aria-label': label,
+    'aria-current': null,
+    onClick: (e) => {
+      e.preventDefault();
+      navigate(route);
+    },
+  }, [
+    iconEl,
+    el('span', { className: 'app-nav-label', textContent: label }),
+  ]);
+}
+
+function updateNavHighlight(routeKey) {
+  currentRoute = routeKey;
+  root.querySelectorAll('.app-nav-item').forEach(btn => {
+    const isActive = btn.querySelector('.app-nav-label')?.textContent ===
+      NAV_ITEMS.find(n => routeKey.startsWith('/studio') ? n.route === '/studio' : n.route === routeKey)?.label;
+    btn.classList.toggle('active', isActive);
+  });
+}
+
+/* ═══════════════════════════════════════════════════
+   视图管理
+   ═══════════════════════════════════════════════════ */
+
 let currentView = null;
 const viewMap = {
   '/chat':       { render: renderChat,       mount: mountChat,       unmount: unmountChat },
@@ -39,33 +133,33 @@ const viewMap = {
 };
 
 function switchView(viewName, params) {
-  if (currentView && currentView.unmount) {
-    currentView.unmount();
-  }
+  if (currentView && currentView.unmount) currentView.unmount();
 
   const routeKey = viewName.startsWith('/studio') ? '/studio' : viewName;
   const view = viewMap[routeKey];
+  if (!view) return;
 
-  if (!view) {
-    root.innerHTML = '';
-    return;
-  }
-
-  root.innerHTML = '';
-  root.appendChild(view.render(params));
+  mainEl.innerHTML = '';
+  mainEl.appendChild(view.render(params));
   currentView = view;
   if (view.mount) view.mount();
+
+  updateNavHighlight(routeKey);
+  Store.set('route', routeKey);
 }
 
 /* ─── 路由注册 ─── */
-route('/chat', () => switchView('/chat'));
-route('/studio', () => switchView('/studio'));
+route('/chat',       () => switchView('/chat'));
+route('/studio',     () => switchView('/studio'));
 route('/studio/:id', (p) => switchView('/studio', p));
-route('/analytics', () => switchView('/analytics'));
-route('/settings', () => switchView('/settings'));
+route('/analytics',  () => switchView('/analytics'));
+route('/settings',   () => switchView('/settings'));
 route('/onboarding', () => switchView('/onboarding'));
 
-/* ─── 启动 ─── */
+/* ═══════════════════════════════════════════════════
+   启动
+   ═══════════════════════════════════════════════════ */
+
 async function boot() {
   const authed = await checkAuth();
 
@@ -75,7 +169,13 @@ async function boot() {
     return;
   }
 
+  buildShell();
   wsManager.connect();
+
+  /* 情绪状态订阅 → 侧边栏球 */
+  Store.on('affection', (v) => {
+    if (sidebarBrandBall) sidebarBrandBall.setState(sidebarBrandBall.mood, v, sidebarBrandBall.stage);
+  });
 
   /* 检查是否需要新手引导 */
   try {
