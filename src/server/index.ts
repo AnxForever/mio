@@ -36,7 +36,10 @@ import { createRateLimiter } from './rate-limit.js';
 import { createBackup, exportMemory, listBackups, pruneBackups } from '../utils/backup.js';
 import { sendToAllChannels, isNotifyEnabled, getNotifyChannels, sendTelegramMessage, sendWebhookMessage, sendWhatsAppMessage, sendDiscordMessage, sendSlackMessage } from './notify.js';
 import { logger } from '../utils/logger.js';
-import { validate, validateQuery, chatBody, modBody, searchQuery, analyticsQuery, onboardingBody, backupPruneBody } from '../validation.js';
+import { validate, validateQuery, chatBody, modBody, searchQuery, analyticsQuery, onboardingBody, backupPruneBody, characterConfigSchema } from '../validation.js';
+import { createCharacter, listCharacters, deleteCharacter, activateCharacter } from '../character/factory.js';
+import { readRecentEvents, memoryStreamStats } from '../character/memory-stream.js';
+import { getPADState } from '../emotion/pad.js';
 import {
   getAnalyticsSnapshot,
   getEmotionTrends,
@@ -592,6 +595,67 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   app.post('/notify/test/webhook', requireAuth, async (_req, res) => {
     const result = await sendWebhookMessage('Mio Webhook test');
     res.status(result.success ? 200 : 502).json(result);
+  });
+
+  // ─── Character management ───
+
+  // POST /character/create — create custom character
+  app.post('/character/create', requireAuth, validate(characterConfigSchema), async (req, res) => {
+    try {
+      const char = createCharacter(req.body);
+      res.json({ success: true, data: char });
+    } catch (err) {
+      res.status(500).json({ success: false, error: String(err) });
+    }
+  });
+
+  // GET /characters — list all characters
+  app.get('/characters', requireAuth, (_req, res) => {
+    try {
+      const chars = listCharacters();
+      res.json({ success: true, data: chars });
+    } catch (err) {
+      res.status(500).json({ success: false, error: String(err) });
+    }
+  });
+
+  // POST /character/:name/activate — activate a character
+  app.post('/character/:name/activate', requireAuth, (req, res) => {
+    try {
+      const name = String(req.params.name);
+      const char = activateCharacter(name);
+      if (!char) return res.status(404).json({ success: false, error: 'Character not found' });
+      res.json({ success: true, data: char });
+    } catch (err) {
+      res.status(500).json({ success: false, error: String(err) });
+    }
+  });
+
+  // DELETE /character/:name — delete custom character
+  app.delete('/character/:name', requireAuth, (req, res) => {
+    const name = String(req.params.name);
+    const result = deleteCharacter(name);
+    res.status(result.success ? 200 : 400).json(result);
+  });
+
+  // GET /character/:name/life — character life journal
+  app.get('/character/:name/life', requireAuth, (req, res) => {
+    try {
+      const name = String(req.params.name);
+      const events = readRecentEvents(name, 50);
+      const stats = memoryStreamStats(name);
+      const pad = getPADState();
+      res.json({
+        success: true,
+        data: {
+          events,
+          stats,
+          pad: { pleasure: pad.pleasure, arousal: pad.arousal, dominance: pad.dominance },
+        },
+      });
+    } catch (err) {
+      res.status(500).json({ success: false, error: String(err) });
+    }
   });
 
   // 404 + error handlers (must come last)

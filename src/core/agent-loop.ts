@@ -107,9 +107,12 @@ import {
   isPersonalityDriverEnabled,
   type PersonalityState,
 } from '../persona/driver.js';
-import { getPADState } from '../emotion/pad.js';
+import { getPADState, updatePAD } from '../emotion/pad.js';
 import { getMultiAxis } from '../emotion/multi-axis.js';
 import { getRecentSignalHistory } from '../emotion/signals.js';
+import { lifeEngine } from '../character/life-engine.js';
+import { readActiveCharacter } from '../character/factory.js';
+import { acknowledgeRecentEvents } from '../character/memory-stream.js';
 import type {
   AIProvider,
   StreamingProvider,
@@ -1363,14 +1366,37 @@ export async function runTurn(
       // If event triggered AND initiative > 50 AND time since last chat > 2 hours
       // AND we have a response, record a hint for possible follow-up
       if (_turnCounter % 8 === 0 && _turnCounter > 0) {
-        const lifeEvent = simulateLifeEvent();
-        if (lifeEvent && personalityState.initiative > 50 && timeSinceLastChat > 2) {
-          appendBookmark({
-            time: new Date().toISOString(),
-            what: `[life-event] 你: ${truncate(lifeEvent, 100)}`,
-            evidence: `personality: sociability=${personalityState.sociability}, initiative=${personalityState.initiative}`,
-          });
+        // Custom character: use LifeEngine for chat-triggered events
+        const charName = readActiveCharacter();
+        if (getConfig().features.lifeEngine && charName) {
+          const event = lifeEngine().tickLight(charName);
+          if (event) {
+            appendBookmark({
+              time: new Date().toISOString(),
+              what: `[life-event] ${truncate(event.description, 100)}`,
+              evidence: `category=${event.category} importance=${event.importance}`,
+            });
+          }
+        } else {
+          // Legacy path for built-in boyfriend/girlfriend
+          const lifeEvent = simulateLifeEvent();
+          if (lifeEvent && personalityState.initiative > 50 && timeSinceLastChat > 2) {
+            appendBookmark({
+              time: new Date().toISOString(),
+              what: `[life-event] 你: ${truncate(lifeEvent, 100)}`,
+              evidence: `personality: sociability=${personalityState.sociability}, initiative=${personalityState.initiative}`,
+            });
+          }
         }
+      }
+
+      // Comfort detection: if user is comforting the agent, apply positive PAD
+      if (getConfig().features.lifeEngine && text && /抱抱|不哭|没事|我在|陪|心疼|还好吗|辛苦了|会好起来的|别难过/.test(text)) {
+        try {
+          updatePAD({ pleasure: 0.15, arousal: -0.05, dominance: 0.1 });
+          const charName = readActiveCharacter();
+          if (charName) acknowledgeRecentEvents(charName);
+        } catch { /* best-effort */ }
       }
     } catch {
       // Best-effort

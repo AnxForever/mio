@@ -333,6 +333,8 @@ export interface MioConfig {
     dynamicFewShot: boolean;
     /** Personality driver — Mio has moods, initiative, and her own "life" */
     personalityDriver: boolean;
+    /** Autonomous life engine — custom character life events, story arcs, crises */
+    lifeEngine: boolean;
   };
 }
 
@@ -373,6 +375,7 @@ const DEFAULT_CONFIG: MioConfig = {
     entityRelationGraph: true,
     dynamicFewShot: true,
     personalityDriver: true,
+    lifeEngine: false,
   },
 };
 
@@ -415,6 +418,7 @@ function envOverrides(): Partial<MioConfig> {
   if (process.env.MIO_FEATURE_EXPERIENCE_TRAIT) featureOverrides.experienceTraitFeedback = process.env.MIO_FEATURE_EXPERIENCE_TRAIT === 'true';
   if (process.env.MIO_FEATURE_ENTITY_GRAPH) featureOverrides.entityRelationGraph = process.env.MIO_FEATURE_ENTITY_GRAPH === 'true';
   if (process.env.MIO_FEATURE_DYNAMIC_FEWSHOT) featureOverrides.dynamicFewShot = process.env.MIO_FEATURE_DYNAMIC_FEWSHOT === 'true';
+  if (process.env.MIO_FEATURE_LIFE_ENGINE) featureOverrides.lifeEngine = process.env.MIO_FEATURE_LIFE_ENGINE === 'true';
   if (Object.keys(featureOverrides).length > 0) {
     patch.features = { ...DEFAULT_CONFIG.features, ...featureOverrides } as MioConfig['features'];
   }

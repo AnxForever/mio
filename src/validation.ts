@@ -98,6 +98,32 @@ export function validate<T>(schema: z.ZodSchema<T>) {
   };
 }
 
+// ─── Character ───
+
+export const characterConfigSchema = z.object({
+  name: z.string().min(1).max(50),
+  gender: z.string().min(1).max(20),
+  age: z.number().int().min(12).max(120),
+  occupation: z.string().min(1).max(50),
+  style: z.string().max(100).optional().default(''),
+  personality: z.object({
+    openness: z.number().min(0).max(1).optional().default(0.6),
+    conscientiousness: z.number().min(0).max(1).optional().default(0.5),
+    extraversion: z.number().min(0).max(1).optional().default(0.5),
+    agreeableness: z.number().min(0).max(1).optional().default(0.7),
+    neuroticism: z.number().min(0).max(1).optional().default(0.3),
+  }).optional(),
+  traits: z.array(z.string()).optional().default([]),
+  speakingStyle: z.string().max(500).optional().default(''),
+  backstory: z.string().max(3000).optional().default(''),
+  lifeGoals: z.array(z.string()).optional().default([]),
+  interests: z.array(z.string()).optional().default([]),
+  values: z.array(z.string()).optional().default([]),
+  quirks: z.array(z.string()).optional().default([]),
+});
+
+export type CharacterConfigInput = z.infer<typeof characterConfigSchema>;
+
 /**
  * Validates req.query against the given schema.
  */
