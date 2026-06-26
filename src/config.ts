@@ -516,9 +516,9 @@ function buildInitialConfig(): MioConfig {
   const persisted = loadPersistedConfigFrom(dataDir);
   return {
     ...DEFAULT_CONFIG,
-    ...envOverrides(),
     ...persisted,
-    dataDir, // always set — even if persisted says something else, env wins at boot
+    ...envOverrides(),   // env always wins over persisted
+    dataDir,
   };
 }
 
