@@ -26,7 +26,8 @@
     "croner": "^9.0.0",
     "express": "^5.2.1",
     "sharp": "^0.34.5",
-    "ws": "^8.19.0"
+    "ws": "^8.19.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",

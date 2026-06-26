@@ -36,6 +36,7 @@ import { createRateLimiter } from './rate-limit.js';
 import { createBackup, exportMemory, listBackups, pruneBackups } from '../utils/backup.js';
 import { sendToAllChannels, isNotifyEnabled, getNotifyChannels, sendTelegramMessage, sendWebhookMessage, sendWhatsAppMessage, sendDiscordMessage, sendSlackMessage } from './notify.js';
 import { logger } from '../utils/logger.js';
+import { validate, validateQuery, chatBody, modBody, searchQuery, analyticsQuery, onboardingBody, backupPruneBody } from '../validation.js';
 import {
   getAnalyticsSnapshot,
   getEmotionTrends,
@@ -152,7 +153,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     res.json({ step: first.step, question: first.question, key: first.key });
   });
 
-  app.post('/onboarding/next', async (req, res) => {
+  app.post('/onboarding/next', validate(onboardingBody), async (req, res) => {
     const body = req.body as { step?: number; value?: string } | undefined;
     if (!body || typeof body.step !== 'number' || typeof body.value !== 'string') {
       res.status(400).json({ error: 'Missing "step" (number) and "value" (string) in body' });
@@ -272,7 +273,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     }
   });
 
-  app.post('/chat', requireAuth, async (req, res) => {
+  app.post('/chat', requireAuth, validate(chatBody), async (req, res) => {
     const body = req.body as { text?: string; sessionId?: string; imagePath?: string } | undefined;
     if (!body || typeof body.text !== 'string') {
       res.status(400).json({ error: 'Missing "text" in body' });
@@ -300,7 +301,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     }
   });
 
-  app.post('/chat/stream', requireAuth, async (req, res) => {
+  app.post('/chat/stream', requireAuth, validate(chatBody), async (req, res) => {
     const body = req.body as { text?: string; sessionId?: string } | undefined;
     if (!body || typeof body.text !== 'string') {
       res.status(400).json({ error: 'Missing "text" in body' });
@@ -334,7 +335,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     }
   });
 
-  app.post('/mod', requireAuth, async (req, res) => {
+  app.post('/mod', requireAuth, validate(modBody), async (req, res) => {
     const body = req.body as { name?: string } | undefined;
     if (!body || (body.name !== 'boyfriend' && body.name !== 'girlfriend')) {
       res.status(400).json({ error: 'Invalid "name". Use "boyfriend" or "girlfriend".' });
@@ -469,7 +470,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     }
   });
 
-  app.post('/admin/backups/prune', requireAuth, (req, res) => {
+  app.post('/admin/backups/prune', requireAuth, validate(backupPruneBody), (req, res) => {
     try {
       const body = req.body as { maxAgeDays?: number } | undefined;
       const days = body?.maxAgeDays ?? 7;

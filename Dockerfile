@@ -4,35 +4,44 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Install deps (with cache layer)
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json ./
+COPY packages/emotion/package.json packages/emotion/
+COPY packages/idrag/package.json packages/idrag/
 RUN npm ci --ignore-scripts
 
 # Copy source and build
-COPY tsconfig.json ./
-COPY src/ ./src/
+COPY tsconfig.json .
+COPY packages/ packages/
+COPY src/ src/
 RUN npm run build
 
 # ─── Production stage ───
 FROM node:22-alpine
 
-# Runtime deps: ffmpeg for voice recording (optional)
+# Runtime deps: ffmpeg for voice (optional)
 RUN apk add --no-cache ffmpeg sox tini
 
 WORKDIR /app
 
 # Copy built artifacts + production deps
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json ./
+COPY packages/emotion/package.json packages/emotion/
+COPY packages/idrag/package.json packages/idrag/
 RUN npm ci --omit=dev --ignore-scripts
 
 COPY --from=builder /app/dist/ ./dist/
+COPY --from=builder /app/packages/ ./packages/
+
+# Static assets
+COPY web/ ./web/
+COPY mods/ ./mods/
 
 # Data volume
 VOLUME ["/app/data"]
 
-# Use tini as init to reap zombie processes
+# Use tini as init
 ENTRYPOINT ["/sbin/tini", "--"]
 
-# Default: start the HTTP server
 EXPOSE 3000
 ENV NODE_ENV=production
 ENV MIO_HTTP_PORT=3000
