@@ -35,11 +35,11 @@ export class LifeScheduler {
     // Fire every 3 hours with jitter
     this.cronJob = new Cron('0 */3 * * *', {}, () => {
       const jitter = Math.floor(Math.random() * 30 * 60 * 1000); // 0-30 min
-      setTimeout(() => {
+      setTimeout(async () => {
         const name = readActiveCharacter() || ensureActiveCharacter();
         if (!name) return;
 
-        const event = lifeEngine().tick(name);
+        const event = await lifeEngine().tick(name).catch(() => null);
         if (event) {
           // Apply PAD impact
           try {

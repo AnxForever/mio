@@ -172,10 +172,10 @@ export interface ReflectionResult {
  *   1. When feedReflectionTrigger() returns true
  *   2. During nightly consolidation (Phase 3 REM)
  */
-export function runReflection(
+export async function runReflection(
   characterName: string,
   force = false,
-): ReflectionResult {
+): Promise<ReflectionResult> {
   const state = getState(characterName);
 
   if (!force && state.importanceAccumulated < TRIGGER_THRESHOLD) {
@@ -230,7 +230,7 @@ export function runReflection(
 
   // 3. Write reflections back into memory stream (Smallville: 30-day expiration)
   for (const insight of insights) {
-    appendEvent(
+    await appendEvent(
       characterName,
       insight.thought,
       'random', // reflections don't fit neatly into life categories

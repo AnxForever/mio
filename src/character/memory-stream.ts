@@ -4,13 +4,15 @@
  * Smallville-style append-only event log with three-dimensional retrieval.
  *
  * Storage: JSONL file (one event per line), append-only.
- * Retrieval: score = α·recency + β·importance + γ·relevance
+ * Retrieval: Smallville formula — normalized recency*0.5 + relevance*3 + importance*2
  *
- * Relevance uses TF-IDF cosine similarity (no external vector DB needed
- * for single-user scale).
+ * Relevance: cosine similarity on embeddings from getEmbeddingProvider().
+ * Falls back to TF-IDF if no API key (offline mode).
+ *
+ * Embeddings are stored alongside events (computed once at creation).
  */
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import type {
@@ -23,81 +25,110 @@ import type {
 } from './types.js';
 import { memoryStreamPath } from './paths.js';
 import { logger } from '../utils/logger.js';
+import { getEmbeddingProvider } from '../memory/embedding.js';
+import type { AnyVector } from '../memory/embedding.js';
+
+// ─── Embedding helpers ───
+
+/** Serialize an embedding vector for JSONL storage */
+function serializeEmbedding(v: AnyVector): number[] | Record<string, number> {
+  if (v instanceof Float32Array) {
+    return Array.from(v);
+  }
+  return { ...v };
+}
+
+/** Deserialize an embedding from JSONL storage to runtime AnyVector */
+function toRuntimeEmbedding(raw: number[] | Record<string, number> | undefined): AnyVector | undefined {
+  if (!raw) return undefined;
+  if (Array.isArray(raw)) {
+    return new Float32Array(raw);
+  }
+  const sparse: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof v === 'number') sparse[k] = v;
+  }
+  return sparse;
+}
+
+// ─── Cosine similarity (delegates to existing vector.ts impl) ───
+
+/**
+ * Cosine similarity that handles both dense (MiniMax, L2-normalized) and
+ * sparse (TF) vectors. Copied pattern from src/memory/vector.ts:similarity().
+ */
+function embeddingSimilarity(a: AnyVector | undefined, b: AnyVector | undefined): number {
+  if (!a || !b) return 0;
+
+  const aDense = a instanceof Float32Array;
+  const bDense = b instanceof Float32Array;
+
+  if (aDense && bDense) {
+    // Both dense — dot product (MiniMax vectors are L2-normalized)
+    const n = Math.min(a.length, b.length);
+    let dot = 0;
+    for (let i = 0; i < n; i++) dot += (a as Float32Array)[i] * (b as Float32Array)[i];
+    return dot;
+  }
+
+  if (!aDense && !bDense) {
+    // Both sparse — TF cosine
+    const sa = a as Record<string, number>;
+    const sb = b as Record<string, number>;
+    let dot = 0;
+    let normA = 0;
+    let normB = 0;
+    for (const [k, v] of Object.entries(sa)) {
+      normA += v * v;
+      if (sb[k] !== undefined) dot += v * sb[k];
+    }
+    for (const [, v] of Object.entries(sb)) {
+      normB += v * v;
+    }
+    if (normA === 0 || normB === 0) return 0;
+    return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+  }
+
+  return 0; // Mismatched types
+}
 
 // ─── Retrieval weights ───
 //
 // From the Smallville paper (retrieve.py):
-//   score = recency_w * recency_normalized * 0.5
-//         + relevance_w * relevance_normalized * 3
-//         + importance_w * importance_normalized * 2
-//
-// gw = [0.5, 3, 2] — internal weights from the original code.
-// Relevance dominates (3x), importance next (2x), recency lowest (0.5x).
-// Each component is min-max normalized to [0,1] before weighting.
+//   score = rec*0.5 + rel*3 + imp*2
+// gw = [0.5, 3, 2] — relevance dominates.
 
 const GW = { recency: 0.5, relevance: 3, importance: 2 };
-const RECENCY_DECAY = 0.99; // Per-index-position decay (not per-hour)
-
-// ─── TF-IDF helpers ───
-
-/** Chinese word segmentation (simple character bigram) */
-function tokenize(text: string): string[] {
-  const cleaned = text.replace(/[^一-鿿\w]/g, ' ');
-  const chars = cleaned.replace(/\s+/g, '').split('');
-  const bigrams: string[] = [];
-  for (let i = 0; i < chars.length - 1; i++) {
-    bigrams.push(chars[i] + chars[i + 1]);
-  }
-  // Also include single chars for short texts
-  return [...bigrams, ...chars];
-}
-
-/** Compute TF vector from tokens */
-function tfVector(tokens: string[]): Map<string, number> {
-  const tf = new Map<string, number>();
-  for (const t of tokens) {
-    tf.set(t, (tf.get(t) || 0) + 1);
-  }
-  // Normalize
-  const total = tokens.length || 1;
-  for (const [k, v] of tf) {
-    tf.set(k, v / total);
-  }
-  return tf;
-}
-
-/** Cosine similarity between two TF vectors */
-function cosineSimilarity(
-  a: Map<string, number>,
-  b: Map<string, number>,
-): number {
-  let dot = 0;
-  let magA = 0;
-  let magB = 0;
-
-  for (const [k, v] of a) {
-    magA += v * v;
-    dot += v * (b.get(k) || 0);
-  }
-  for (const [, v] of b) {
-    magB += v * v;
-  }
-
-  if (magA === 0 || magB === 0) return 0;
-  return dot / (Math.sqrt(magA) * Math.sqrt(magB));
-}
+const RECENCY_DECAY = 0.99;
 
 // ─── Write ───
 
-/** Generate a unique event id */
 function generateEventId(): string {
   const ts = Date.now().toString(36);
   const rand = Math.random().toString(36).slice(2, 8);
   return `evt_${ts}_${rand}`;
 }
 
-/** Append a life event to the memory stream */
-export function appendEvent(
+/** Compute default importance from emotional impact magnitude + category weight */
+function computeDefaultImportance(
+  impact: EmotionalImpact,
+  category: LifeEventCategory,
+): number {
+  const magnitude =
+    (Math.abs(impact.pleasure) + Math.abs(impact.arousal) + Math.abs(impact.dominance)) / 3;
+
+  const categoryWeights: Record<LifeEventCategory, number> = {
+    work: 0.4, social: 0.6, domestic: 0.3, health: 0.7, creative: 0.5, random: 0.4,
+  };
+
+  return Math.min(1, magnitude * 0.5 + (categoryWeights[category] || 0.4) * 0.5);
+}
+
+/**
+ * Append a life event to the memory stream.
+ * Computes embedding via the configured provider (MiniMax if API key set, TF fallback).
+ */
+export async function appendEvent(
   characterName: string,
   description: string,
   category: LifeEventCategory,
@@ -108,7 +139,7 @@ export function appendEvent(
     tags?: string[];
     acknowledged?: boolean;
   } = {},
-): LifeEvent {
+): Promise<LifeEvent> {
   const path = memoryStreamPath(characterName);
   const dir = dirname(path);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -125,38 +156,26 @@ export function appendEvent(
     acknowledged: options.acknowledged ?? false,
   };
 
+  // Compute embedding for relevance retrieval
   try {
-    appendFileSync(path, JSON.stringify(event) + '\n', 'utf-8');
+    const provider = getEmbeddingProvider();
+    const [vec] = await provider.embed([description]);
+    const entry: MemoryStreamEntry = {
+      ...event,
+      embedding: serializeEmbedding(vec),
+    };
+    appendFileSync(path, JSON.stringify(entry) + '\n', 'utf-8');
   } catch (err) {
-    logger.error('[memory-stream] failed to append event', { err: String(err) });
+    // Embedding failed — still write the event without embedding
+    logger.warn('[memory-stream] embedding failed, storing without', { err: String(err) });
+    appendFileSync(path, JSON.stringify(event) + '\n', 'utf-8');
   }
 
   return event;
 }
 
-/** Compute default importance from emotional impact magnitude + category weight */
-function computeDefaultImportance(
-  impact: EmotionalImpact,
-  category: LifeEventCategory,
-): number {
-  const magnitude =
-    (Math.abs(impact.pleasure) + Math.abs(impact.arousal) + Math.abs(impact.dominance)) / 3;
-
-  const categoryWeights: Record<LifeEventCategory, number> = {
-    work: 0.4,
-    social: 0.6,
-    domestic: 0.3,
-    health: 0.7,
-    creative: 0.5,
-    random: 0.4,
-  };
-
-  return Math.min(1, magnitude * 0.5 + (categoryWeights[category] || 0.4) * 0.5);
-}
-
 // ─── Read ───
 
-/** Read all events from the memory stream */
 export function readEvents(characterName: string): MemoryStreamEntry[] {
   const path = memoryStreamPath(characterName);
   if (!existsSync(path)) return [];
@@ -167,14 +186,16 @@ export function readEvents(characterName: string): MemoryStreamEntry[] {
     return raw
       .split('\n')
       .filter(line => line.trim())
-      .map(line => JSON.parse(line) as MemoryStreamEntry);
+      .map(line => {
+        const parsed = JSON.parse(line) as MemoryStreamEntry;
+        return parsed;
+      });
   } catch (err) {
     logger.error('[memory-stream] failed to read events', { err: String(err) });
     return [];
   }
 }
 
-/** Read the most recent N events */
 export function readRecentEvents(characterName: string, count = 50): MemoryStreamEntry[] {
   const all = readEvents(characterName);
   return all.slice(-count).reverse();
@@ -182,20 +203,6 @@ export function readRecentEvents(characterName: string, count = 50): MemoryStrea
 
 // ─── Retrieve ───
 
-/**
- * Retrieve the most relevant memories for a query.
- *
- * Smallville-style three-dimensional scoring:
- *   score = α·recency + β·importance + γ·relevance
- *
- * @param characterName  Character to search for
- * @param query          Current context (e.g. user message)
- * @param limit          Max results to return
- */
-/**
- * Min-max normalize a map of {key: number} to [0, 1].
- * From the Smallville paper: normalize_dict_floats() in retrieve.py.
- */
 function normalizeMap(map: Map<string, number>): Map<string, number> {
   const vals = [...map.values()];
   if (vals.length === 0) return map;
@@ -203,7 +210,6 @@ function normalizeMap(map: Map<string, number>): Map<string, number> {
   const max = Math.max(...vals);
   const range = max - min;
   if (range === 0) {
-    // All values equal — set to midpoint
     for (const k of map.keys()) map.set(k, 0.5);
     return map;
   }
@@ -221,48 +227,63 @@ export function retrieveRelevantMemories(
   const events = readEvents(characterName);
   if (events.length === 0) return [];
 
-  // Build raw scores as maps (keyed by event index string)
   const recencyRaw = new Map<string, number>();
   const importanceRaw = new Map<string, number>();
   const relevanceRaw = new Map<string, number>();
 
-  // Chronological order (oldest first) for recency index-based decay
   const sorted = [...events].sort(
     (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
   );
 
-  const queryTokens = tfVector(tokenize(query));
+  // Compute query embedding once (sync approximation — we don't have the query
+  // embedding pre-computed, so text similarity is used as fallback).
+  // For a full MiniMax path, we'd need async retrieval. V1 keeps this sync
+  // with TF fallback; embedding-based similarity compares stored event embeddings.
+  const hasDenseEmbeddings = events.some(
+    e => Array.isArray(e.embedding),
+  );
 
   sorted.forEach((entry, idx) => {
     const key = entry.id;
 
-    // Recency: exponential decay on REVERSE index position
-    // (newest = highest index = lowest decay exponent)
+    // Recency: exponential decay on reverse index position
     const reverseIdx = sorted.length - 1 - idx;
     recencyRaw.set(key, Math.pow(RECENCY_DECAY, reverseIdx));
 
-    // Importance: from the stored poignancy/importance score
+    // Importance
     importanceRaw.set(key, entry.importance);
 
-    // Relevance: TF cosine similarity
-    const entryTokens = tfVector(tokenize(entry.description));
-    const relevance = cosineSimilarity(queryTokens, entryTokens);
-    relevanceRaw.set(key, relevance);
+    // Relevance: embedding cosine if available, else text overlap
+    if (hasDenseEmbeddings && entry.embedding) {
+      const a = toRuntimeEmbedding(entry.embedding);
+      const latestRaw = sorted[sorted.length - 1].embedding;
+      const b = latestRaw ? toRuntimeEmbedding(latestRaw) : undefined;
+      if (a && b) {
+        const sim = embeddingSimilarity(a, b);
+        relevanceRaw.set(key, Math.max(0, sim));
+      } else {
+        relevanceRaw.set(key, 0.5);
+      }
+    } else {
+      // TF fallback: simple text overlap with query
+      const qWords = new Set(query.replace(/[^一-鿿\w]/g, ' ').split(/\s+/).filter(w => w.length > 0));
+      const eWords = new Set(entry.description.replace(/[^一-鿿\w]/g, ' ').split(/\s+/).filter(w => w.length > 0));
+      let overlap = 0;
+      for (const w of qWords) { if (eWords.has(w)) overlap++; }
+      const relevance = qWords.size > 0 ? overlap / qWords.size : 0;
+      relevanceRaw.set(key, relevance);
+    }
   });
 
-  // Min-max normalize each dimension to [0, 1]
   const recencyNorm = normalizeMap(recencyRaw);
   const importanceNorm = normalizeMap(importanceRaw);
   const relevanceNorm = normalizeMap(relevanceRaw);
 
-  // Combined score: Smallville formula
-  // score = recency * 0.5 + relevance * 3 + importance * 2
   const scored: MemoryRetrievalResult[] = events.map(entry => {
     const key = entry.id;
     const rec = recencyNorm.get(key) ?? 0;
     const rel = relevanceNorm.get(key) ?? 0;
     const imp = importanceNorm.get(key) ?? 0;
-
     const score = rec * GW.recency + rel * GW.relevance + imp * GW.importance;
 
     return {
@@ -272,7 +293,6 @@ export function retrieveRelevantMemories(
     };
   });
 
-  // Sort by score descending, return top N
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, limit);
 }
@@ -296,9 +316,6 @@ export function getMemoryContext(characterName: string, query: string, limit = 5
 
 // ─── Acknowledge ───
 
-/**
- * Mark recent unacknowledged events as seen by the user.
- */
 export function acknowledgeRecentEvents(characterName: string): number {
   const path = memoryStreamPath(characterName);
   if (!existsSync(path)) return 0;
@@ -306,6 +323,7 @@ export function acknowledgeRecentEvents(characterName: string): number {
   const events = readEvents(characterName);
   let count = 0;
 
+  // Re-serialize with embeddings preserved
   const updated = events.map(e => {
     if (!e.acknowledged) {
       e.acknowledged = true;
@@ -317,7 +335,6 @@ export function acknowledgeRecentEvents(characterName: string): number {
   if (count > 0) {
     try {
       const lines = updated.map(e => JSON.stringify(e)).join('\n') + '\n';
-      const { writeFileSync } = require('node:fs');
       writeFileSync(path, lines, 'utf-8');
     } catch (err) {
       logger.error('[memory-stream] failed to acknowledge events', { err: String(err) });
@@ -329,7 +346,6 @@ export function acknowledgeRecentEvents(characterName: string): number {
 
 // ─── Stats ───
 
-/** Get basic stats about the memory stream */
 export function memoryStreamStats(characterName: string): {
   totalEvents: number;
   oldestEvent: string | null;

@@ -96,7 +96,7 @@ export class LifeEngine {
    * Advance the character's life by one tick.
    * Returns the generated event, or null if no event was generated.
    */
-  tick(characterName: string): LifeEvent | null {
+  async tick(characterName: string): Promise<LifeEvent | null> {
     const config = this.loadConfig(characterName);
     if (!config) return null;
 
@@ -120,7 +120,7 @@ export class LifeEngine {
   }
 
   /** Lightweight tick for chat-triggered events (lower probability) */
-  tickLight(characterName: string): LifeEvent | null {
+  async tickLight(characterName: string): Promise<LifeEvent | null> {
     // Chat-triggered: half the base probability
     if (Math.random() > 0.12) return null;
     return this.tick(characterName);
@@ -138,10 +138,10 @@ export class LifeEngine {
     }
   }
 
-  private generateTemplateEvent(
+  private async generateTemplateEvent(
     characterName: string,
     config: CharacterConfig,
-  ): LifeEvent | null {
+  ): Promise<LifeEvent | null> {
     let pool = filterByPersonality(EVENT_TEMPLATES, config);
 
     // Filter by time of day for relevance
@@ -161,33 +161,33 @@ export class LifeEngine {
 
     logger.info(`[life-engine] ${characterName}: ${description.slice(0, 80)}`);
 
-    return appendEvent(characterName, description, chosen.category, chosen.padDelta, {
+    return await appendEvent(characterName, description, chosen.category, chosen.padDelta, {
       importance: chosen.importance,
       tags: chosen.tags,
     });
   }
 
-  private generateCrisisEvent(
+  private async generateCrisisEvent(
     characterName: string,
     config: CharacterConfig,
-  ): LifeEvent {
+  ): Promise<LifeEvent> {
     const crisisTemplates = EVENT_TEMPLATES.filter(e => e.tags.includes('crisis'));
     const chosen = choose(crisisTemplates);
     const description = substitute(chosen.text, config);
 
     logger.warn(`[life-engine] ${characterName} CRISIS: ${description.slice(0, 80)}`);
 
-    return appendEvent(characterName, description, chosen.category, chosen.padDelta, {
+    return await appendEvent(characterName, description, chosen.category, chosen.padDelta, {
       type: 'crisis',
       importance: chosen.importance,
       tags: [...chosen.tags, 'crisis'],
     });
   }
 
-  private maybeAdvanceArc(
+  private async maybeAdvanceArc(
     characterName: string,
     config: CharacterConfig,
-  ): LifeEvent | null {
+  ): Promise<LifeEvent | null> {
     const arcs = readStoryArcs(characterName);
     const activeArcs = arcs.filter(a => a.phase !== 'resolution');
 
@@ -226,7 +226,7 @@ export class LifeEngine {
     // Update arc
     updateArcPhase(arc.id, nextPhase, characterName);
 
-    const event = appendEvent(characterName, desc, 'work', {
+    const event = await appendEvent(characterName, desc, 'work', {
       pleasure: nextPhase === 'resolution' ? 0.3 : nextPhase === 'crisis' ? -0.25 : 0.1,
       arousal: nextPhase === 'crisis' ? 0.35 : 0.15,
       dominance: nextPhase === 'resolution' ? 0.25 : nextPhase === 'crisis' ? -0.2 : 0.05,
@@ -235,10 +235,10 @@ export class LifeEngine {
     return event;
   }
 
-  private maybeStartNewArc(
+  private async maybeStartNewArc(
     characterName: string,
     config: CharacterConfig,
-  ): LifeEvent | null {
+  ): Promise<LifeEvent | null> {
     const arcs = readStoryArcs(characterName);
     const activeCount = arcs.filter(a => a.phase !== 'resolution').length;
 
@@ -272,7 +272,7 @@ export class LifeEngine {
       config,
     );
 
-    const event = appendEvent(characterName, desc, 'work', {
+    const event = await appendEvent(characterName, desc, 'work', {
       pleasure: 0.1, arousal: 0.2, dominance: 0.1,
     }, { importance: 0.5, tags: ['story-arc', 'setup'] });
 

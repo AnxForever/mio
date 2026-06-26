@@ -125,8 +125,8 @@ export interface StoryArc {
 // ─── Memory Stream ───
 
 export interface MemoryStreamEntry extends LifeEvent {
-  /** TF embedding vector (set on write, used for retrieval) */
-  embedding?: number[];
+  /** Serialized embedding vector (number[] for dense, Record<string,number> for sparse) */
+  embedding?: number[] | Record<string, number>;
 }
 
 export interface MemoryRetrievalResult {

@@ -1382,7 +1382,7 @@ export async function runTurn(
         // Custom character: use LifeEngine for chat-triggered events
         const charName = readActiveCharacter();
         if (getConfig().features.lifeEngine && charName) {
-          const event = lifeEngine().tickLight(charName);
+          const event = await lifeEngine().tickLight(charName);
           if (event) {
             appendBookmark({
               time: new Date().toISOString(),
