@@ -62,6 +62,8 @@ import { readRelationshipState, defaultRelationshipState } from '../relationship
 import { updateActiveContext, appendBookmark, ensureBankStructure, readUserProfile, readRecentBookmarks, readStructuredMemoryFile } from '../memory/bank.js';
 import { deserializeMemory } from '../memory/structured-memory.js';
 import { reindexBookmarks, search as searchMemory } from '../memory/vector.js';
+import { rerankByLLM } from '../memory/rerank.js';
+import { getRelationContext } from '../memory/entity-graph.js';
 import { compressIfNeeded } from '../memory/compression.js';
 import { loadTranscriptWindow } from '../memory/transcript.js';
 import { getLorebookContext, commitLorebookState } from '../memory/lorebook.js';
@@ -363,6 +365,14 @@ function registerPromptSections(
     priority: 'medium',
   });
 
+  // L6b: Entity relations (temporal knowledge graph) — current-state facts
+  engine.register('relations', {
+    type: 'relations',
+    content: () => getRelationContext(),
+    priority: 'medium',
+    condition: () => getRelationContext().trim().length > 0,
+  });
+
   // L7: Time context — high priority
   engine.register('time', {
     type: 'time',
@@ -574,9 +584,11 @@ function buildMemorySection(ctx: PromptCtx): string {
 async function prefetchSemanticMemories(input: TurnInput, promptCtx: PromptCtx): Promise<void> {
   if (!input.text || input.text.trim().length === 0) return;
   try {
-    const hits = await searchMemory(input.text, 5);
+    const hits = await searchMemory(input.text, 10);
     if (hits.length > 0) {
-      promptCtx.semanticMemories = hits.map((h) => ({
+      // U6: LLM-rerank the wider candidate set, then keep the best 5.
+      const reranked = await rerankByLLM(input.text, hits, 5, (h) => h.text);
+      promptCtx.semanticMemories = reranked.map((h) => ({
         text: h.text,
         timestamp: h.timestamp,
         score: h.score,
