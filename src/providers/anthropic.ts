@@ -9,6 +9,7 @@ import type {
   ContentBlock,
 } from '../types.js';
 import { TextDecoder } from 'node:util';
+import { fetchWithRetry } from './http.js';
 
 // ─── Anthropic API types ───
 
@@ -381,7 +382,7 @@ export class AnthropicProvider implements StreamingProvider {
   ): Promise<{ text: string; toolCalls?: ToolCall[] }> {
     const body = this.buildBody(messages, systemPrompt, tools, opts, false);
 
-    const res = await fetch(this.baseUrl, {
+    const res = await fetchWithRetry(this.baseUrl, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify(body),
@@ -408,7 +409,7 @@ export class AnthropicProvider implements StreamingProvider {
   ): Promise<{ text: string; toolCalls?: ToolCall[] }> {
     const body = this.buildBody(messages, systemPrompt, tools, opts, true);
 
-    const res = await fetch(this.baseUrl, {
+    const res = await fetchWithRetry(this.baseUrl, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify(body),
