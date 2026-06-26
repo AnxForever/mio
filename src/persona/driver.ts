@@ -17,12 +17,12 @@
  * Feature-gated by config.features.personalityDriver (default: true).
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
 import { getConfig, getDataDir } from '../config.js';
 import type { PADState } from '../emotion/pad.js';
 import type { ResponseSignals } from '../emotion/signals.js';
 import type { MultiAxisState } from '../types.js';
+import { writeFileSyncSafe } from '../memory/bank.js';
 
 // ─── Types ───
 
@@ -136,8 +136,7 @@ export function getPersonalityState(): PersonalityState {
 
 function writePersonalityState(state: PersonalityState): void {
   const path = personalityStatePath();
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(state, null, 2), 'utf-8');
+  writeFileSyncSafe(path, JSON.stringify(state, null, 2));
 }
 
 // ─── Core update logic ───

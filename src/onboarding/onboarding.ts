@@ -16,16 +16,17 @@
  *   - loadOnboardingState/saveOnboardingState: persistence helpers
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { PROVIDER_PRESETS } from '../config.js';
 import { runTurn } from '../core/agent-loop.js';
 import { modManager } from '../mod/mod-manager.js';
 import { selectProvider, getProviderInfo } from '../providers/index.js';
 import { updateConfig, getDataDir } from '../config.js';
 import type { Gender, ProviderPreset } from '../types.js';
+import { writeFileSyncSafe } from '../memory/bank.js';
 
 // ─── Types ───
 
@@ -115,14 +116,13 @@ export function loadOnboardingState(): OnboardingState | null {
 
 export function saveOnboardingState(state: OnboardingState): void {
   const path = onboardingPath();
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(state, null, 2), 'utf-8');
+  writeFileSyncSafe(path, JSON.stringify(state, null, 2));
 }
 
 export function clearOnboardingState(): void {
   const path = onboardingPath();
   if (existsSync(path)) {
-    writeFileSync(path, JSON.stringify({ done: true, currentStep: 0 }, null, 2), 'utf-8');
+    writeFileSyncSafe(path, JSON.stringify({ done: true, currentStep: 0 }, null, 2));
   }
 }
 

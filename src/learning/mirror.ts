@@ -15,9 +15,9 @@
  *   - Persisted to data/mirror-profile.json
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
 import { getDataDir } from '../config.js';
+import { writeFileSyncSafe } from '../memory/bank.js';
 
 // ─── Types ───
 
@@ -69,8 +69,7 @@ function readProfile(): MirrorProfile {
 
 function writeProfile(profile: MirrorProfile): void {
   const p = profilePath();
-  mkdirSync(dirname(p), { recursive: true });
-  writeFileSync(p, JSON.stringify(profile, null, 2), 'utf-8');
+  writeFileSyncSafe(p, JSON.stringify(profile, null, 2));
 }
 
 // ─── Analysis ───

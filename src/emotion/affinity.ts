@@ -10,12 +10,12 @@
  * Persisted at `data/affinity-state.json`.
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
 import type { AffinityState } from '../types.js';
 import { clamp } from '../utils/math.js';
 import type { IntentLabel } from './classifier.js';
 import { affinityStatePath } from '../memory/paths.js';
+import { writeFileSyncSafe } from '../memory/bank.js';
 
 // ─── Constants ───
 
@@ -85,8 +85,7 @@ export function readAffinityState(): AffinityState {
 
 export function writeAffinityState(state: AffinityState): void {
   const path = affinityStatePath();
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(state, null, 2), 'utf-8');
+  writeFileSyncSafe(path, JSON.stringify(state, null, 2));
 }
 
 // ─── Core logic ───

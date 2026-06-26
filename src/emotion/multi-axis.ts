@@ -14,13 +14,13 @@
  * Persisted at `data/multi-axis-state.json`.
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
 import type { MultiAxisState, AttachmentStyle } from '../types.js';
 import { clamp } from '../utils/math.js';
 import type { IntentLabel } from './classifier.js';
 import type { ResponseSignals } from './signals.js';
 import { multiAxisPath } from '../memory/paths.js';
+import { writeFileSyncSafe } from '../memory/bank.js';
 import { getRecentSignalHistory } from './signals.js';
 import { getConfig } from '../config.js';
 
@@ -68,8 +68,7 @@ export function getMultiAxis(): MultiAxisState {
 
 function writeMultiAxis(state: MultiAxisState): void {
   const path = multiAxisPath();
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(state, null, 2), 'utf-8');
+  writeFileSyncSafe(path, JSON.stringify(state, null, 2));
 }
 
 // ─── Intent → closeness / trust deltas ───

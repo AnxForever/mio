@@ -26,11 +26,11 @@
  * next reindexBookmarks() call.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { getDataDir } from '../config.js';
 import { bankFilePath } from './paths.js';
-import { readFileSyncSafe } from './bank.js';
+import { readFileSyncSafe, writeFileSyncSafe } from './bank.js';
 import {
   getEmbeddingProvider,
   type AnyVector,
@@ -244,11 +244,10 @@ async function addEntryWithProviderAsync(
 
 function writeEntry(entry: VectorIndexEntry): void {
   const path = indexPath();
-  mkdirSync(dirname(path), { recursive: true });
   const existing = readRawIndex();
   const filtered = existing.filter((e) => e.id !== entry.id);
   filtered.push(entry);
-  writeFileSync(path, filtered.map((e) => JSON.stringify(e)).join('\n') + '\n', 'utf-8');
+  writeFileSyncSafe(path, filtered.map((e) => JSON.stringify(e)).join('\n') + '\n');
 }
 
 /**
@@ -389,8 +388,7 @@ export async function reindexBookmarks(): Promise<number> {
   }
 
   const path = indexPath();
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, raw.map((e) => JSON.stringify(e)).join('\n') + '\n', 'utf-8');
+  writeFileSyncSafe(path, raw.map((e) => JSON.stringify(e)).join('\n') + '\n');
   return raw.length;
 }
 

@@ -17,10 +17,11 @@
  * All PAD values are clamped to [-1, 1] range at every write.
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { padStatePath } from '../memory/paths.js';
 import { clamp } from '../utils/math.js';
+import { writeFileSyncSafe } from '../memory/bank.js';
 
 // ─── Types ───
 
@@ -150,8 +151,7 @@ export function writePADConfig(patch: Partial<PADConfig>): PADConfig {
   };
   cachedConfig = next;
   const path = padConfigPath();
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(next, null, 2), 'utf-8');
+  writeFileSyncSafe(path, JSON.stringify(next, null, 2));
   return next;
 }
 
@@ -184,8 +184,7 @@ export function getPADState(): PADState {
  */
 export function writePADState(state: PADState): void {
   const path = padStatePath();
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(state, null, 2), 'utf-8');
+  writeFileSyncSafe(path, JSON.stringify(state, null, 2));
 }
 
 /**

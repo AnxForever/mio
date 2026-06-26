@@ -9,10 +9,10 @@
  * - 注意:env var 永远是最高优先级(进程级显式意图,不应该被磁盘覆盖)
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 import type { Gender, ProviderPreset, ProviderPresetConfig, ProviderResolution } from './types.js';
 import { logger } from './utils/logger.js';
+import { writeFileSyncSafe } from './memory/bank.js';
 
 export type { Gender };
 
@@ -560,8 +560,7 @@ function configPath(): string {
 
 function persistConfig(config: MioConfig): void {
   const path = configPath();
-  mkdirSync(dirname(path), { recursive: true });
   // Strip secrets — API keys live in env vars, never on disk
   const safe = { ...config, apiKey: undefined, authToken: undefined };
-  writeFileSync(path, JSON.stringify(safe, null, 2), 'utf-8');
+  writeFileSyncSafe(path, JSON.stringify(safe, null, 2));
 }
