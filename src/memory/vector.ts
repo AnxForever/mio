@@ -340,56 +340,106 @@ export async function search(
 
 // ─── Bookmarks reindexer ───
 
-/**
- * Re-index BOOKMARKS.md using the active embedding provider.
- *
- * Strategy:
- *   - Drop existing 'bookmark' entries.
- *   - For each line, embed the text via the active provider.
- *   - Write all entries back.
- *
- * For MiniMax, this means one API call per N texts (batched). The
- * bookmark count is small (a few dozen per day at most), so even
- * per-line calls would be cheap.
- */
-export async function reindexBookmarks(): Promise<number> {
-  const bookmarks = readFileSyncSafe(bankFilePath('BOOKMARKS.md'));
-  if (!bookmarks) return 0;
+/** Parsed bookmark line: a timestamp and its free-text body. */
+interface ParsedBookmark {
+  timestamp: string;
+  text: string;
+}
 
-  const lines = bookmarks.split('\n').filter((l) => l.trim().startsWith('- '));
-  const parsed: { timestamp: string; text: string }[] = [];
+/**
+ * Stable index id for a parsed bookmark. The format must stay byte-identical
+ * to the one written below so incremental reindexing can dedup against the
+ * existing index.
+ */
+function bookmarkId(b: ParsedBookmark): string {
+  return `bookmark:${b.timestamp}:${(b.text || '').slice(0, 30).replace(/\s+/g, '-')}`;
+}
+
+/** Parse the `- <time=…> …` lines of BOOKMARKS.md into structured records. */
+function parseBookmarkLines(content: string): ParsedBookmark[] {
+  const lines = content.split('\n').filter((l) => l.trim().startsWith('- '));
+  const parsed: ParsedBookmark[] = [];
   for (const line of lines) {
     const m = line.match(/^-\s+<time=([^>]+)>\s+(.*)$/);
     if (!m) continue;
     parsed.push({ timestamp: m[1], text: m[2] });
   }
-  if (parsed.length === 0) return 0;
+  return parsed;
+}
 
-  // Keep non-bookmark entries (e.g. 'manual', 'note') untouched.
-  const raw = readRawIndex().filter((e) => e.source !== 'bookmark');
-
-  const provider = getEmbeddingProvider();
-  // Batch embed. For TF, we use the sync tokenizer. For MiniMax, one
-  // API call with the full batch.
-  const texts = parsed.map((p) => p.text);
+/**
+ * Embed a batch of bookmarks into index entries via the given provider.
+ *
+ * For TF this uses the sync tokenizer under the hood; for MiniMax it is a
+ * single batched API call. Dense vectors are base64-encoded for storage.
+ */
+async function embedBookmarks(
+  bookmarks: ParsedBookmark[],
+  provider: EmbeddingProvider,
+): Promise<VectorIndexEntry[]> {
+  const texts = bookmarks.map((b) => b.text);
   const vectors = await provider.embed(texts);
-
-  for (let i = 0; i < parsed.length; i++) {
+  return bookmarks.map((b, i) => {
     const v = vectors[i];
     const embedding = v instanceof Float32Array ? encodeDense(v) : v;
-    raw.push({
-      id: `bookmark:${parsed[i].timestamp}:${(texts[i] || '').slice(0, 30).replace(/\s+/g, '-')}`,
-      text: parsed[i].text,
-      source: 'bookmark',
-      timestamp: parsed[i].timestamp,
+    return {
+      id: bookmarkId(b),
+      text: b.text,
+      source: 'bookmark' as const,
+      timestamp: b.timestamp,
       embeddingType: provider.type,
       embedding,
-    });
+    };
+  });
+}
+
+/**
+ * Re-index BOOKMARKS.md using the active embedding provider.
+ *
+ * Incremental by default: this is triggered on every BOOKMARKS.md mtime change
+ * (see agent-loop's maybeReindexBookmarks, ~every turn), so re-embedding the
+ * full history each call would make embedding cost grow linearly with the
+ * conversation. Instead we only embed bookmark lines whose id is not already
+ * in the index, and append them — existing entries are preserved untouched.
+ *
+ * Full-rebuild fallback: when the active provider's `type` no longer matches
+ * the `embeddingType` stored on the existing bookmark entries (the user
+ * switched providers, e.g. tf → minimax), the stored vectors are a different,
+ * incomparable format. In that case every bookmark is dropped and re-embedded
+ * under the new provider.
+ *
+ * Returns the total number of entries in the index after the operation.
+ */
+export async function reindexBookmarks(): Promise<number> {
+  const bookmarks = readFileSyncSafe(bankFilePath('BOOKMARKS.md'));
+  if (!bookmarks) return 0;
+
+  const parsed = parseBookmarkLines(bookmarks);
+  if (parsed.length === 0) return 0;
+
+  const provider = getEmbeddingProvider();
+  const raw = readRawIndex();
+  const existingBookmarks = raw.filter((e) => e.source === 'bookmark');
+
+  // Provider switch → existing vectors are a different format → full rebuild.
+  const providerSwitched = existingBookmarks.some((e) => e.embeddingType !== provider.type);
+  if (providerSwitched) {
+    const kept = raw.filter((e) => e.source !== 'bookmark');
+    const entries = await embedBookmarks(parsed, provider);
+    const all = [...kept, ...entries];
+    writeFileSyncSafe(indexPath(), all.map((e) => JSON.stringify(e)).join('\n') + '\n');
+    return all.length;
   }
 
-  const path = indexPath();
-  writeFileSyncSafe(path, raw.map((e) => JSON.stringify(e)).join('\n') + '\n');
-  return raw.length;
+  // Incremental: embed only bookmark lines not already in the index.
+  const existingIds = new Set(existingBookmarks.map((e) => e.id));
+  const fresh = parsed.filter((b) => !existingIds.has(bookmarkId(b)));
+  if (fresh.length === 0) return raw.length;
+
+  const entries = await embedBookmarks(fresh, provider);
+  const all = [...raw, ...entries];
+  writeFileSyncSafe(indexPath(), all.map((e) => JSON.stringify(e)).join('\n') + '\n');
+  return all.length;
 }
 
 // ─── Stats ───
