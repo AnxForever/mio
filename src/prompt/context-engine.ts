@@ -122,8 +122,11 @@ export class ContextEngine {
   /**
    * Resolve the content of a section (evaluate lazy factories).
    */
-  private resolve(section: ContextSection): string {
-    const key = section.type;
+  private resolve(type: string, section: ContextSection): string {
+    // Cache under the registration name (Map key), matching every read site
+    // (assemble, getBudget, unregister). The section's own `type` field may
+    // differ from its registration name and must not be used as the cache key.
+    const key = type;
     // Cache resolved content for this assemble cycle
     if (this.resolvedContent.has(key)) {
       return this.resolvedContent.get(key) ?? '';
@@ -150,14 +153,68 @@ export class ContextEngine {
   }
 
   /**
+   * Truncate `content` so its estimated token count is at most `targetTokens`.
+   *
+   * Used only on the hard-cap degradation path (when mandatory critical+high
+   * sections would otherwise blow past the budget). A short marker is appended
+   * so the model can tell the section was cut. The marker's own tokens are
+   * counted against the budget, and a final tightening loop guarantees the
+   * returned string never exceeds `targetTokens`.
+   *
+   * @param content      The full section content.
+   * @param targetTokens The maximum number of tokens the result may use.
+   * @returns            A prefix of `content` (optionally + marker) within budget.
+   */
+  private truncateToTokens(content: string, targetTokens: number): string {
+    if (targetTokens <= 0) return '';
+    const fullTokens = estimateTokens(content);
+    if (fullTokens <= targetTokens) return content;
+
+    const marker = '\n…[truncated]';
+    const markerTokens = estimateTokens(marker);
+    const useMarker = targetTokens > markerTokens + 1;
+    const contentTarget = useMarker ? targetTokens - markerTokens : targetTokens;
+
+    // Initial guess via the (roughly linear) chars-per-token ratio of this text.
+    const charsPerToken = content.length / Math.max(1, fullTokens);
+    let cut = Math.max(0, Math.min(content.length, Math.floor(contentTarget * charsPerToken)));
+    let sliced = content.slice(0, cut);
+
+    // Tighten until the body fits (the estimator is heuristic, so verify).
+    while (sliced.length > 0 && estimateTokens(sliced) > contentTarget) {
+      const step = Math.max(1, Math.floor(sliced.length * 0.1));
+      sliced = sliced.slice(0, sliced.length - step);
+    }
+
+    const result = useMarker ? sliced + marker : sliced;
+    if (estimateTokens(result) <= targetTokens) return result;
+
+    // Safety net: drop the marker and re-trim to guarantee the hard cap.
+    let safe = sliced;
+    while (safe.length > 0 && estimateTokens(safe) > targetTokens) {
+      const step = Math.max(1, Math.floor(safe.length * 0.1));
+      safe = safe.slice(0, safe.length - step);
+    }
+    return safe;
+  }
+
+  /**
    * Assemble the system prompt by priority, respecting the token budget.
    *
    * Process:
    *  1. Evaluate conditions for all sections; skip those that fail.
    *  2. Sort by priority (critical first).
    *  3. Include sections in priority order, tracking accumulated tokens.
-   *  4. If budget is exceeded, trim low-priority sections first, then medium.
-   *  5. Sections within the same priority band are included in registration order.
+   *  4. If medium/low overflow the budget, trim them (low/medium are best-effort).
+   *  5. Hard cap: if the mandatory critical+high sections alone exceed the budget,
+   *     gracefully degrade — keep critical (core identity) whole, then fit high
+   *     within the remaining budget by truncating the largest high section(s)
+   *     first (typically soul/persona). The assembled output never exceeds the
+   *     budget unless critical alone does (identity is non-negotiable).
+   *  6. Sections within the same priority band are included in registration order.
+   *
+   * When the mandatory sections fit the budget (the common case), the assembled
+   * output is byte-for-byte identical to the pre-hard-cap behavior.
    *
    * @param maxTokens Maximum allowed token count (default: 6000).
    * @returns The assembled prompt string, with sections joined by double newlines.
@@ -174,7 +231,7 @@ export class ContextEngine {
       if (section.condition && !section.condition()) continue;
 
       // Resolve content (lazy eval on first access)
-      const content = this.resolve(section);
+      const content = this.resolve(type, section);
       if (content.length === 0) continue;
 
       const tokens = this.resolvedTokens.get(type) ?? 0;
@@ -192,29 +249,110 @@ export class ContextEngine {
     let totalTokens = 0;
     const included = new Set<string>();
 
-    // First pass: include critical and high, then medium and low if budget allows
-    for (const entry of eligible) {
-      if (entry.rank <= 1) {
-        // critical (0) or high (1) — always include
-        parts.push(entry.content);
-        totalTokens += entry.tokens;
-        included.add(entry.type);
-      } else if (entry.rank === 2) {
-        // medium (2) — include if budget allows
-        if (totalTokens + entry.tokens <= maxTokens) {
+    // Mandatory band = critical (0) + high (1). These were previously included
+    // unconditionally; the hard cap only engages when they alone overflow.
+    const mandatoryTokens = eligible
+      .filter((e) => e.rank <= 1)
+      .reduce((sum, e) => sum + e.tokens, 0);
+
+    if (mandatoryTokens <= maxTokens) {
+      // ── Common path: mandatory sections fit. Behavior unchanged. ──
+      // Include critical and high in full, then medium and low if budget allows.
+      for (const entry of eligible) {
+        if (entry.rank <= 1) {
+          // critical (0) or high (1) — always include
           parts.push(entry.content);
           totalTokens += entry.tokens;
           included.add(entry.type);
+        } else if (entry.rank === 2) {
+          // medium (2) — include if budget allows
+          if (totalTokens + entry.tokens <= maxTokens) {
+            parts.push(entry.content);
+            totalTokens += entry.tokens;
+            included.add(entry.type);
+          } else {
+            this.trimmedSections.push(entry.type);
+          }
         } else {
-          this.trimmedSections.push(entry.type);
+          // low (3) — include only if there's ample room
+          if (totalTokens + entry.tokens <= maxTokens) {
+            parts.push(entry.content);
+            totalTokens += entry.tokens;
+            included.add(entry.type);
+          } else {
+            this.trimmedSections.push(entry.type);
+          }
         }
-      } else {
-        // low (3) — include only if there's ample room
-        if (totalTokens + entry.tokens <= maxTokens) {
+      }
+    } else {
+      // ── Hard cap: mandatory critical+high overflow the budget. Degrade. ──
+      // Keep all critical (core identity) whole. Distribute the remaining budget
+      // across high sections, shaving the largest first (typically soul/persona).
+      // Medium/low get no budget here — identical to the old path, where a full
+      // mandatory band already pushed totalTokens past maxTokens.
+      const criticalTokens = eligible
+        .filter((e) => e.rank === 0)
+        .reduce((sum, e) => sum + e.tokens, 0);
+      const highBudget = Math.max(0, maxTokens - criticalTokens);
+
+      // Allocate a token budget per high section, starting from its real size.
+      const highEntries = eligible.filter((e) => e.rank === 1);
+      const allocation = new Map<string, number>();
+      for (const e of highEntries) allocation.set(e.type, e.tokens);
+
+      // Remove the overflow by repeatedly shaving the largest allocation.
+      const sumHigh = highEntries.reduce((sum, e) => sum + e.tokens, 0);
+      let overflow = sumHigh - highBudget;
+      while (overflow > 0) {
+        let largestType: string | null = null;
+        let largestTokens = 0;
+        for (const [t, tok] of allocation) {
+          if (tok > largestTokens) {
+            largestTokens = tok;
+            largestType = t;
+          }
+        }
+        if (largestType === null || largestTokens <= 0) break;
+        const reduce = Math.min(largestTokens, overflow);
+        allocation.set(largestType, largestTokens - reduce);
+        overflow -= reduce;
+      }
+
+      // Emit in sorted (priority then registration) order.
+      for (const entry of eligible) {
+        if (entry.rank === 0) {
+          // critical — always retained in full
           parts.push(entry.content);
           totalTokens += entry.tokens;
           included.add(entry.type);
+        } else if (entry.rank === 1) {
+          const target = allocation.get(entry.type) ?? 0;
+          if (target >= entry.tokens) {
+            // untouched by the shave — keep whole
+            parts.push(entry.content);
+            totalTokens += entry.tokens;
+            included.add(entry.type);
+          } else if (target <= 0) {
+            // fully shaved away — drop, and reflect in the budget report
+            this.trimmedSections.push(entry.type);
+            this.resolvedContent.set(entry.type, '');
+            this.resolvedTokens.set(entry.type, 0);
+          } else {
+            // partially shaved — truncate content to the allocated budget
+            const truncated = this.truncateToTokens(entry.content, target);
+            const truncatedTokens = estimateTokens(truncated);
+            this.resolvedContent.set(entry.type, truncated);
+            this.resolvedTokens.set(entry.type, truncatedTokens);
+            if (truncated.length > 0) {
+              parts.push(truncated);
+              totalTokens += truncatedTokens;
+              included.add(entry.type);
+            } else {
+              this.trimmedSections.push(entry.type);
+            }
+          }
         } else {
+          // medium/low — no budget left under the hard cap
           this.trimmedSections.push(entry.type);
         }
       }
