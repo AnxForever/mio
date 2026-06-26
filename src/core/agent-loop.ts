@@ -61,7 +61,7 @@ import { readEmotionState, defaultEmotionState } from '../emotion/state.js';
 import { readRelationshipState, defaultRelationshipState } from '../relationship/progression.js';
 import { updateActiveContext, appendBookmark, ensureBankStructure, readUserProfile, readRecentBookmarks, readStructuredMemoryFile } from '../memory/bank.js';
 import { deserializeMemory } from '../memory/structured-memory.js';
-import { reindexBookmarks } from '../memory/vector.js';
+import { reindexBookmarks, search as searchMemory } from '../memory/vector.js';
 import { compressIfNeeded } from '../memory/compression.js';
 import { loadTranscriptWindow } from '../memory/transcript.js';
 import { getLorebookContext, commitLorebookState } from '../memory/lorebook.js';
@@ -314,15 +314,14 @@ function registerPromptSections(
     priority: 'high',
   });
 
-  // L5: Memory context (bookmarks) — medium priority, may be trimmed
+  // L5: Memory context — medium priority, may be trimmed.
+  // Semantically-relevant memories (prefetched onto ctx for this input) plus a
+  // short recency anchor. See buildMemorySection / prefetchSemanticMemories.
   engine.register('memory', {
     type: 'memory',
-    content: () => buildMemoryContext(readRecentBookmarks(8)) ?? '',
+    content: () => buildMemorySection(ctx),
     priority: 'medium',
-    condition: () => {
-      const memCtx = buildMemoryContext(readRecentBookmarks(8));
-      return memCtx !== null;
-    },
+    condition: () => buildMemorySection(ctx).length > 0,
   });
 
   // L5b: Structured memory — medium priority, best-effort
@@ -525,6 +524,67 @@ function registerPromptSections(
     priority: 'high',
     condition: () => recovery !== 'none',
   });
+}
+
+/**
+ * Build the memory prompt section.
+ *
+ * Combines two sources, in order:
+ *   1. Semantically-relevant memories prefetched for *this* input via
+ *      vector.search() (hydrated onto ctx in runTurn before prompt assembly —
+ *      see prefetchSemanticMemories).
+ *   2. The 3 most-recent bookmarks, as a chronological recency anchor.
+ *
+ * Kept fully synchronous so it can run inside a ContextEngine section factory;
+ * the async vector search happens earlier in the turn.
+ */
+function buildMemorySection(ctx: PromptCtx): string {
+  const parts: string[] = [];
+
+  const semantic = ctx.semanticMemories ?? [];
+  if (semantic.length > 0) {
+    const lines = ['## 相关记忆'];
+    for (const m of semantic) {
+      const ts = m.timestamp ? `${m.timestamp.slice(0, 16)} ` : '';
+      lines.push(`- ${ts}${m.text}`);
+    }
+    parts.push(lines.join('\n'));
+  }
+
+  const recent = buildMemoryContext(readRecentBookmarks(3));
+  if (recent) parts.push(recent);
+
+  return parts.join('\n\n');
+}
+
+/**
+ * Prefetch semantically-relevant memories for the current input and hydrate
+ * promptCtx.semanticMemories.
+ *
+ * Why here and not in the prompt section: vector.search() is async, but the
+ * memory prompt section is a synchronous ContextEngine factory and can't await.
+ * So we run the search in runTurn — before prompt assembly — and stash the
+ * results on ctx for the section to consume synchronously.
+ *
+ * Uses vector.search() (dense/sparse cosine) rather than hybridSearch, which
+ * has a TF-fallback path that pollutes dense-mode results.
+ *
+ * Best-effort: a search failure must never break the turn.
+ */
+async function prefetchSemanticMemories(input: TurnInput, promptCtx: PromptCtx): Promise<void> {
+  if (!input.text || input.text.trim().length === 0) return;
+  try {
+    const hits = await searchMemory(input.text, 5);
+    if (hits.length > 0) {
+      promptCtx.semanticMemories = hits.map((h) => ({
+        text: h.text,
+        timestamp: h.timestamp,
+        score: h.score,
+      }));
+    }
+  } catch (err) {
+    logger.error('semantic memory prefetch failed', { error: String(err) });
+  }
 }
 
 
@@ -1320,6 +1380,10 @@ export async function runTurn(
   markReplied();
 
   applyPrePromptPersonalityDriver(input, sessionCtx);
+
+  // Prefetch semantically-relevant memories for this input (async vector
+  // search) so the synchronous memory prompt section can consume them.
+  await prefetchSemanticMemories(input, promptCtx);
 
   // 4. Build system prompt (after crisis screen so we can inject safety block)
   const budget = config.features.promptBudgetLog ? new PromptBudget() : undefined;

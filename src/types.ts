@@ -324,6 +324,20 @@ export interface WorkItem {
 
 export type PromptFragment = (ctx: PromptCtx) => string | null;
 
+/**
+ * A memory retrieved by semantic vector search for the current turn's input.
+ * Prefetched in the agent loop (async) and stashed on PromptCtx so the
+ * synchronous prompt-assembly sections can consume it.
+ */
+export interface SemanticMemory {
+  /** The stored bookmark/memory text. */
+  text: string;
+  /** Original timestamp string of the memory. */
+  timestamp: string;
+  /** Similarity score against the current input (higher = more relevant). */
+  score: number;
+}
+
 export interface PromptCtx {
   sessionId: string;
   model: string;
@@ -339,4 +353,10 @@ export interface PromptCtx {
   allowColaLinkSend: boolean;
   globalMemory?: string;
   initialTask?: string;
+  /**
+   * Semantically-relevant memories prefetched for this turn's input via
+   * vector.search(). Populated before prompt assembly; consumed by the
+   * memory prompt section. Absent when there is no input or no match.
+   */
+  semanticMemories?: SemanticMemory[];
 }
