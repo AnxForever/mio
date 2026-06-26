@@ -9,7 +9,7 @@ npm run build       # tsc → dist/
 npm run typecheck   # tsc --noEmit
 npm run dev         # tsx src/index.ts (REPL)
 npm start           # node dist/index.js
-npm test            # build + tsx 54 unit + 42 emotion + 12 smoke (108 tests)
+npm test            # build + 51 unit + 41 emotion + 12 smoke (104 tests)
 npm run test:e2e    # Playwright E2E tests (needs npx playwright install)
 ```
 

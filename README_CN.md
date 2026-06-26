@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/版本-0.6.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2022-brightgreen" alt="Node">
   <img src="https://img.shields.io/badge/协议-MIT-green" alt="License">
-  <img src="https://img.shields.io/badge/测试-108-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/测试-104-brightgreen" alt="Tests">
 </p>
 
 <p align="center">

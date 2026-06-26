@@ -40,6 +40,21 @@ jobs:
       - run: npm run build
       - run: node --experimental-strip-types tests/unit.ts
 
+  # ─── Emotion tests ───
+  emotion:
+    name: Emotion Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node --experimental-strip-types tests/unit-emotion.ts
+
   # ─── Smoke tests (HTTP + WS server) ───
   smoke:
     name: Smoke Tests
@@ -68,7 +83,7 @@ jobs:
   # ─── All green gate ───
   all:
     name: All Checks Passed
-    needs: [typecheck, unit, smoke, docker]
+    needs: [typecheck, unit, emotion, smoke, docker]
     runs-on: ubuntu-latest
     steps:
       - run: echo "✅ All checks passed"
