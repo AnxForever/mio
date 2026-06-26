@@ -25,14 +25,18 @@ import { memoryStreamPath } from './paths.js';
 import { logger } from '../utils/logger.js';
 
 // ─── Retrieval weights ───
+//
+// From the Smallville paper (retrieve.py):
+//   score = recency_w * recency_normalized * 0.5
+//         + relevance_w * relevance_normalized * 3
+//         + importance_w * importance_normalized * 2
+//
+// gw = [0.5, 3, 2] — internal weights from the original code.
+// Relevance dominates (3x), importance next (2x), recency lowest (0.5x).
+// Each component is min-max normalized to [0,1] before weighting.
 
-const RETRIEVAL_WEIGHTS = {
-  recency: 0.4,
-  importance: 0.3,
-  relevance: 0.3,
-};
-
-const RECENCY_DECAY_PER_HOUR = 0.01; // 1% score decay per hour
+const GW = { recency: 0.5, relevance: 3, importance: 2 };
+const RECENCY_DECAY = 0.99; // Per-index-position decay (not per-hour)
 
 // ─── TF-IDF helpers ───
 
@@ -188,6 +192,27 @@ export function readRecentEvents(characterName: string, count = 50): MemoryStrea
  * @param query          Current context (e.g. user message)
  * @param limit          Max results to return
  */
+/**
+ * Min-max normalize a map of {key: number} to [0, 1].
+ * From the Smallville paper: normalize_dict_floats() in retrieve.py.
+ */
+function normalizeMap(map: Map<string, number>): Map<string, number> {
+  const vals = [...map.values()];
+  if (vals.length === 0) return map;
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const range = max - min;
+  if (range === 0) {
+    // All values equal — set to midpoint
+    for (const k of map.keys()) map.set(k, 0.5);
+    return map;
+  }
+  for (const [k, v] of map) {
+    map.set(k, (v - min) / range);
+  }
+  return map;
+}
+
 export function retrieveRelevantMemories(
   characterName: string,
   query: string,
@@ -196,31 +221,54 @@ export function retrieveRelevantMemories(
   const events = readEvents(characterName);
   if (events.length === 0) return [];
 
-  const now = Date.now();
+  // Build raw scores as maps (keyed by event index string)
+  const recencyRaw = new Map<string, number>();
+  const importanceRaw = new Map<string, number>();
+  const relevanceRaw = new Map<string, number>();
+
+  // Chronological order (oldest first) for recency index-based decay
+  const sorted = [...events].sort(
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+  );
+
   const queryTokens = tfVector(tokenize(query));
 
-  const scored: MemoryRetrievalResult[] = events.map(entry => {
-    // Recency: exponential decay by age
-    const ageHours = (now - new Date(entry.timestamp).getTime()) / (1000 * 60 * 60);
-    const recency = Math.exp(-RECENCY_DECAY_PER_HOUR * ageHours);
+  sorted.forEach((entry, idx) => {
+    const key = entry.id;
 
-    // Importance: direct score
-    const importance = entry.importance;
+    // Recency: exponential decay on REVERSE index position
+    // (newest = highest index = lowest decay exponent)
+    const reverseIdx = sorted.length - 1 - idx;
+    recencyRaw.set(key, Math.pow(RECENCY_DECAY, reverseIdx));
+
+    // Importance: from the stored poignancy/importance score
+    importanceRaw.set(key, entry.importance);
 
     // Relevance: TF cosine similarity
     const entryTokens = tfVector(tokenize(entry.description));
     const relevance = cosineSimilarity(queryTokens, entryTokens);
+    relevanceRaw.set(key, relevance);
+  });
 
-    // Combined score
-    const score =
-      RETRIEVAL_WEIGHTS.recency * recency +
-      RETRIEVAL_WEIGHTS.importance * importance +
-      RETRIEVAL_WEIGHTS.relevance * relevance;
+  // Min-max normalize each dimension to [0, 1]
+  const recencyNorm = normalizeMap(recencyRaw);
+  const importanceNorm = normalizeMap(importanceRaw);
+  const relevanceNorm = normalizeMap(relevanceRaw);
+
+  // Combined score: Smallville formula
+  // score = recency * 0.5 + relevance * 3 + importance * 2
+  const scored: MemoryRetrievalResult[] = events.map(entry => {
+    const key = entry.id;
+    const rec = recencyNorm.get(key) ?? 0;
+    const rel = relevanceNorm.get(key) ?? 0;
+    const imp = importanceNorm.get(key) ?? 0;
+
+    const score = rec * GW.recency + rel * GW.relevance + imp * GW.importance;
 
     return {
       entry,
       score,
-      dimensions: { recency, importance, relevance },
+      dimensions: { recency: rec, importance: imp, relevance: rel },
     };
   });
 
