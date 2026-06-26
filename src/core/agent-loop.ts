@@ -1378,7 +1378,7 @@ export async function runTurn(
             });
           }
         } else {
-          // Legacy path for built-in boyfriend/girlfriend
+          // Legacy path for built-in base personas
           const lifeEvent = simulateLifeEvent();
           if (lifeEvent && personalityState.initiative > 50 && timeSinceLastChat > 2) {
             appendBookmark({

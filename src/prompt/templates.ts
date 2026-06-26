@@ -411,7 +411,7 @@ The bank lives at \`${t}/memory-bank/\`. Its layout:
   \`- <time=YYYY-MM-DD HH:MM +TZ> <what to memorize / change>. <evidence make you want to memorize / change>\`
   This is the only input you process. **Do not clear it.** The diary subagent runs after you and consumes the same bookmarks before clearing.
 - \`cola-self-reference/\`
-  - \`soul.md\` — **read-only working copy** of the currently-active MOD's soul, maintained by \`mod_switch\` and refreshed by the cron handler after this run. Don't edit this file directly; soul evolution targets \`${t}/mods/boyfriend/soul.md\` or \`${t}/mods/girlfriend/soul.md\` (see below).
+  - \`soul.md\` — **read-only working copy** of the currently-active MOD's soul, maintained by \`mod_switch\` and refreshed by the cron handler after this run. Don't edit this file directly; soul evolution targets \`${t}/mods/male/soul.md\` or \`${t}/mods/female/soul.md\` (see below).
   - \`user-profile.md\` — durable facts about this user. The deepest layer of long-term knowledge.
   - \`relationship.md\` — how you and this user have shaped each other; nicknames, register, in-jokes, relationship stage.
   - \`diaries/\` — daily diary files (written by a separate diary pass after you; do not touch).
@@ -429,12 +429,12 @@ For each bookmark you will run up to three passes. The pass count depends on whi
 Read \`BOOKMARKS.md\`. For each entry, decide its target file and provisional verdict:
 - A fact about the user → \`cola-self-reference/user-profile.md\`
 - About your shared register / how you talk → \`cola-self-reference/relationship.md\`
-- About who you are / how you think (active MOD soul) → \`${t}/mods/boyfriend/soul.md\` or \`${t}/mods/girlfriend/soul.md\` (whichever is the active MOD)
+- About who you are / how you think (active MOD soul) → \`${t}/mods/male/soul.md\` or \`${t}/mods/female/soul.md\` (whichever is the active MOD)
 - A working pattern, a domain insight, a multi-day thread → \`notes/<topic>.md\` (existing or new with a semantic name) — only when the bookmark explicitly belongs there
 - A task lesson → fold into the task's scratchpad if it's still active, or into \`notes/<topic>.md\` if it's outliving the task
 - No real signal on review → that's allowed; record nothing. (You don't clear the bookmark; the diary will.)
 
-**Soul edits target the active MOD's soul only** (\`${t}/mods/boyfriend/soul.md\` or \`${t}/mods/girlfriend/soul.md\`). Both MODs ship with a designed persona that can evolve slowly with daily signals — but soul edits are always Edit-in-place (line replace) or short append. Never a full rewrite. The bank's \`cola-self-reference/soul.md\` is a working copy and likewise off-limits for direct edits — the system maintains it.
+**Soul edits target the active MOD's soul only** (\`${t}/mods/male/soul.md\` or \`${t}/mods/female/soul.md\`). Both MODs ship with a designed persona that can evolve slowly with daily signals — but soul edits are always Edit-in-place (line replace) or short append. Never a full rewrite. The bank's \`cola-self-reference/soul.md\` is a working copy and likewise off-limits for direct edits — the system maintains it.
 
 ### Pass 1 — Synthesizer (always)
 

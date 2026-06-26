@@ -28,7 +28,7 @@ import { existsSync, readFileSync } from 'node:fs';
 
 function pronoun(gender: string): string {
   const g = gender.toLowerCase();
-  if (g === 'female' || g === 'girlfriend' || g === '女') return '她';
+  if (g === 'female' || g === '女') return '她';
   return '他';
 }
 

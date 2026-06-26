@@ -5,7 +5,7 @@
  * Modes:
  *   mio                   Start an interactive REPL (read-eval-print loop).
  *   mio chat "<message>"  One-shot: send a single message and print the reply.
- *   mio mod <name>        Switch the active persona (boyfriend | girlfriend).
+ *   mio mod <name>        Switch the active persona (male | female).
  *   mio status            Print current config + emotion + relationship state.
  *   mio serve             Start the HTTP/WebSocket server (Phase 5).
  *   mio diary             Trigger the nightly consolidation pass manually.
@@ -47,7 +47,7 @@ const SLASH_COMMANDS: Record<string, string> = {
   '/quit': 'Exit the REPL (also /exit, Ctrl-D).',
   '/exit': 'Alias for /quit.',
   '/status': 'Print config + emotion + relationship state.',
-  '/mod': 'Switch persona. Usage: /mod boyfriend | girlfriend',
+  '/mod': 'Switch persona. Usage: /mod male | female',
   '/progress': 'Show relationship stage + thresholds to next stage.',
   '/diary': 'Run the diary-writing pass for today (no nightly consolidation).',
   '/nightly': 'Run the full nightly pipeline (snapshot + consolidate + diary).',
@@ -236,11 +236,11 @@ async function runChat(args: string[]): Promise<void> {
 async function handleModSwitch(name: string | undefined): Promise<void> {
   if (!name) {
     console.log(`Current mod: ${modManager().activeMod}`);
-    console.log('Usage: /mod boyfriend | girlfriend');
+    console.log('Usage: /mod male | female');
     return;
   }
-  if (name !== 'boyfriend' && name !== 'girlfriend') {
-    console.log(`Invalid mod: "${name}". Use 'boyfriend' or 'girlfriend'.`);
+  if (name !== 'male' && name !== 'female') {
+    console.log(`Invalid mod: "${name}". Use 'male' or 'female'.`);
     return;
   }
   try {
@@ -349,7 +349,7 @@ function printHelp(): void {
 Usage:
   mio                        Start interactive REPL
   mio chat "<message>"       One-shot message
-  mio mod <name>             Switch persona (boyfriend | girlfriend)
+  mio mod <name>             Switch persona (male | female)
   mio status                 Show config + state
   mio voice                  Show detected voice capabilities
   mio serve [--port N]       Start HTTP/WebSocket server

@@ -339,7 +339,7 @@ export interface MioConfig {
 }
 
 const DEFAULT_CONFIG: MioConfig = {
-  gender: 'girlfriend',
+  gender: 'female',
   name: 'Mio',
   provider: 'auto',
   model: '',

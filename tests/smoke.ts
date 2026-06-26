@@ -9,7 +9,7 @@
  * Coverage:
  *   1. /health
  *   2. /status (initial state)
- *   3. /mod (switch to boyfriend, back to girlfriend)
+ *   3. /mod (switch to male, back to female)
  *   4. /chat (non-streaming)
  *   5. /chat/stream (SSE — checks for at least one token event)
  *   6. Crisis detection on /chat
@@ -74,23 +74,23 @@ async function main(): Promise<void> {
       record('GET /status', r.status === 200 && j.config.name === 'Mio' && typeof j.emotion.affection === 'number');
     }
 
-    // ─── 3. /mod (boyfriend → girlfriend) ───
+    // ─── 3. /mod (male → female) ───
     {
       const r1 = await fetch(`${base}/mod`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'boyfriend' }),
+        body: JSON.stringify({ name: 'male' }),
       });
       const j1 = (await r1.json()) as { activeMod: string };
-      record('POST /mod boyfriend', r1.status === 200 && j1.activeMod === 'boyfriend', `→ ${j1.activeMod}`);
+      record('POST /mod male', r1.status === 200 && j1.activeMod === 'male', `→ ${j1.activeMod}`);
 
       const r2 = await fetch(`${base}/mod`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'girlfriend' }),
+        body: JSON.stringify({ name: 'female' }),
       });
       const j2 = (await r2.json()) as { activeMod: string };
-      record('POST /mod girlfriend', r2.status === 200 && j2.activeMod === 'girlfriend', `→ ${j2.activeMod}`);
+      record('POST /mod female', r2.status === 200 && j2.activeMod === 'female', `→ ${j2.activeMod}`);
 
       // Bad name
       const r3 = await fetch(`${base}/mod`, {
@@ -244,7 +244,7 @@ async function main(): Promise<void> {
           }
           // After emotion_changed, switch mod + ping
           if (emotionChangedReceived && !modSwitched) {
-            ws.send(JSON.stringify({ type: 'switch_mod', name: 'girlfriend' }));
+            ws.send(JSON.stringify({ type: 'switch_mod', name: 'female' }));
             setTimeout(() => ws.send(JSON.stringify({ type: 'ping' })), 100);
           }
           if (pongReceived) {

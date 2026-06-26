@@ -20,7 +20,7 @@ export type ChatBody = z.infer<typeof chatBody>;
 // ─── Mod switch ───
 
 export const modBody = z.object({
-  name: z.enum(['boyfriend', 'girlfriend']),
+  name: z.enum(['male', 'female']),
 });
 
 export type ModBody = z.infer<typeof modBody>;
@@ -28,7 +28,7 @@ export type ModBody = z.infer<typeof modBody>;
 // ─── Persona generation ───
 
 export const personaBody = z.object({
-  gender: z.enum(['boyfriend', 'girlfriend']).optional(),
+  gender: z.enum(['male', 'female']).optional(),
   userMessage: z.string().max(4000).optional(),
   context: z.string().max(2000).optional(),
 });

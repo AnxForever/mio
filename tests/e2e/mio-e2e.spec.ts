@@ -13,7 +13,7 @@
  *   2. Status page — GET /status returns config + emotion + provider info
  *   3. Chat flow — POST /chat with "hello" → response has text + sessionId
  *   4. SSE streaming — POST /chat/stream → SSE events with token + done
- *   5. Mod switching — POST /mod boyfriend → activeMod changes
+ *   5. Mod switching — POST /mod male → activeMod changes
  *   6. Crisis detection — POST /chat with crisis message → crisisFlagged: true
  *   7. WebSocket — connect to /ws → hello → chat → done events
  *   8. Avatar state — GET /avatar/state → valid structure
@@ -177,28 +177,28 @@ test('POST /chat/stream returns SSE events with token + done', async ({ request 
 // ─── Test 5: Mod switching ───
 
 test('POST /mod switches active persona', async ({ request }) => {
-  // Switch to boyfriend
+  // Switch to male
   const res1 = await request.post(`${BASE_URL()}/mod`, {
-    data: { name: 'boyfriend' },
+    data: { name: 'male' },
     headers: { 'Content-Type': 'application/json' },
   });
   expect(res1.status()).toBe(200);
   const body1 = await res1.json();
-  expect(body1).toHaveProperty('activeMod', 'boyfriend');
+  expect(body1).toHaveProperty('activeMod', 'male');
 
   // Verify via status
   const status1 = await request.get(`${BASE_URL()}/status`);
   const s1 = await status1.json();
-  expect(s1.config.activeMod).toBe('boyfriend');
+  expect(s1.config.activeMod).toBe('male');
 
-  // Switch back to girlfriend
+  // Switch back to female
   const res2 = await request.post(`${BASE_URL()}/mod`, {
-    data: { name: 'girlfriend' },
+    data: { name: 'female' },
     headers: { 'Content-Type': 'application/json' },
   });
   expect(res2.status()).toBe(200);
   const body2 = await res2.json();
-  expect(body2).toHaveProperty('activeMod', 'girlfriend');
+  expect(body2).toHaveProperty('activeMod', 'female');
 
   // Invalid name
   const res3 = await request.post(`${BASE_URL()}/mod`, {
@@ -266,9 +266,9 @@ test('WebSocket /ws hello + chat + done events', async () => {
     expect(done.text.length).toBeGreaterThan(0);
 
     // Test switch_mod via WS
-    sendWsMessage(ws, { type: 'switch_mod', name: 'girlfriend' });
+    sendWsMessage(ws, { type: 'switch_mod', name: 'female' });
     const modSwitched = await waitForWsMessage(ws, (msg) => msg.type === 'mod_switched');
-    expect(modSwitched).toHaveProperty('activeMod', 'girlfriend');
+    expect(modSwitched).toHaveProperty('activeMod', 'female');
 
     // Test ping/pong
     sendWsMessage(ws, { type: 'ping', t: Date.now() });

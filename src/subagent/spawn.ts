@@ -181,7 +181,7 @@ export async function spawnSubagent(
     sessionId,
     model: baseCtx?.model ?? 'claude-sonnet-4-20250514',
     apiKey: baseCtx?.apiKey,
-    gender: baseCtx?.gender ?? 'girlfriend',
+    gender: baseCtx?.gender ?? 'female',
     emotionState: baseCtx?.emotionState ?? defaultEmotionState(),
     relationshipState: baseCtx?.relationshipState ?? defaultRelationshipState(),
     activeMod,

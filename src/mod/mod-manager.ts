@@ -1,5 +1,5 @@
 // mod/mod-manager.ts — MOD 人格切换系统（适配自 cola-companion）
-// 关键变更：不扫描 mods/ 目录，显式支持 boyfriend 和 girlfriend 两个 MOD
+// 关键变更：不扫描 mods/ 目录，显式支持 male 和 female 两个基础性别人格
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -11,17 +11,17 @@ import type { ModDef, Gender } from '../types.js';
 const MOD_STATE_FILE = join(colaDir(), 'mods', '.active-mod');
 
 /** 合法 MOD 列表 */
-const VALID_MODS: Gender[] = ['boyfriend', 'girlfriend'];
+const VALID_MODS: Gender[] = ['male', 'female'];
 
 /**
  * ModManager — 人格 MOD 管理器
- * 显式支持 boyfriend / girlfriend 两个人格 MOD
+ * 显式支持 male / female 两种性别基础人格
  */
 export class ModManager {
   private activeModName: string;
 
   constructor() {
-    this.activeModName = this.loadPersistedMod() ?? 'girlfriend';
+    this.activeModName = this.loadPersistedMod() ?? 'female';
   }
 
   /** 当前激活的 MOD 名 */
@@ -29,7 +29,7 @@ export class ModManager {
     return this.activeModName;
   }
 
-  /** 列出所有可用 MOD（boyfriend + girlfriend） */
+  /** 列出所有可用 MOD（male + female） */
   listMods(): ModDef[] {
     return VALID_MODS.map((name) => ({
       name,
@@ -45,12 +45,12 @@ export class ModManager {
 
   /**
    * switchMod — 切换 MOD
-   * 1. 验证名称为 boyfriend/girlfriend 2. 检查 persona 文件
+   * 1. 验证名称为 male/female 2. 检查 persona 文件
    * 3. swapBankSoul(旧→新) 4. 更新 activeMod 5. 持久化
    */
   async switchMod(name: string): Promise<void> {
     if (!isValidModName(name)) {
-      throw new Error(`Invalid MOD name: "${name}". Only 'boyfriend' and 'girlfriend' are supported.`);
+      throw new Error(`Invalid MOD name: "${name}". Only 'male' and 'female' are supported.`);
     }
     if (!this.modHasPersonaFile(name)) {
       throw new Error(`MOD "${name}" has no soul.md persona file at ${modSoulPath(name)}`);
@@ -117,7 +117,7 @@ export class ModManager {
   }
 }
 
-/** MOD 名校验：仅允许 boyfriend / girlfriend */
+/** MOD 名校验：仅允许 male / female */
 function isValidModName(name: string): boolean {
   return VALID_MODS.includes(name as Gender);
 }

@@ -65,7 +65,7 @@ const TARGET_TOKEN_BUDGET = 800;
  * Estimate token count for mixed CJK/ASCII text.
  *
  * Calibrated empirically:
- * - Full girlfriend soul.md (2682 chars) → ~1100-1200 Claude tokens
+ * - Full female soul.md (2682 chars) → ~1100-1200 Claude tokens
  * - Reasoning: CJK text tokenizes at roughly 1.5-2 chars/token, ASCII at 3-4 chars/token.
  * - Moving average: for a typical Chinese conversation, a safe estimate is:
  *   chars / 2 for CJK-heavy text, chars / 3 for ASCII-heavy.

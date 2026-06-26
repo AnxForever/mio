@@ -8,7 +8,7 @@
  *   POST /chat/stream         streaming chat via SSE (text/event-stream)
  *   WS   /ws                  full-duplex streaming chat (tokens as they emit)
  *   GET  /avatar/state         emotion → avatar params (Live2D/VRM ready)
- *   POST /mod                 switch persona (boyfriend | girlfriend)
+ *   POST /mod                 switch persona (male | female)
  *
  * The server is intentionally thin: it owns HTTP plumbing, CORS, and
  * lifecycle. Business logic lives in src/core/agent-loop.ts.
@@ -79,7 +79,7 @@ import { dirname, join } from 'node:path';
  */
 export type WsClientMessage =
   | { type: 'chat'; text: string; sessionId?: string }
-  | { type: 'switch_mod'; name: 'boyfriend' | 'girlfriend' }
+  | { type: 'switch_mod'; name: 'male' | 'female' }
   | { type: 'subscribe_avatar' }
   | { type: 'ping'; t?: number }
   | { type: 'pong'; t?: number };
@@ -340,8 +340,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
 
   app.post('/mod', requireAuth, validate(modBody), async (req, res) => {
     const body = req.body as { name?: string } | undefined;
-    if (!body || (body.name !== 'boyfriend' && body.name !== 'girlfriend')) {
-      res.status(400).json({ error: 'Invalid "name". Use "boyfriend" or "girlfriend".' });
+    if (!body || (body.name !== 'male' && body.name !== 'female')) {
+      res.status(400).json({ error: 'Invalid "name". Use "male" or "female".' });
       return;
     }
     try {
@@ -724,7 +724,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
           return;
 
         case 'switch_mod': {
-          if (payload.name !== 'boyfriend' && payload.name !== 'girlfriend') {
+          if (payload.name !== 'male' && payload.name !== 'female') {
             safeSend(ws, { type: 'error', error: 'Invalid mod name' });
             return;
           }
@@ -826,7 +826,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       logger.info(`[mio]   GET  /status`);
       logger.info(`[mio]   POST /chat         { text, sessionId? }`);
       logger.info(`[mio]   POST /chat/stream  (SSE)`);
-      logger.info(`[mio]   POST /mod          { name: "boyfriend" | "girlfriend" }`);
+      logger.info(`[mio]   POST /mod          { name: "male" | "female" }`);
       logger.info(`[mio]   WS   /ws            (full-duplex streaming)`);
       logger.info(`[mio]   GET  /analytics            full analytics snapshot`);
       logger.info(`[mio]   GET  /analytics/emotion    emotion trends (query: ?days=30)`);

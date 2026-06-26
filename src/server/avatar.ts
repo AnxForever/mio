@@ -138,7 +138,7 @@ export function buildAvatarState(
     body: { ...NEUTRAL_BODY, ...moodEntry.body },
     // Voice: relationship stage colors the *default* (neutral) mood. If Mio
     // has an active mood (e.g. 开心 / 难过), that mood's voice wins. This
-    // matches intuition: a happy girlfriend sounds bright even at the
+    // matches intuition: a happy female persona sounds bright even at the
     // acquaintance stage, but a flat-mood acquaintance still sounds warm.
     voice: { ...NEUTRAL_VOICE, ...relVoice, ...moodEntry.voice },
     affection: emotion.affection,

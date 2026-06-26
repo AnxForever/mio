@@ -49,13 +49,13 @@ interface VoiceConfig {
 
 /** Maps emotion style → voice config, per gender. */
 const VOICE_MAPS: Record<Gender, Record<string, VoiceConfig>> = {
-  girlfriend: {
+  female: {
     cheerful: { voice: 'zh-CN-XiaoyiNeural', rate: '+10%' },
     sad: { voice: 'zh-CN-XiaomoNeural', rate: '-15%' },
     gentle: { voice: 'zh-CN-XiaoxiaoNeural', rate: '-5%' },
     neutral: { voice: 'zh-CN-XiaoyiNeural', rate: '+0%' },
   },
-  boyfriend: {
+  male: {
     cheerful: { voice: 'zh-CN-YunxiNeural', rate: '+10%' },
     sad: { voice: 'zh-CN-YunyangNeural', rate: '-15%' },
     gentle: { voice: 'zh-CN-YunyangNeural', rate: '-5%' },
@@ -86,7 +86,7 @@ function mapEmotionToStyle(mood: string): string {
 /** Resolve the voice config from options or emotion state. */
 function resolveVoiceConfig(opts?: TtsOptions): VoiceConfig {
   const gender: Gender = opts?.gender ?? getConfig().gender;
-  const map = VOICE_MAPS[gender] ?? VOICE_MAPS.girlfriend;
+  const map = VOICE_MAPS[gender] ?? VOICE_MAPS.female;
 
   // Explicit overrides take priority.
   if (opts?.voice && opts?.rate) {

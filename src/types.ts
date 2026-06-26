@@ -5,7 +5,7 @@
 
 // ─── Gender ───
 
-export type Gender = 'boyfriend' | 'girlfriend';
+export type Gender = 'male' | 'female';
 
 // ─── Provider ───
 
@@ -246,7 +246,7 @@ export interface RelationshipState {
 
 export interface PersonaRequest {
   name: string;
-  gender: 'boyfriend' | 'girlfriend';
+  gender: 'male' | 'female';
   style: string;
   age?: number;
   occupation?: string;

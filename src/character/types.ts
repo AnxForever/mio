@@ -51,7 +51,7 @@ export interface CharacterDef {
   config: CharacterConfig;
   /** Whether this character is currently active */
   active: boolean;
-  /** Whether this is a user-created character (vs built-in boyfriend/girlfriend) */
+  /** Whether this is a user-created character (vs built-in male/female) */
   isCustom: boolean;
 }
 

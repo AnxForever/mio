@@ -218,11 +218,11 @@ export function listCharacters(): CharacterDef[] {
       } else {
         // Built-in character — derive minimal config from soul.md
         config = {
-          name: entry.name === 'boyfriend' ? 'Mio' : 'Mio',
+          name: entry.name === 'male' ? 'Mio' : 'Mio',
           gender: entry.name,
-          age: entry.name === 'boyfriend' ? 26 : 24,
-          occupation: entry.name === 'boyfriend' ? '自由职业/前程序员' : '自由插画师',
-          style: entry.name === 'boyfriend' ? '沉稳但嘴硬心软' : '温柔但有主见',
+          age: entry.name === 'male' ? 26 : 24,
+          occupation: entry.name === 'male' ? '自由职业/前程序员' : '自由插画师',
+          style: entry.name === 'male' ? '沉稳但嘴硬心软' : '温柔但有主见',
           personality: defaultPersonality(),
           traits: [],
           speakingStyle: '',
@@ -302,5 +302,5 @@ export function ensureActiveCharacter(): string {
     activateCharacter(chars[0].id);
     return chars[0].id;
   }
-  return 'girlfriend'; // fallback default
+  return 'female'; // fallback default
 }

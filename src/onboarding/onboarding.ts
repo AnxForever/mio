@@ -4,7 +4,7 @@
  * Guides a new user through:
  *   1. Selecting an AI provider
  *   2. Entering an API key
- *   3. Choosing a persona (boyfriend / girlfriend)
+ *   3. Choosing a persona (male / female)
  *   4. Naming Mio
  *   5. Sending the first message
  *
@@ -73,12 +73,12 @@ const STEPS: OnboardingStep[] = [
   },
   {
     step: 3,
-    question: 'Choose personality: boyfriend or girlfriend:',
+    question: 'Choose personality: male or female:',
     key: 'gender',
     validate: (v: string) => {
       const g = v.toLowerCase().trim();
-      if (g === 'boyfriend' || g === 'girlfriend') return null;
-      return 'Please enter "boyfriend" or "girlfriend".';
+      if (g === 'male' || g === 'female') return null;
+      return 'Please enter "male" or "female".';
     },
   },
   {
@@ -189,9 +189,9 @@ export async function runOnboarding(existingProvider?: string): Promise<void> {
   state.apiKey = apiKey;
 
   // Step 3: Gender
-  let gender: Gender = 'girlfriend';
-  const rawGender = (await rl.question('Personality (boyfriend / girlfriend) [girlfriend]: ')).trim().toLowerCase();
-  if (rawGender === 'boyfriend' || rawGender === 'girlfriend') {
+  let gender: Gender = 'female';
+  const rawGender = (await rl.question('Personality (male / female) [female]: ')).trim().toLowerCase();
+  if (rawGender === 'male' || rawGender === 'female') {
     gender = rawGender;
   }
   state.gender = gender;

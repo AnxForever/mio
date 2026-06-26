@@ -145,9 +145,9 @@ async function main(): Promise<void> {
   {
     const { modManager } = await import('../dist/mod/mod-manager.js');
 
-    await test('mod: defaults to girlfriend on first run', () => {
+    await test('mod: defaults to female on first run', () => {
       const m = modManager();
-      assertEq(m.activeMod, 'girlfriend', 'default mod');
+      assertEq(m.activeMod, 'female', 'default mod');
     });
 
     await test('mod: rejects invalid name', async () => {
@@ -163,15 +163,15 @@ async function main(): Promise<void> {
 
     await test('mod: valid name persists', async () => {
       const m = modManager();
-      await m.switchMod('boyfriend');
-      assertEq(m.activeMod, 'boyfriend', 'active after switch');
+      await m.switchMod('male');
+      assertEq(m.activeMod, 'male', 'active after switch');
     });
 
     await test('mod: persistence across instances', async () => {
       const stateFile = join(dataDir, 'mods', '.active-mod');
       assert(existsSync(stateFile), 'state file exists');
       const txt = readFileSync(stateFile, 'utf-8');
-      assertEq(txt.trim(), 'boyfriend', 'persisted value');
+      assertEq(txt.trim(), 'male', 'persisted value');
     });
   }
 
@@ -214,16 +214,16 @@ async function main(): Promise<void> {
     const config = await import('../dist/config.js');
 
     await test('config: updateConfig writes to disk', () => {
-      config.updateConfig({ gender: 'boyfriend', voiceOutput: true });
+      config.updateConfig({ gender: 'male', voiceOutput: true });
       const configFile = join(dataDir, 'config.json');
       assert(existsSync(configFile), 'config.json exists');
       const reread = JSON.parse(readFileSync(configFile, 'utf-8'));
-      assertEq(reread.gender, 'boyfriend', 'persisted gender');
+      assertEq(reread.gender, 'male', 'persisted gender');
       assertEq(reread.voiceOutput, true, 'persisted voiceOutput');
     });
 
     await test('config: getConfig reflects in-memory state', () => {
-      assertEq(config.getConfig().gender, 'boyfriend', 'gender after update');
+      assertEq(config.getConfig().gender, 'male', 'gender after update');
       assertEq(config.getConfig().voiceOutput, true, 'voiceOutput after update');
     });
 
@@ -247,8 +247,8 @@ async function main(): Promise<void> {
     });
 
     await test('paths: modSoulPath joins mod + soul.md', () => {
-      const p = modSoulPath('girlfriend');
-      assert(p.endsWith('girlfriend/soul.md'), `got ${p}`);
+      const p = modSoulPath('female');
+      assert(p.endsWith('female/soul.md'), `got ${p}`);
     });
 
     await test('paths: transcriptsDir is absolute', () => {

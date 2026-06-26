@@ -151,7 +151,7 @@ export const SUBAGENT_TOOL_CONFIG: Record<string, SubagentToolConfig> = {
  * The soul block used for subagents that inherit the active mod context.
  * Same as the main agent's L1→L3 stack, but with subagent-specific additions.
  */
-function subagentSoulBlock(_gender: 'boyfriend' | 'girlfriend'): string {
+function subagentSoulBlock(_gender: 'male' | 'female'): string {
   // Subagents that inherit mod context will read the full soul.md from the bank.
   // We only inject the minimal CORE_IDENTITY here — the soul is loaded separately
   // by the subagent spawner when inheritModContext is true.
