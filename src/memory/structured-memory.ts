@@ -19,6 +19,7 @@ import {
   midTermDir,
   midTermTopicPath,
 } from './paths.js';
+import type { AIProvider, Message } from '../types.js';
 
 // ─── Types ───
 
@@ -246,7 +247,12 @@ function entitiesSimilar(a: string, b: string): boolean {
 // ─── Main API ───
 
 /**
- * Extract structured memory from bookmark content.
+ * Extract structured memory from bookmark content using regex/heuristics.
+ *
+ * This is the offline, zero-cost path and the fallback for the LLM extractor
+ * (`extractStructuredMemoryLLM`). It is synchronous and its signature is part
+ * of the public contract — downstream callers (consolidation, subagent) depend
+ * on it. Do not make it async.
  *
  * @param bookmarksContent  Raw BOOKMARKS.md content.
  * @param existingMemory    Optional existing StructuredMemory to merge with.
@@ -257,22 +263,50 @@ export function extractStructuredMemory(
   existingMemory?: StructuredMemory,
 ): StructuredMemory {
   const now = new Date().toISOString();
-  const newEntities: MemoryEntity[] = [];
+  const newEntities = extractEntitiesFromBookmarks(bookmarksContent);
+  return assembleMemory(newEntities, existingMemory, now);
+}
 
-  // Parse bookmark lines and extract entities
-  const lines = bookmarksContent.split('\n');
-  for (const line of lines) {
-    const bookmarkMatch = line.match(/^- <time=([^>]+)> (.+)$/);
-    if (!bookmarkMatch) continue;
+/** A parsed `- <time=…> …` bookmark line. */
+interface BookmarkEntry {
+  timestamp: string;
+  content: string;
+  source: string;
+}
 
-    const timestamp = bookmarkMatch[1];
-    const content = bookmarkMatch[2];
-    const source = line.slice(0, 120);
-
-    const extracted = extractEntitiesFromLine(content, source, timestamp);
-    newEntities.push(...extracted);
+/** Parse the `- <time=…> …` lines of a bookmarks blob into structured entries. */
+function parseBookmarkEntries(bookmarksContent: string): BookmarkEntry[] {
+  const entries: BookmarkEntry[] = [];
+  for (const line of bookmarksContent.split('\n')) {
+    const m = line.match(/^- <time=([^>]+)> (.+)$/);
+    if (!m) continue;
+    entries.push({ timestamp: m[1], content: m[2], source: line.slice(0, 120) });
   }
+  return entries;
+}
 
+/** Regex/heuristic entity extraction over all bookmark lines. */
+function extractEntitiesFromBookmarks(bookmarksContent: string): MemoryEntity[] {
+  const newEntities: MemoryEntity[] = [];
+  for (const entry of parseBookmarkEntries(bookmarksContent)) {
+    newEntities.push(...extractEntitiesFromLine(entry.content, entry.source, entry.timestamp));
+  }
+  return newEntities;
+}
+
+/**
+ * Merge newly-extracted entities with the existing memory, decay stale ones,
+ * re-cluster by topic, and recompute durable facts.
+ *
+ * Shared by both the regex path (`extractStructuredMemory`) and the LLM path
+ * (`extractStructuredMemoryLLM`) so both produce an identically-shaped
+ * StructuredMemory regardless of how the raw entities were extracted.
+ */
+function assembleMemory(
+  newEntities: MemoryEntity[],
+  existingMemory: StructuredMemory | undefined,
+  now: string,
+): StructuredMemory {
   // Merge with existing memory or start fresh
   let merged: MemoryEntity[];
   if (existingMemory && existingMemory.entities.length > 0) {
@@ -324,6 +358,197 @@ export function extractStructuredMemory(
     durableFacts,
     updatedAt: now,
   };
+}
+
+// ─── LLM extraction (Mem0-style atomic facts) ───
+
+/**
+ * System prompt for LLM structured extraction. Instructs the model to emit
+ * atomic facts about the user as strict JSON. Mirrors the 6 entity types the
+ * rest of the system understands so downstream consumers are unaffected.
+ */
+const EXTRACTION_SYSTEM_PROMPT = `你是一个记忆抽取器。从下面的对话片段/书签中抽取关于"用户"的原子事实(atomic facts)。
+
+规则：
+- 每条只包含一个独立、最小的事实，不要把多条信息合并到一条里。
+- 只抽取关于用户本人的稳定信息或重要事件，忽略寒暄、AI 自己的话、无信息量的内容。
+- 给每条事实分类到以下之一：
+  - fact: 客观事实/身份/属性（年龄、职业、城市等）
+  - preference: 喜好或厌恶
+  - event: 发生过的事/经历
+  - decision: 做出的决定或计划
+  - intention: 意图/愿望/打算
+  - emotion: 情绪状态
+- confidence 为 0~1 的小数，表示你的确定程度。
+- content 用简体中文，简洁，不超过 50 字。
+
+只输出 JSON，不要任何解释、前后缀或 markdown 代码块，格式严格如下：
+{"entities":[{"type":"fact","content":"...","confidence":0.9}]}
+如果没有可抽取的事实，输出：{"entities":[]}`;
+
+/** The entity types the rest of the system understands. */
+const VALID_ENTITY_TYPES: ReadonlySet<MemoryEntity['type']> = new Set([
+  'fact', 'preference', 'event', 'decision', 'intention', 'emotion',
+]);
+
+/** Clamp an arbitrary value into a [0,1] confidence, with a fallback. */
+function clampConfidence(n: unknown, fallback: number): number {
+  const x = typeof n === 'number' && Number.isFinite(n) ? n : fallback;
+  return Math.max(0, Math.min(1, x));
+}
+
+/** Strip a leading/trailing ```json … ``` fence if present. */
+function stripJsonFence(text: string): string {
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  return fence ? fence[1].trim() : text.trim();
+}
+
+/**
+ * Parse an LLM response into MemoryEntity[].
+ *
+ * Tolerant of code fences and surrounding prose. Accepts either
+ * `{"entities":[…]}` or a bare `[…]` array.
+ *
+ * @returns  Parsed entities (possibly empty) when the JSON is usable, or
+ *           `null` when the response can't be parsed — the caller treats
+ *           `null` as "LLM unavailable" and falls back to regex extraction.
+ */
+function parseLLMEntities(rawText: string, now: string): MemoryEntity[] | null {
+  if (!rawText || rawText.trim().length === 0) return null;
+
+  let text = stripJsonFence(rawText);
+
+  // Slice to the outermost JSON if the model wrapped it in prose.
+  if (!text.startsWith('{') && !text.startsWith('[')) {
+    const firstObj = text.indexOf('{');
+    const firstArr = text.indexOf('[');
+    const candidates = [firstObj, firstArr].filter((i) => i >= 0);
+    if (candidates.length === 0) return null;
+    const start = Math.min(...candidates);
+    const end = Math.max(text.lastIndexOf('}'), text.lastIndexOf(']'));
+    if (end <= start) return null;
+    text = text.slice(start, end + 1);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+
+  let rawList: unknown = null;
+  if (Array.isArray(parsed)) {
+    rawList = parsed;
+  } else if (parsed && typeof parsed === 'object' && Array.isArray((parsed as Record<string, unknown>).entities)) {
+    rawList = (parsed as Record<string, unknown>).entities;
+  }
+  if (!Array.isArray(rawList)) return null;
+
+  const entities: MemoryEntity[] = [];
+  for (const item of rawList) {
+    if (!item || typeof item !== 'object') continue;
+    const obj = item as Record<string, unknown>;
+    const type = obj.type;
+    const content = obj.content;
+    if (typeof type !== 'string' || !VALID_ENTITY_TYPES.has(type as MemoryEntity['type'])) continue;
+    if (typeof content !== 'string' || content.trim().length === 0) continue;
+    entities.push({
+      type: type as MemoryEntity['type'],
+      content: content.trim().slice(0, 100),
+      confidence: clampConfidence(obj.confidence, 0.6),
+      firstSeen: now,
+      lastSeen: now,
+      occurrences: 1,
+      source: 'llm-extraction',
+    });
+    if (entities.length >= 50) break; // guard against pathological output
+  }
+  return entities;
+}
+
+/**
+ * Run LLM-based entity extraction over the bookmark content.
+ *
+ * Provider resolution:
+ *   - `opts.provider` (test injection) is used directly when given.
+ *   - Otherwise the active provider is selected and routed through the model
+ *     router's cheap `summarize` tier (a no-op unless MIO_MODEL_ROUTER_ENABLED).
+ *
+ * @returns  Parsed entities, or `null` if extraction is unavailable/unparseable
+ *           (e.g. the MockProvider, an offline run, or malformed output).
+ */
+async function extractEntitiesViaLLM(
+  bookmarksContent: string,
+  now: string,
+  opts?: { provider?: AIProvider; model?: string },
+): Promise<MemoryEntity[] | null> {
+  const entries = parseBookmarkEntries(bookmarksContent);
+  if (entries.length === 0) return [];
+
+  let provider: AIProvider;
+  let model: string | undefined = opts?.model;
+
+  if (opts?.provider) {
+    provider = opts.provider;
+  } else {
+    // Lazy-load the provider stack so this module stays lightweight in the
+    // many sync contexts that import it (matches router.ts's dynamic-import
+    // pattern and avoids any load-time cycle).
+    const { selectProvider } = await import('../providers/index.js');
+    const { getRouterConfig, routeTask, getTaskModel } = await import('../providers/router.js');
+    const { getConfig } = await import('../config.js');
+    const config = getConfig();
+    const base = selectProvider(config.provider, config.model);
+    const routerCfg = getRouterConfig();
+    provider = await routeTask('summarize', base, routerCfg);
+    if (!model) model = getTaskModel('summarize', routerCfg) || undefined;
+  }
+
+  const userText = entries.map((e) => `- ${e.content}`).join('\n');
+  const messages: Message[] = [{ role: 'user', content: userText, timestamp: now }];
+
+  const res = await provider.chat(messages, EXTRACTION_SYSTEM_PROMPT, undefined, {
+    temperature: 0,
+    model,
+  });
+
+  return parseLLMEntities(res.text, now);
+}
+
+/**
+ * Extract structured memory using an LLM (Mem0-style atomic facts), falling
+ * back to regex extraction when the LLM is unavailable or its output can't be
+ * parsed (offline, MockProvider, API error, malformed JSON).
+ *
+ * Output is shape-identical to `extractStructuredMemory` — it reuses the same
+ * merge/decay/cluster/durable pipeline — so downstream consumers are unchanged.
+ *
+ * Async (LLM calls are async); callers in async contexts can opt in by awaiting
+ * this instead of the sync `extractStructuredMemory`.
+ *
+ * @param bookmarksContent  Raw BOOKMARKS.md content.
+ * @param existingMemory    Optional existing StructuredMemory to merge with.
+ * @param opts.provider     Optional provider override (used by tests).
+ * @param opts.model        Optional model override.
+ */
+export async function extractStructuredMemoryLLM(
+  bookmarksContent: string,
+  existingMemory?: StructuredMemory,
+  opts?: { provider?: AIProvider; model?: string },
+): Promise<StructuredMemory> {
+  const now = new Date().toISOString();
+  try {
+    const newEntities = await extractEntitiesViaLLM(bookmarksContent, now, opts);
+    if (newEntities === null) {
+      logger.warn('[structured-memory] LLM extraction unavailable/unparseable; using regex fallback');
+      return extractStructuredMemory(bookmarksContent, existingMemory);
+    }
+    return assembleMemory(newEntities, existingMemory, now);
+  } catch (err) {
+    logger.warn('[structured-memory] LLM extraction failed; using regex fallback', { error: String(err) });
+    return extractStructuredMemory(bookmarksContent, existingMemory);
+  }
 }
 
 /**
