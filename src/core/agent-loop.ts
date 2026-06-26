@@ -23,6 +23,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { statSync } from 'node:fs';
 import {
   CORE_IDENTITY,
   EMOTION_NOTE,
@@ -245,10 +246,37 @@ function buildSystemPrompt(
   budget?: PromptBudget,
 ): string {
   const engine = getContextEngine();
+  registerPromptSections(engine, ctx, recovery);
 
-  // Register all sections (idempotent: re-registration updates existing)
-  // Priority assignments based on section importance:
+  // Assemble the prompt using priority-based ordering and budget
+  const prompt = engine.assemble(6000);
 
+  // Backward compat: populate budget if tracking is enabled
+  if (budget) {
+    const report = engine.getBudget();
+    for (const line of report.lines) {
+      if (line.included) {
+        // Reconstruct the section name for the old budget API
+        // Use the type from the section content via a lookup
+        const section = engine.get(line.type);
+        if (section) {
+          const content = typeof section.content === 'function'
+            ? (section.content as () => string)()
+            : section.content;
+          budget.add(line.type, content);
+        }
+      }
+    }
+  }
+
+  return prompt;
+}
+
+function registerPromptSections(
+  engine: ContextEngine,
+  ctx: PromptCtx,
+  recovery: 'new' | 'compact' | 'none',
+): void {
   // L1: Core identity — critical, always included
   engine.register('core', {
     type: 'identity',
@@ -497,29 +525,6 @@ function buildSystemPrompt(
     priority: 'high',
     condition: () => recovery !== 'none',
   });
-
-  // Assemble the prompt using priority-based ordering and budget
-  const prompt = engine.assemble(6000);
-
-  // Backward compat: populate budget if tracking is enabled
-  if (budget) {
-    const report = engine.getBudget();
-    for (const line of report.lines) {
-      if (line.included) {
-        // Reconstruct the section name for the old budget API
-        // Use the type from the section content via a lookup
-        const section = engine.get(line.type);
-        if (section) {
-          const content = typeof section.content === 'function'
-            ? (section.content as () => string)()
-            : section.content;
-          budget.add(line.type, content);
-        }
-      }
-    }
-  }
-
-  return prompt;
 }
 
 /**
@@ -1004,6 +1009,407 @@ async function runInferenceLoop(
   };
 }
 
+interface PostTurnSideEffectsInput {
+  input: TurnInput;
+  text: string;
+  sessionId: string;
+  sessionCtx: SessionContext;
+  intent: ReturnType<typeof classifyIntent>;
+  crisisResult: ReturnType<typeof screenForCrisis>;
+  config: ReturnType<typeof getConfig>;
+  budget?: PromptBudget;
+  isNewSession: boolean;
+}
+
+async function applyPostTurnSideEffects({
+  input,
+  text,
+  sessionId,
+  sessionCtx,
+  intent,
+  crisisResult,
+  config,
+  budget,
+  isNewSession,
+}: PostTurnSideEffectsInput): Promise<void> {
+  const assistantMsg: Message = {
+    role: 'assistant',
+    content: text,
+    timestamp: new Date().toISOString(),
+  };
+  recordMessage(sessionId, assistantMsg);
+  trackEmotion(input.text ?? '', text);
+
+  scheduleLearningSideEffects(input, text, config);
+  updateRelationalSideEffects(input, text, intent, crisisResult, config);
+  await updatePersonalitySideEffects(input, text, sessionCtx);
+  persistTurnMemorySideEffects(input, text, sessionId, crisisResult, isNewSession);
+
+  if (budget) budget.log();
+}
+
+function scheduleLearningSideEffects(
+  input: TurnInput,
+  text: string,
+  config: ReturnType<typeof getConfig>,
+): void {
+  if (input.text) {
+    import('../learning/mirror.js').then(({ analyzeUserMessage }) => {
+      analyzeUserMessage(input.text!);
+    }).catch((err: unknown) => { logger.error('mirror learning failed', { error: String(err) }); });
+
+    import('../learning/feedback.js').then(({ detectFeedback }) => {
+      detectFeedback(input.text!, text);
+    }).catch((err: unknown) => { logger.error('feedback learning failed', { error: String(err) }); });
+
+    if (config.features.dynamicFewShot) {
+      collectFromFeedback().catch((err: unknown) => { logger.error('fewshot learning failed', { error: String(err) }); });
+    }
+
+    _turnCounter++;
+    if (_turnCounter % 20 === 0) {
+      import('../learning/dynamic-fewshot.js').then(({ rotateBank }) => {
+        rotateBank();
+      }).catch((err: unknown) => { logger.error('fewshot rotation failed', { error: String(err) }); });
+    }
+  }
+}
+
+function updateRelationalSideEffects(
+  input: TurnInput,
+  text: string,
+  intent: ReturnType<typeof classifyIntent>,
+  crisisResult: ReturnType<typeof screenForCrisis>,
+  config: ReturnType<typeof getConfig>,
+): void {
+  if (input.text) {
+    observeRitual(input.text, new Date().getHours());
+  }
+
+  updateCardboard(input.text ?? '', text);
+
+  if (config.features.multiAxisAffinity) {
+    updateAffinity(intent.primary, false);
+  }
+
+  if (config.features.frustrationTracking) {
+    updateFrustration(intent.primary, false);
+  }
+
+  recordDualModeTurn(intent, crisisResult.shouldIntervene);
+}
+
+async function updatePersonalitySideEffects(
+  input: TurnInput,
+  text: string,
+  sessionCtx: SessionContext,
+): Promise<void> {
+  if (isPersonalityDriverEnabled()) {
+    try {
+      const personalityState = getPersonalityState();
+      const timeSinceLastChat = sessionCtx.emotionState.lastInteraction
+        ? (Date.now() - new Date(sessionCtx.emotionState.lastInteraction).getTime()) / 3_600_000
+        : 0;
+
+      if (timeSinceLastChat > 24 && text && text.trim().length > 0) {
+        applyWarmUpEffect();
+      }
+
+      if (_turnCounter % 8 === 0 && _turnCounter > 0) {
+        const charName = readActiveCharacter();
+        if (getConfig().features.lifeEngine && charName) {
+          const event = await lifeEngine().tickLight(charName);
+          if (event) {
+            appendBookmark({
+              time: new Date().toISOString(),
+              what: `[life-event] ${truncate(event.description, 100)}`,
+              evidence: `category=${event.category} importance=${event.importance}`,
+            });
+          }
+        } else {
+          const lifeEvent = simulateLifeEvent();
+          if (lifeEvent && personalityState.initiative > 50 && timeSinceLastChat > 2) {
+            appendBookmark({
+              time: new Date().toISOString(),
+              what: `[life-event] 你: ${truncate(lifeEvent, 100)}`,
+              evidence: `personality: sociability=${personalityState.sociability}, initiative=${personalityState.initiative}`,
+            });
+          }
+        }
+      }
+
+      if (getConfig().features.lifeEngine && text && /抱抱|不哭|没事|我在|陪|心疼|还好吗|辛苦了|会好起来的|别难过/.test(text)) {
+        try {
+          updatePAD({ pleasure: 0.15, arousal: -0.05, dominance: 0.1 });
+          const charName = readActiveCharacter();
+          if (charName) acknowledgeRecentEvents(charName);
+        } catch { /* best-effort */ }
+      }
+    } catch {
+      // Best-effort
+    }
+  }
+}
+
+function persistTurnMemorySideEffects(
+  input: TurnInput,
+  text: string,
+  sessionId: string,
+  crisisResult: ReturnType<typeof screenForCrisis>,
+  isNewSession: boolean,
+): void {
+  if (crisisResult.shouldIntervene || (input.text && input.text.trim().length > 5)) {
+    appendBookmark({
+      time: new Date().toISOString(),
+      what: crisisResult.shouldIntervene
+        ? `[crisis:${crisisResult.level}] user expressed distress`
+        : `exchange: user said "${truncate(input.text ?? '', 80)}"`,
+      evidence: crisisResult.shouldIntervene
+        ? `matched: ${crisisResult.matchedKeywords.join(', ')}`
+        : `agent replied: "${truncate(text, 80)}"`,
+    });
+  }
+
+  const hint = truncate(
+    `${new Date().toISOString().slice(11, 16)} ${crisisResult.shouldIntervene ? '[crisis] ' : ''}${truncate(input.text ?? '', 60)} → ${truncate(text, 60)}`,
+    280,
+  );
+  try {
+    updateActiveContext(hint);
+  } catch {
+    // Active Context update is best-effort; don't break the turn on failure.
+  }
+
+  if (isNewSession) {
+    markSessionDone(sessionId);
+  }
+}
+
+interface ConversationBuildInput {
+  input: TurnInput;
+  userMessage: Message;
+  systemPrompt: string;
+  promptCtx: PromptCtx;
+  recovery: 'new' | 'compact' | 'none';
+  crisisResult: ReturnType<typeof screenForCrisis>;
+  config: ReturnType<typeof getConfig>;
+}
+
+function buildFinalSystemPrompt(
+  systemPrompt: string,
+  crisisResult: ReturnType<typeof screenForCrisis>,
+): string {
+  if (!crisisResult.shouldIntervene) return systemPrompt;
+  return `${systemPrompt}\n\n## Safety override\n${crisisResult.systemInjection}`;
+}
+
+async function buildConversationMessages({
+  input,
+  userMessage,
+  systemPrompt,
+  promptCtx,
+  recovery,
+  crisisResult,
+  config,
+}: ConversationBuildInput): Promise<{ messages: Message[]; finalSystemPrompt: string }> {
+  const messages: Message[] = [];
+
+  if (input.sessionId) {
+    if (config.features.adaptiveHistory) {
+      const { compressHistory, renderCompressedHistory } = await import('../memory/adaptive-history.js');
+      const history = loadTranscriptWindow(input.sessionId, 500);
+      const allMsgs = [...history, userMessage];
+      const compressed = compressHistory(allMsgs);
+      const compressedText = renderCompressedHistory(compressed);
+
+      if (compressed.placeholder.count > 0 || compressed.compressedMessages.length > 0) {
+        systemPrompt = `${systemPrompt}\n\n## 对话历史\n${compressedText}`;
+
+        if (compressed.originalCount > 5) {
+          appendBookmark({
+            time: new Date().toISOString(),
+            what: `[adaptive-compression] ${compressed.originalCount} messages → ${compressed.fullMessages.length} full + ${compressed.compressedMessages.length} compressed`,
+            evidence: `saved ~${compressed.estimatedTokensSaved} tokens`,
+          });
+        }
+      }
+
+      messages.push(...compressed.fullMessages);
+    } else {
+      const history = loadTranscriptWindow(input.sessionId, 30);
+      const allMsgs = [...history, userMessage];
+      const compression = compressIfNeeded(allMsgs);
+
+      if (compression.removedCount > 0) {
+        systemPrompt = `${systemPrompt}\n\n${compression.summary}`;
+
+        appendBookmark({
+          time: new Date().toISOString(),
+          what: `[compaction] ${compression.removedCount} messages compressed`,
+          evidence: compression.summary.slice(0, 200),
+        });
+      }
+
+      messages.push(...compression.messages);
+    }
+  } else {
+    messages.push(userMessage);
+  }
+
+  let finalSystemPrompt = buildFinalSystemPrompt(systemPrompt, crisisResult);
+
+  if (config.features.postHistoryInjection) {
+    const prePrompt = buildPrePrompt(
+      crisisResult.shouldIntervene ? 'none' : recovery,
+      promptCtx.colaDir,
+    );
+    finalSystemPrompt = buildFinalSystemPrompt(prePrompt, crisisResult);
+
+    const postPrompt = buildPostPrompt(
+      promptCtx,
+      readRecentBookmarks(8),
+      readUserProfile(),
+    );
+
+    messages.push({
+      role: 'user',
+      content: `[System Context — this is not a user message. The following is Mio's internal context, instructions, and self-knowledge. Read this before responding to the user.]\n\n${postPrompt}`,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  return { messages, finalSystemPrompt };
+}
+
+function trackTurnActivity(input: TurnInput, sessionId: string): void {
+  if (!input.text || input.text.trim().length === 0) return;
+  try {
+    updateActivityPattern(sessionId);
+  } catch {
+    // best-effort — never break the turn on activity tracking failure
+  }
+}
+
+function applyPrePromptPersonalityDriver(input: TurnInput, sessionCtx: SessionContext): void {
+  if (!isPersonalityDriverEnabled() || !input.text || input.text.trim().length === 0) return;
+
+  try {
+    const padState = getPADState();
+    const multiAxis = getMultiAxis();
+    const signalHistory = getRecentSignalHistory(3);
+    const signals = signalHistory.length > 0 ? signalHistory[signalHistory.length - 1].signals : null;
+
+    let timeSinceLastChat = 0;
+    if (sessionCtx.emotionState.lastInteraction) {
+      timeSinceLastChat = (Date.now() - new Date(sessionCtx.emotionState.lastInteraction).getTime()) / 3_600_000;
+    }
+
+    if (timeSinceLastChat > 24 && timeSinceLastChat <= 25) {
+      applyIgnoredEffect();
+    }
+
+    updatePersonalityFromContext(padState, signals, multiAxis, timeSinceLastChat);
+
+    if (_turnCounter % 5 === 0) {
+      rotateActivity();
+    }
+  } catch {
+    // Best-effort — never break the turn on personality driver failure
+  }
+}
+
+function applyPromptAugmentations(
+  systemPrompt: string,
+  input: TurnInput,
+  intent: ReturnType<typeof classifyIntent>,
+  crisisResult: ReturnType<typeof screenForCrisis>,
+  config: ReturnType<typeof getConfig>,
+): string {
+  if (config.features.lorebook && input.text && input.text.trim().length > 0) {
+    commitLorebookState([input.text]);
+  }
+
+  if (input.text && input.text.trim().length > 0) {
+    const graph = getEvaluationGraph();
+    const chain = getBuilderChain();
+    _evalResult = graph.evaluate(input.text);
+    const builderFragment = chain.assemble(_evalResult);
+    if (builderFragment.length > 0) {
+      systemPrompt = `${systemPrompt}\n\n${builderFragment}`;
+    }
+  }
+
+  let currentMode = getCurrentMode();
+  const switchResult = shouldSwitchMode(intent, crisisResult.shouldIntervene);
+  if (switchResult.switch) {
+    executeSwitch(switchResult.to);
+    currentMode = switchResult.to;
+    logger.info('[dual-mode] mode switch', { from: switchResult.to === 'deep' ? 'base' : 'deep', to: switchResult.to });
+  }
+  const dualModeFragment = getDualModePrompt(currentMode);
+  if (dualModeFragment) {
+    systemPrompt = `${systemPrompt}\n\n${dualModeFragment}`;
+  }
+
+  return systemPrompt;
+}
+
+function maybeReindexBookmarks(): void {
+  try {
+    const bookmarksPath = colaDir() + '/memory-bank/BOOKMARKS.md';
+    const mtime = statSync(bookmarksPath).mtimeMs;
+    if (mtime === _lastBookmarkMtime) return;
+
+    _lastBookmarkMtime = mtime;
+    reindexBookmarks().catch((err) => {
+      logger.error('reindexBookmarks failed', { error: String(err) });
+    });
+  } catch {
+    // Best-effort — missing bookmarks or index failures should not break chat.
+  }
+}
+
+function handleGhostTurn({
+  input,
+  sessionId,
+  userMessage,
+  config,
+}: {
+  input: TurnInput;
+  sessionId: string;
+  userMessage: Message;
+  config: ReturnType<typeof getConfig>;
+}): TurnOutput {
+  recordMessage(sessionId, userMessage);
+
+  if (config.features.multiAxisAffinity) {
+    const intent = classifyIntent(input.text ?? '');
+    updateAffinity(intent.primary, true);
+  }
+  if (config.features.frustrationTracking) {
+    const intent = classifyIntent(input.text ?? '');
+    updateFrustration(intent.primary, true);
+  }
+
+  const ghostMsg: Message = {
+    role: 'assistant',
+    content: '',
+    timestamp: new Date().toISOString(),
+  };
+  recordMessage(sessionId, ghostMsg);
+
+  if (!input.sessionId) markSessionDone(sessionId);
+
+  return {
+    text: '',
+    sessionId,
+    toolCallCount: 0,
+    turns: 0,
+    crisisFlagged: false,
+    ghosted: true,
+  };
+}
+
 // ─── Main entry ───
 
 /**
@@ -1034,17 +1440,7 @@ export async function runTurn(
 
   // Reindex vector store only when BOOKMARKS.md has changed (mtime check).
   // Uses dirty-flag optimization to avoid per-turn network calls with MiniMax.
-  try {
-    const { statSync } = await import('node:fs');
-    const bookmarksPath = colaDir() + '/memory-bank/BOOKMARKS.md';
-    const mtime = statSync(bookmarksPath).mtimeMs;
-    if (mtime !== _lastBookmarkMtime) {
-      _lastBookmarkMtime = mtime;
-      reindexBookmarks().catch((err) => {
-        logger.error('reindexBookmarks failed', { error: String(err) });
-      });
-    }
-  } catch { /* best-effort */ }
+  maybeReindexBookmarks();
   const config = getConfig();
   const provider = opts.provider ?? selectProvider(config.provider, config.model);
 
@@ -1060,15 +1456,7 @@ export async function runTurn(
     timestamp: new Date().toISOString(),
   };
 
-  // 2a. Track user activity for smart proactive scheduler (lightweight, just records timestamp).
-  //     Runs on every user message to build hour-distribution patterns.
-  if (input.text && input.text.trim().length > 0) {
-    try {
-      updateActivityPattern(sessionId);
-    } catch {
-      // best-effort — never break the turn on activity tracking failure
-    }
-  }
+  trackTurnActivity(input, sessionId);
 
   // 3. Crisis pre-screen (Phase 4). Runs in parallel with provider selection.
   //    If triggered, we still let the model respond — but the loop will inject
@@ -1084,68 +1472,12 @@ export async function runTurn(
 
   // If ghosting, skip inference entirely and return empty text
   if (ghosted) {
-    recordMessage(sessionId, userMessage);
-
-    if (config.features.multiAxisAffinity) {
-      const intent = classifyIntent(input.text ?? '');
-      updateAffinity(intent.primary, true);
-    }
-    if (config.features.frustrationTracking) {
-      const intent = classifyIntent(input.text ?? '');
-      updateFrustration(intent.primary, true);
-    }
-
-    const ghostMsg: Message = {
-      role: 'assistant',
-      content: '',
-      timestamp: new Date().toISOString(),
-    };
-    recordMessage(sessionId, ghostMsg);
-
-    if (!input.sessionId) markSessionDone(sessionId);
-
-    return {
-      text: '',
-      sessionId,
-      toolCallCount: 0,
-      turns: 0,
-      crisisFlagged: false,
-      ghosted: true,
-    };
+    return handleGhostTurn({ input, sessionId, userMessage, config });
   }
 
   markReplied();
 
-  // 3b. Personality driver: update Mio's internal state before prompt building
-  if (isPersonalityDriverEnabled() && input.text && input.text.trim().length > 0) {
-    try {
-      const padState = getPADState();
-      const multiAxis = getMultiAxis();
-      const signalHistory = getRecentSignalHistory(3);
-      const signals = signalHistory.length > 0 ? signalHistory[signalHistory.length - 1].signals : null;
-
-      // Calculate time since last chat from emotion state's lastInteraction
-      let timeSinceLastChat = 0;
-      if (sessionCtx.emotionState.lastInteraction) {
-        timeSinceLastChat = (Date.now() - new Date(sessionCtx.emotionState.lastInteraction).getTime()) / 3_600_000;
-      }
-
-      // If user has been gone > 24h, apply the "ignored" effect
-      if (timeSinceLastChat > 24 && timeSinceLastChat <= 25) {
-        // Only apply once when crossing the 24h threshold
-        applyIgnoredEffect();
-      }
-
-      updatePersonalityFromContext(padState, signals, multiAxis, timeSinceLastChat);
-
-      // Rotate activity periodically (every ~5 turns)
-      if (_turnCounter % 5 === 0) {
-        rotateActivity();
-      }
-    } catch {
-      // Best-effort — never break the turn on personality driver failure
-    }
-  }
+  applyPrePromptPersonalityDriver(input, sessionCtx);
 
   // 4. Build system prompt (after crisis screen so we can inject safety block)
   const budget = config.features.promptBudgetLog ? new PromptBudget() : undefined;
@@ -1155,146 +1487,20 @@ export async function runTurn(
     budget,
   );
 
-  // 4a. Commit lorebook state (advance turn counter, update cooldowns)
-  //     Lorebook evaluation happened inside buildSystemPrompt via getLorebookContext.
-  //     Since that function is pure, we must commit the state explicitly here.
-  if (config.features.lorebook && input.text && input.text.trim().length > 0) {
-    commitLorebookState([input.text]);
-  }
-
-  // 4b. Builder Chain: evaluate user intent and inject conditional fragments
-  if (input.text && input.text.trim().length > 0) {
-    const graph = getEvaluationGraph();
-    const chain = getBuilderChain();
-    _evalResult = graph.evaluate(input.text);
-    const builderFragment = chain.assemble(_evalResult);
-    if (builderFragment.length > 0) {
-      systemPrompt = `${systemPrompt}\n\n${builderFragment}`;
-    }
-  }
-
-  // 4b. Dual-mode persona check — inject DEEP mode prompt if switching
-  //     or already in DEEP mode. This must happen before the safety override
-  //     injection so both layers compose properly.
-  let currentMode = getCurrentMode();
   const intent = classifyIntent(input.text ?? '');
-  const switchResult = shouldSwitchMode(intent, crisisResult.shouldIntervene);
-  if (switchResult.switch) {
-    executeSwitch(switchResult.to);
-    currentMode = switchResult.to;
-    logger.info('[dual-mode] mode switch', { from: switchResult.to === 'deep' ? 'base' : 'deep', to: switchResult.to });
-  }
-  const dualModeFragment = getDualModePrompt(currentMode);
-  if (dualModeFragment) {
-    systemPrompt = `${systemPrompt}\n\n${dualModeFragment}`;
-  }
+  systemPrompt = applyPromptAugmentations(systemPrompt, input, intent, crisisResult, config);
 
-  // 5. Load conversation history + compress if needed
-  const messages: Message[] = [];
-
-  if (input.sessionId) {
-    // Adaptive History AFM: when enabled, load a larger window and use
-    // three-fidelity compression instead of the old hybrid approach.
-    if (config.features.adaptiveHistory) {
-      const { compressHistory, renderCompressedHistory } = await import('../memory/adaptive-history.js');
-
-      // Load up to 500 messages for the adaptive compressor to work with
-      const history = loadTranscriptWindow(input.sessionId, 500);
-      const allMsgs = [...history, userMessage];
-
-      // Use three-fidelity compression
-      const compressed = compressHistory(allMsgs);
-      const compressedText = renderCompressedHistory(compressed);
-
-      // Inject the compressed representation as a system note
-      if (compressed.placeholder.count > 0 || compressed.compressedMessages.length > 0) {
-        systemPrompt = `${systemPrompt}\n\n## 对话历史\n${compressedText}`;
-
-        // Record compaction in transcript (only for original messages removed)
-        if (compressed.originalCount > 5) {
-          appendBookmark({
-            time: new Date().toISOString(),
-            what: `[adaptive-compression] ${compressed.originalCount} messages → ${compressed.fullMessages.length} full + ${compressed.compressedMessages.length} compressed`,
-            evidence: `saved ~${compressed.estimatedTokensSaved} tokens`,
-          });
-        }
-      }
-
-      // Only keep the full-fidelity messages in the actual message array
-      messages.push(...compressed.fullMessages);
-      // Also push the user message if it wasn't included in the FULL zone
-      // (the FULL zone always includes the last 5, which includes userMessage
-      //  since we appended it to allMsgs before compression)
-    } else {
-      // Legacy path: load recent history and use old hybrid compression
-      const history = loadTranscriptWindow(input.sessionId, 30);
-
-      // Compression: if history + new message exceeds token threshold, compress
-      const allMsgs = [...history, userMessage];
-      const compression = compressIfNeeded(allMsgs);
-
-      if (compression.removedCount > 0) {
-        // Inject summary into system prompt so the model knows what was removed
-        systemPrompt = `${systemPrompt}\n\n${compression.summary}`;
-
-        // Record compaction in transcript
-        appendBookmark({
-          time: new Date().toISOString(),
-          what: `[compaction] ${compression.removedCount} messages compressed`,
-          evidence: compression.summary.slice(0, 200),
-        });
-      }
-
-      messages.push(...compression.messages);
-    }
-  } else {
-    // New session — just the current user message
-    messages.push(userMessage);
-  }
+  const { messages, finalSystemPrompt } = await buildConversationMessages({
+    input,
+    userMessage,
+    systemPrompt,
+    promptCtx,
+    recovery,
+    crisisResult,
+    config,
+  });
 
   recordMessage(sessionId, userMessage);
-
-  // Safety injection comes AFTER compression summary
-  let finalSystemPrompt: string;
-  if (crisisResult.shouldIntervene) {
-    finalSystemPrompt = `${systemPrompt}\n\n## Safety override\n${crisisResult.systemInjection}`;
-  } else {
-    finalSystemPrompt = systemPrompt;
-  }
-
-  // ─── Post-History Injection (Part 2) ───
-  //
-  // When `postHistoryInjection` is enabled, the heavy personality content
-  // (soul + relationship + user context + instructions) is moved from the
-  // system prompt to a faux user message injected after the conversation
-  // history. This leverages recency bias — LLMs pay most attention to the
-  // last things they see.
-  //
-  // Pre-history (system prompt):      CORE_IDENTITY + time + recovery hint
-  // Post-history (faux user message):  soul + relationship + user + instructions
-  if (config.features.postHistoryInjection) {
-    // Rebuild the system prompt as a lightweight pre-prompt
-    finalSystemPrompt = buildPrePrompt(
-      crisisResult.shouldIntervene ? 'none' : recovery,
-      promptCtx.colaDir,
-    );
-
-    // Build the heavy post-prompt content
-    const postPrompt = buildPostPrompt(
-      promptCtx,
-      readRecentBookmarks(8),
-      readUserProfile(),
-    );
-
-    // Inject as a faux user message at the end of the messages array
-    // (closest to the model's next output)
-    const postPromptMsg: Message = {
-      role: 'user',
-      content: `[System Context — this is not a user message. The following is Mio's internal context, instructions, and self-knowledge. Read this before responding to the user.]\n\n${postPrompt}`,
-      timestamp: new Date().toISOString(),
-    };
-    messages.push(postPromptMsg);
-  }
 
   // 6. Run inference loop
   const onToken = opts.onToken ?? (() => {});
@@ -1307,146 +1513,17 @@ export async function runTurn(
     onToken,
   );
 
-  // 7. Side effects: emotion tracking, bookmark append, active context update
-  const assistantMsg: Message = {
-    role: 'assistant',
-    content: text,
-    timestamp: new Date().toISOString(),
-  };
-  recordMessage(sessionId, assistantMsg);
-  trackEmotion(input.text ?? '', text);
-
-  // 7b2. Learning: analyze user's speech patterns for mirroring
-  if (input.text) {
-    import('../learning/mirror.js').then(({ analyzeUserMessage }) => {
-      analyzeUserMessage(input.text!);
-    }).catch((err: unknown) => { logger.error('mirror learning failed', { error: String(err) }); });
-    // Detect implicit feedback on Mio's last response
-    import('../learning/feedback.js').then(({ detectFeedback }) => {
-      detectFeedback(input.text!, text);
-    }).catch((err: unknown) => { logger.error('feedback learning failed', { error: String(err) }); });
-    // Dynamic few-shot: learn from real conversations (feature-gated)
-    if (config.features.dynamicFewShot) {
-      collectFromFeedback().catch((err: unknown) => { logger.error('fewshot learning failed', { error: String(err) }); });
-    }
-
-    // Periodic bank rotation (every ~20 turns)
-    _turnCounter++;
-    if (_turnCounter % 20 === 0) {
-      import('../learning/dynamic-fewshot.js').then(({ rotateBank }) => {
-        rotateBank();
-      }).catch((err: unknown) => { logger.error('fewshot rotation failed', { error: String(err) }); });
-    }
-  }
-
-  // 7c. Post-turn ritual observation — detect recurring patterns
-  if (input.text) {
-    observeRitual(input.text, new Date().getHours());
-  }
-
-  // 7d. Post-turn cardboard score update — track conversation quality
-  updateCardboard(input.text ?? '', text);
-
-  // 7a. Post-turn affinity update (feature-gated)
-  if (config.features.multiAxisAffinity) {
-    updateAffinity(intent.primary, false);
-  }
-
-  // 7b. Post-turn frustration update (feature-gated)
-  if (config.features.frustrationTracking) {
-    updateFrustration(intent.primary, false);
-  }
-
-  // 7e. Post-turn dual-mode tracking — record the turn's intent for hysteresis
-  recordDualModeTurn(intent, crisisResult.shouldIntervene);
-
-  // 7f. Post-turn personality driver: simulate life event and handle ignored/welcome-back
-  if (isPersonalityDriverEnabled()) {
-    try {
-      const personalityState = getPersonalityState();
-      const timeSinceLastChat = sessionCtx.emotionState.lastInteraction
-        ? (Date.now() - new Date(sessionCtx.emotionState.lastInteraction).getTime()) / 3_600_000
-        : 0;
-
-      // If user just came back after > 24h, apply welcome-back effect (cold start)
-      if (timeSinceLastChat > 24 && text && text.trim().length > 0) {
-        // Only apply welcome-back once — the ignored effect was already applied
-        // at the top of the turn. After reply, warm up slightly.
-        applyWarmUpEffect();
-      }
-
-      // Simulate life event every ~8 turns
-      // If event triggered AND initiative > 50 AND time since last chat > 2 hours
-      // AND we have a response, record a hint for possible follow-up
-      if (_turnCounter % 8 === 0 && _turnCounter > 0) {
-        // Custom character: use LifeEngine for chat-triggered events
-        const charName = readActiveCharacter();
-        if (getConfig().features.lifeEngine && charName) {
-          const event = await lifeEngine().tickLight(charName);
-          if (event) {
-            appendBookmark({
-              time: new Date().toISOString(),
-              what: `[life-event] ${truncate(event.description, 100)}`,
-              evidence: `category=${event.category} importance=${event.importance}`,
-            });
-          }
-        } else {
-          // Legacy path for built-in base personas
-          const lifeEvent = simulateLifeEvent();
-          if (lifeEvent && personalityState.initiative > 50 && timeSinceLastChat > 2) {
-            appendBookmark({
-              time: new Date().toISOString(),
-              what: `[life-event] 你: ${truncate(lifeEvent, 100)}`,
-              evidence: `personality: sociability=${personalityState.sociability}, initiative=${personalityState.initiative}`,
-            });
-          }
-        }
-      }
-
-      // Comfort detection: if user is comforting the agent, apply positive PAD
-      if (getConfig().features.lifeEngine && text && /抱抱|不哭|没事|我在|陪|心疼|还好吗|辛苦了|会好起来的|别难过/.test(text)) {
-        try {
-          updatePAD({ pleasure: 0.15, arousal: -0.05, dominance: 0.1 });
-          const charName = readActiveCharacter();
-          if (charName) acknowledgeRecentEvents(charName);
-        } catch { /* best-effort */ }
-      }
-    } catch {
-      // Best-effort
-    }
-  }
-
-  if (crisisResult.shouldIntervene || (input.text && input.text.trim().length > 5)) {
-    appendBookmark({
-      time: new Date().toISOString(),
-      what: crisisResult.shouldIntervene
-        ? `[crisis:${crisisResult.level}] user expressed distress`
-        : `exchange: user said "${truncate(input.text ?? '', 80)}"`,
-      evidence: crisisResult.shouldIntervene
-        ? `matched: ${crisisResult.matchedKeywords.join(', ')}`
-        : `agent replied: "${truncate(text, 80)}"`,
-    });
-  }
-
-  // 8. Update MEMORY.md Active Context with a short hint of this turn.
-  //    Kept under 300 chars per the index spec.
-  const hint = truncate(
-    `${new Date().toISOString().slice(11, 16)} ${crisisResult.shouldIntervene ? '[crisis] ' : ''}${truncate(input.text ?? '', 60)} → ${truncate(text, 60)}`,
-    280,
-  );
-  try {
-    updateActiveContext(hint);
-  } catch {
-    // Active Context update is best-effort; don't break the turn on failure.
-  }
-
-  // 9. Mark session done if this was a one-shot (no sessionId passed in)
-  if (!input.sessionId) {
-    markSessionDone(sessionId);
-  }
-
-  // Log prompt budget if enabled
-  if (budget) budget.log();
+  await applyPostTurnSideEffects({
+    input,
+    text,
+    sessionId,
+    sessionCtx,
+    intent,
+    crisisResult,
+    config,
+    budget,
+    isNewSession: !input.sessionId,
+  });
 
   return {
     text,

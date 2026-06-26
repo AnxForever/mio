@@ -27,6 +27,7 @@
 
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
+import 'dotenv/config';
 import { runTurn } from './core/agent-loop.js';
 import { getConfig, updateConfig } from './config.js';
 import { modManager } from './mod/mod-manager.js';
