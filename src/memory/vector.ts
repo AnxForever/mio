@@ -1,49 +1,30 @@
 /**
- * Mio — vector memory store (dual-format: TF sparse + MiniMax dense)
+ * Mio — vector memory store.
  *
- * Persistence format: JSONL with one entry per line.
- *
- *   {
- *     "id": "bookmark:2026-06-25 12:00 +0800:差异-异用-用户",
- *     "text": "聊到了猫和狗的差异. 用户提到...",
- *     "source": "bookmark",
- *     "timestamp": "2026-06-25 12:00 +0800",
- *     "embeddingType": "tf" | "minimax",
- *     "embedding": SparseVector | "<base64 Float32Array>"
- *   }
- *
- * Backward compat: entries without `embeddingType` are treated as 'tf'.
- * Old sparse indexes load fine; first write to them will rewrite in
- * whichever format the active provider uses.
- *
- * Provider selection: see ./embedding.ts. Default is TF; set
- * MINIMAX_API_KEY to switch to MiniMax.
+ * Storage backend: SQLite + sqlite-vec (see ./sqlite-vector.ts). Dense
+ * (minimax) vectors use sqlite-vec's vec0 KNN; sparse (tf) vectors use
+ * application-level cosine. The public API below is unchanged from the old
+ * JSONL implementation, so callers are unaffected. A one-time migration
+ * imports any legacy `.vector-index.jsonl` on first access.
  *
  * Why dual format: dense vectors (1536 floats) cost real money per call.
- * TF is free, offline, and good enough for keyword recall. We let the
- * user pick the trade-off via env, and we don't force-migrate indexes
- * — if a user switches providers, we rebuild from BOOKMARKS.md on the
- * next reindexBookmarks() call.
+ * TF is free, offline, and good enough for keyword recall. The user picks
+ * the trade-off via env (set MINIMAX_API_KEY for dense).
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { getDataDir } from '../config.js';
 import { bankFilePath } from './paths.js';
-import { readFileSyncSafe, writeFileSyncSafe } from './bank.js';
+import { readFileSyncSafe } from './bank.js';
 import {
   getEmbeddingProvider,
   type AnyVector,
   type SparseVector,
-  type DenseVector,
   type EmbeddingProvider,
 } from './embedding.js';
-
-// ─── Index file location ───
-
-function indexPath(): string {
-  return join(getDataDir(), 'memory-bank', '.vector-index.jsonl');
-}
+import * as store from './sqlite-vector.js';
+import type { SqliteVectorEntry } from './sqlite-vector.js';
 
 // ─── Tokenization ───
 
@@ -67,26 +48,19 @@ const STOP_WORDS_EN = new Set([
 ]);
 
 /**
- * Tokenize text into a set of meaningful terms.
- *
- * Strategy:
- *   - Chinese: emit bigrams of consecutive CJK characters + unigrams
- *     that aren't stop words.
- *   - English: lowercase, split on non-alpha, drop stop words.
- *   - Strip all CJK punctuation and basic ASCII punctuation.
+ * Tokenize text into a set of meaningful terms (Chinese bigrams+unigrams,
+ * English words minus stop words).
  */
 export function tokenize(text: string): string[] {
   const tokens: string[] = [];
   const lower = text.toLowerCase();
 
-  // 1. English tokens
   const enTokens = lower
-    .replace(/[一-鿿]/g, ' ') // remove CJK
+    .replace(/[一-鿿]/g, ' ')
     .split(/[^a-z0-9]+/)
     .filter((w) => w.length >= 2 && !STOP_WORDS_EN.has(w));
   tokens.push(...enTokens);
 
-  // 2. Chinese bigrams + meaningful unigrams
   const cjk = lower.replace(/[^一-鿿]/g, '');
   for (let i = 0; i < cjk.length - 1; i++) {
     const bi = cjk.slice(i, i + 2);
@@ -95,9 +69,7 @@ export function tokenize(text: string): string[] {
     }
   }
   for (const ch of cjk) {
-    if (!STOP_WORDS_ZH.has(ch)) {
-      tokens.push(ch);
-    }
+    if (!STOP_WORDS_ZH.has(ch)) tokens.push(ch);
   }
 
   return tokens;
@@ -111,13 +83,11 @@ export type Embedding = SparseVector;
 /** @deprecated Use EmbeddingProvider for new code. */
 export function embed(tokens: string[]): Embedding {
   const v: Embedding = {};
-  for (const t of tokens) {
-    v[t] = (v[t] ?? 0) + 1;
-  }
+  for (const t of tokens) v[t] = (v[t] ?? 0) + 1;
   return v;
 }
 
-/** @deprecated Cosine for sparse vectors. For dense, use dot product on L2-normalized vectors. */
+/** @deprecated Cosine for sparse vectors. */
 export function cosine(a: Embedding, b: Embedding): number {
   let dot = 0;
   for (const k of Object.keys(a)) {
@@ -129,50 +99,34 @@ export function cosine(a: Embedding, b: Embedding): number {
   return dot / (normA * normB);
 }
 
-// ─── Dense vector helpers ───
+// ─── Dense vector helpers (used only for legacy JSONL migration) ───
 
-/**
- * Encode a Float32Array as base64. ~6KB per 1536-dim vector — much smaller
- * than JSON-encoding each float individually.
- */
-function encodeDense(v: Float32Array): string {
-  const buf = Buffer.from(v.buffer, v.byteOffset, v.byteLength);
-  return buf.toString('base64');
-}
-
-/** Decode a base64 string back to a Float32Array of the same length. */
+/** Decode a base64 string back to a Float32Array. */
 function decodeDense(s: string): Float32Array {
   const buf = Buffer.from(s, 'base64');
-  // Slice into a fresh ArrayBuffer so Float32Array is well-formed.
   const out = new Float32Array(buf.byteLength / 4);
-  const view = Buffer.from(out.buffer);
-  buf.copy(view);
+  Buffer.from(out.buffer).set(buf);
   return out;
 }
 
 /**
  * Cosine similarity that handles both sparse and dense vectors.
- *
- * Dense vectors are assumed L2-normalized (which the MiniMax API guarantees),
- * so cosine reduces to a dot product.
+ * Dense vectors are assumed L2-normalized, so cosine reduces to a dot product.
  */
 function similarity(query: AnyVector, candidate: AnyVector): number {
   if (query instanceof Float32Array && candidate instanceof Float32Array) {
-    // Both dense — dot product (vectors are L2-normalized).
     const n = Math.min(query.length, candidate.length);
     let dot = 0;
     for (let i = 0; i < n; i++) dot += query[i] * candidate[i];
     return dot;
   }
   if (!(query instanceof Float32Array) && !(candidate instanceof Float32Array)) {
-    // Both sparse.
     return cosine(query, candidate);
   }
-  // Mismatched types — score 0 (this happens during provider transitions).
   return 0;
 }
 
-// ─── Index entry ───
+// ─── Index entry types ───
 
 export interface VectorIndexEntry {
   id: string;
@@ -184,173 +138,170 @@ export interface VectorIndexEntry {
   embedding: SparseVector | string;
 }
 
-/**
- * Raw in-memory entry with the vector materialized (decoded from base64
- * if it was dense). This is what `search()` and `readIndex()` return.
- */
+/** In-memory entry with the vector materialized. Returned by search()/readIndex(). */
 export interface MaterializedEntry extends Omit<VectorIndexEntry, 'embedding'> {
   embedding: AnyVector;
   _loadedType: 'tf' | 'minimax';
 }
 
-// ─── Public API ───
+// ─── Legacy JSONL migration (one-time) ───
 
-/**
- * Add a single entry to the index. Uses the active embedding provider.
- *
- * Idempotent on `id`: re-adding the same id overwrites the previous entry.
- */
-export function indexEntry(entry: Omit<VectorIndexEntry, 'embedding' | 'embeddingType'>): void {
-  const provider = getEmbeddingProvider();
-  addEntryWithProvider(entry, provider);
+let _migrated = false;
+
+function legacyJsonlPath(): string {
+  return join(getDataDir(), 'memory-bank', '.vector-index.jsonl');
 }
 
 /**
- * Force a specific provider for this index call. Mostly used in tests.
+ * Import a legacy JSONL index into SQLite once, then rename it aside. Safe to
+ * call on every public entry point — it no-ops after the first run (or when no
+ * legacy file exists).
  */
+function ensureMigrated(): void {
+  if (_migrated) return;
+  _migrated = true;
+  const path = legacyJsonlPath();
+  if (!existsSync(path)) return;
+  try {
+    const content = readFileSync(path, 'utf-8');
+    const lines = content.split('\n').filter((l) => l.trim());
+    const entries: SqliteVectorEntry[] = [];
+    for (const line of lines) {
+      try {
+        const p = JSON.parse(line) as Partial<VectorIndexEntry>;
+        if (!p.id || !p.text || p.embedding === undefined) continue;
+        const type = (p.embeddingType ?? 'tf') as 'tf' | 'minimax';
+        const embedding: SparseVector | Float32Array =
+          type === 'minimax' && typeof p.embedding === 'string'
+            ? decodeDense(p.embedding)
+            : (p.embedding as SparseVector);
+        entries.push({
+          id: p.id,
+          text: p.text,
+          source: (p.source ?? 'manual') as string,
+          timestamp: p.timestamp ?? '',
+          embeddingType: type,
+          embedding,
+        });
+      } catch {
+        // skip malformed line
+      }
+    }
+    if (entries.length > 0) store.upsertBatch(entries);
+    renameSync(path, path + '.migrated');
+  } catch {
+    // Migration is best-effort; a fresh SQLite store still works.
+  }
+}
+
+/** Convert a stored entry to the public MaterializedEntry shape. */
+function toMaterialized(e: SqliteVectorEntry): MaterializedEntry {
+  return {
+    id: e.id,
+    text: e.text,
+    source: e.source as VectorIndexEntry['source'],
+    timestamp: e.timestamp,
+    embeddingType: e.embeddingType,
+    _loadedType: e.embeddingType,
+    embedding: e.embedding as AnyVector,
+  };
+}
+
+// ─── Public API ───
+
+/**
+ * Add a single entry to the index using the active embedding provider.
+ * Idempotent on `id`. Sync path supports TF only; use indexEntryWithProvider
+ * for dense providers.
+ */
+export function indexEntry(entry: Omit<VectorIndexEntry, 'embedding' | 'embeddingType'>): void {
+  ensureMigrated();
+  const provider = getEmbeddingProvider();
+  if (provider.type !== 'tf') {
+    throw new Error(`Sync indexEntry only supports tf; use indexEntryWithProvider for ${provider.type}`);
+  }
+  store.upsertEntry({
+    id: entry.id,
+    text: entry.text,
+    source: entry.source,
+    timestamp: entry.timestamp,
+    embeddingType: 'tf',
+    embedding: embed(tokenize(entry.text)),
+  });
+}
+
+/** Force a specific provider for this index call. Mostly used in tests. */
 export async function indexEntryWithProvider(
   entry: Omit<VectorIndexEntry, 'embedding' | 'embeddingType'>,
   provider: EmbeddingProvider,
 ): Promise<void> {
-  await addEntryWithProviderAsync(entry, provider);
-}
-
-function addEntryWithProvider(
-  entry: Omit<VectorIndexEntry, 'embedding' | 'embeddingType'>,
-  provider: EmbeddingProvider,
-): void {
-  // Sync path for TF. We don't await here; for TF it's trivially fast.
-  // For MiniMax, the caller should use indexEntryWithProvider.
-  if (provider.type !== 'tf') {
-    throw new Error(`Sync indexEntry only supports tf; use indexEntryWithProvider for ${provider.type}`);
-  }
-  const tokens = tokenize(entry.text);
-  const v = embed(tokens);
-  writeEntry({ ...entry, embeddingType: 'tf', embedding: v });
-}
-
-async function addEntryWithProviderAsync(
-  entry: Omit<VectorIndexEntry, 'embedding' | 'embeddingType'>,
-  provider: EmbeddingProvider,
-): Promise<void> {
+  ensureMigrated();
   const vectors = await provider.embed([entry.text]);
   if (vectors.length !== 1) {
     throw new Error(`Provider returned ${vectors.length} vectors for 1 input`);
   }
-  const v = vectors[0];
-  const embedding = v instanceof Float32Array ? encodeDense(v) : v;
-  writeEntry({ ...entry, embeddingType: provider.type, embedding });
-}
-
-function writeEntry(entry: VectorIndexEntry): void {
-  const path = indexPath();
-  const existing = readRawIndex();
-  const filtered = existing.filter((e) => e.id !== entry.id);
-  filtered.push(entry);
-  writeFileSyncSafe(path, filtered.map((e) => JSON.stringify(e)).join('\n') + '\n');
-}
-
-/**
- * Read the raw index from disk (without decoding dense vectors).
- * Used by `readIndex()` and by the reindex functions.
- */
-function readRawIndex(): VectorIndexEntry[] {
-  const path = indexPath();
-  if (!existsSync(path)) return [];
-  const content = readFileSync(path, 'utf-8');
-  const lines = content.split('\n').filter((l) => l.trim());
-  const result: VectorIndexEntry[] = [];
-  for (const line of lines) {
-    try {
-      const parsed = JSON.parse(line) as Partial<VectorIndexEntry>;
-      if (parsed.id && parsed.text && parsed.embedding !== undefined) {
-        result.push({
-          id: parsed.id,
-          text: parsed.text,
-          source: (parsed.source ?? 'manual') as VectorIndexEntry['source'],
-          timestamp: parsed.timestamp ?? '',
-          embeddingType: (parsed.embeddingType ?? 'tf') as 'tf' | 'minimax',
-          embedding: parsed.embedding as SparseVector | string,
-        });
-      }
-    } catch {
-      // skip malformed
-    }
-  }
-  return result;
-}
-
-/**
- * Read the index with vectors materialized. Returns the decoded form so
- * callers don't have to think about base64.
- */
-export function readIndex(): MaterializedEntry[] {
-  const raw = readRawIndex();
-  return raw.map((e) => {
-    const isDense = e.embeddingType === 'minimax' && typeof e.embedding === 'string';
-    const vector: AnyVector = isDense
-      ? decodeDense(e.embedding as string)
-      : (e.embedding as SparseVector);
-    return {
-      id: e.id,
-      text: e.text,
-      source: e.source,
-      timestamp: e.timestamp,
-      embeddingType: e.embeddingType,
-      _loadedType: e.embeddingType,
-      embedding: vector,
-    };
+  store.upsertEntry({
+    id: entry.id,
+    text: entry.text,
+    source: entry.source,
+    timestamp: entry.timestamp,
+    embeddingType: provider.type,
+    embedding: vectors[0],
   });
+}
+
+/** Read the full index with vectors materialized. */
+export function readIndex(): MaterializedEntry[] {
+  ensureMigrated();
+  return store.readAll().map(toMaterialized);
 }
 
 /**
  * Search the index for entries similar to a query string.
  *
+ * Dense (minimax) queries use sqlite-vec KNN; sparse (tf) queries fall back to
+ * application-level cosine over the tf entries.
+ *
  * @param query    Free-text query.
  * @param limit    Max results (default 5).
  * @param minScore Minimum similarity to include (default 0.05).
- * @returns        Top results sorted by similarity desc.
  */
 export async function search(
   query: string,
   limit: number = 5,
   minScore: number = 0.05,
 ): Promise<Array<MaterializedEntry & { score: number }>> {
-  const index = readIndex();
-  if (index.length === 0) return [];
-
+  ensureMigrated();
   const provider = getEmbeddingProvider();
   const queryVecs = await provider.embed([query]);
   if (queryVecs.length === 0) return [];
   const queryVec = queryVecs[0];
 
-  const scored: Array<MaterializedEntry & { score: number }> = [];
-  for (const entry of index) {
-    // Mismatched provider: skip (will be rebuilt by reindexBookmarks()).
-    if (entry._loadedType !== provider.type) continue;
-    const score = similarity(queryVec, entry.embedding);
-    if (score >= minScore) {
-      scored.push({ ...entry, score });
-    }
+  if (queryVec instanceof Float32Array) {
+    // Dense → sqlite-vec KNN.
+    return store
+      .searchDense(queryVec, limit, minScore)
+      .map((r) => ({ ...toMaterialized(r), score: r.score }));
   }
 
+  // Sparse (tf) → application-level cosine over tf entries.
+  const scored: Array<MaterializedEntry & { score: number }> = [];
+  for (const e of store.readSparse()) {
+    const score = similarity(queryVec, e.embedding as AnyVector);
+    if (score >= minScore) scored.push({ ...toMaterialized(e), score });
+  }
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, limit);
 }
 
 // ─── Bookmarks reindexer ───
 
-/** Parsed bookmark line: a timestamp and its free-text body. */
 interface ParsedBookmark {
   timestamp: string;
   text: string;
 }
 
-/**
- * Stable index id for a parsed bookmark. The format must stay byte-identical
- * to the one written below so incremental reindexing can dedup against the
- * existing index.
- */
+/** Stable index id for a parsed bookmark. Must stay byte-identical for dedup. */
 function bookmarkId(b: ParsedBookmark): string {
   return `bookmark:${b.timestamp}:${(b.text || '').slice(0, 30).replace(/\s+/g, '-')}`;
 }
@@ -367,50 +318,38 @@ function parseBookmarkLines(content: string): ParsedBookmark[] {
   return parsed;
 }
 
-/**
- * Embed a batch of bookmarks into index entries via the given provider.
- *
- * For TF this uses the sync tokenizer under the hood; for MiniMax it is a
- * single batched API call. Dense vectors are base64-encoded for storage.
- */
+/** Embed a batch of bookmarks into stored entries via the given provider. */
 async function embedBookmarks(
   bookmarks: ParsedBookmark[],
   provider: EmbeddingProvider,
-): Promise<VectorIndexEntry[]> {
-  const texts = bookmarks.map((b) => b.text);
-  const vectors = await provider.embed(texts);
-  return bookmarks.map((b, i) => {
-    const v = vectors[i];
-    const embedding = v instanceof Float32Array ? encodeDense(v) : v;
-    return {
-      id: bookmarkId(b),
-      text: b.text,
-      source: 'bookmark' as const,
-      timestamp: b.timestamp,
-      embeddingType: provider.type,
-      embedding,
-    };
-  });
+): Promise<SqliteVectorEntry[]> {
+  const vectors = await provider.embed(bookmarks.map((b) => b.text));
+  return bookmarks.map((b, i) => ({
+    id: bookmarkId(b),
+    text: b.text,
+    source: 'bookmark',
+    timestamp: b.timestamp,
+    embeddingType: provider.type,
+    embedding: vectors[i],
+  }));
 }
 
 /**
  * Re-index BOOKMARKS.md using the active embedding provider.
  *
- * Incremental by default: this is triggered on every BOOKMARKS.md mtime change
- * (see agent-loop's maybeReindexBookmarks, ~every turn), so re-embedding the
- * full history each call would make embedding cost grow linearly with the
- * conversation. Instead we only embed bookmark lines whose id is not already
- * in the index, and append them — existing entries are preserved untouched.
+ * Incremental by default: triggered on every BOOKMARKS.md mtime change (~every
+ * turn), so it only embeds bookmark lines whose id is not already in the index
+ * and appends them — existing entries are preserved.
  *
- * Full-rebuild fallback: when the active provider's `type` no longer matches
- * the `embeddingType` stored on the existing bookmark entries (the user
- * switched providers, e.g. tf → minimax), the stored vectors are a different,
- * incomparable format. In that case every bookmark is dropped and re-embedded
- * under the new provider.
+ * Full-rebuild fallback: when the active provider's type no longer matches the
+ * embeddingType stored on existing bookmark entries (the user switched
+ * providers), the stored vectors are an incomparable format, so every bookmark
+ * is dropped and re-embedded under the new provider.
  *
  * Returns the total number of entries in the index after the operation.
  */
 export async function reindexBookmarks(): Promise<number> {
+  ensureMigrated();
   const bookmarks = readFileSyncSafe(bankFilePath('BOOKMARKS.md'));
   if (!bookmarks) return 0;
 
@@ -418,44 +357,30 @@ export async function reindexBookmarks(): Promise<number> {
   if (parsed.length === 0) return 0;
 
   const provider = getEmbeddingProvider();
-  const raw = readRawIndex();
-  const existingBookmarks = raw.filter((e) => e.source === 'bookmark');
+  const existingTypes = store.bookmarkEmbeddingTypes();
 
   // Provider switch → existing vectors are a different format → full rebuild.
-  const providerSwitched = existingBookmarks.some((e) => e.embeddingType !== provider.type);
-  if (providerSwitched) {
-    const kept = raw.filter((e) => e.source !== 'bookmark');
-    const entries = await embedBookmarks(parsed, provider);
-    const all = [...kept, ...entries];
-    writeFileSyncSafe(indexPath(), all.map((e) => JSON.stringify(e)).join('\n') + '\n');
-    return all.length;
+  if (existingTypes.size > 0 && !existingTypes.has(provider.type)) {
+    store.deleteBySource('bookmark');
+    store.upsertBatch(await embedBookmarks(parsed, provider));
+    return store.count();
   }
 
   // Incremental: embed only bookmark lines not already in the index.
-  const existingIds = new Set(existingBookmarks.map((e) => e.id));
+  const existingIds = store.readBookmarkIds();
   const fresh = parsed.filter((b) => !existingIds.has(bookmarkId(b)));
-  if (fresh.length === 0) return raw.length;
+  if (fresh.length === 0) return store.count();
 
-  const entries = await embedBookmarks(fresh, provider);
-  const all = [...raw, ...entries];
-  writeFileSyncSafe(indexPath(), all.map((e) => JSON.stringify(e)).join('\n') + '\n');
-  return all.length;
+  store.upsertBatch(await embedBookmarks(fresh, provider));
+  return store.count();
 }
 
 // ─── Stats ───
 
-/**
- * Statistics about the index. Used by /status and the test suite.
- */
+/** Statistics about the index. Used by /status and the test suite. */
 export function indexStats(): { entries: number; sources: Record<string, number>; types: Record<string, number> } {
-  const raw = readRawIndex();
-  const sources: Record<string, number> = {};
-  const types: Record<string, number> = {};
-  for (const e of raw) {
-    sources[e.source] = (sources[e.source] ?? 0) + 1;
-    types[e.embeddingType] = (types[e.embeddingType] ?? 0) + 1;
-  }
-  return { entries: raw.length, sources, types };
+  ensureMigrated();
+  return store.stats();
 }
 
 // Re-export for callers
