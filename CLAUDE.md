@@ -9,7 +9,7 @@ npm run build       # tsc → dist/
 npm run typecheck   # tsc --noEmit
 npm run dev         # tsx src/index.ts (REPL)
 npm start           # node dist/index.js
-npm test            # build + 54 unit tests + 42 emotion tests + 12 smoke tests
+npm test            # build + tsx 54 unit + 42 emotion + 12 smoke (108 tests)
 npm run test:e2e    # Playwright E2E tests (needs npx playwright install)
 ```
 
@@ -64,7 +64,7 @@ MINIMAX_API_KEY="sk-cp-..." MIO_PROVIDER=minimax npm run build && node dist/inde
 | `MIO_TELEGRAM_BOT_TOKEN` | Telegram bot token |
 | `MIO_TELEGRAM_CHAT_ID` | Telegram target chat |
 
-Node ≥ 20. ESM (`"type": "module"`).
+Node ≥ 22. ESM (`"type": "module"`).
 
 ## Architecture (v0.6.0)
 
