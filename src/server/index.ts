@@ -36,7 +36,23 @@ import { createRateLimiter } from './rate-limit.js';
 import { createBackup, exportMemory, listBackups, pruneBackups } from '../utils/backup.js';
 import { sendToAllChannels, isNotifyEnabled, getNotifyChannels, sendTelegramMessage, sendWebhookMessage, sendWhatsAppMessage, sendDiscordMessage, sendSlackMessage } from './notify.js';
 import { logger } from '../utils/logger.js';
-import { validate, validateQuery, chatBody, modBody, searchQuery, analyticsQuery, onboardingBody, backupPruneBody, characterConfigSchema } from '../validation.js';
+import {
+  validate,
+  validateParams,
+  validateQuery,
+  chatBody,
+  modBody,
+  searchQuery,
+  analyticsQuery,
+  onboardingBody,
+  backupPruneBody,
+  characterConfigSchema,
+  personaBody,
+  personaModeBody,
+  voiceSynthesizeBody,
+  characterNameParam,
+  wsClientMessageSchema,
+} from '../validation.js';
 import { createCharacter, listCharacters, deleteCharacter, activateCharacter } from '../character/factory.js';
 import { readRecentEvents, memoryStreamStats } from '../character/memory-stream.js';
 import { getPADState } from '../emotion/pad.js';
@@ -251,12 +267,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     res.json(detectVoiceCapabilities());
   });
 
-  app.post('/voice/synthesize', requireAuth, async (req, res) => {
-    const body = req.body as { text?: string } | undefined;
-    if (!body || typeof body.text !== 'string') {
-      res.status(400).json({ error: 'Missing "text" in body' });
-      return;
-    }
+  app.post('/voice/synthesize', requireAuth, validate(voiceSynthesizeBody), async (req, res) => {
+    const body = req.body as { text: string };
     const cap = detectVoiceCapabilities();
     if (!cap.tts) {
       res.status(503).json({ error: 'edge-tts CLI not available' });
@@ -356,12 +368,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
 
   // ─── Persona Studio ───
 
-  app.post('/persona/generate', requireAuth, async (req, res) => {
-    const body = req.body as PersonaRequest | undefined;
-    if (!body || !body.name || !body.gender || !body.style) {
-      res.status(400).json({ error: 'Missing required fields: "name", "gender", "style"' });
-      return;
-    }
+  app.post('/persona/generate', requireAuth, validate(personaBody), async (req, res) => {
+    const body = req.body as PersonaRequest;
     try {
       const result = generatePersona(body);
       res.json({
@@ -378,12 +386,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     }
   });
 
-  app.post('/persona/save', requireAuth, async (req, res) => {
-    const body = req.body as PersonaRequest | undefined;
-    if (!body || !body.name || !body.gender || !body.style) {
-      res.status(400).json({ error: 'Missing required fields: "name", "gender", "style"' });
-      return;
-    }
+  app.post('/persona/save', requireAuth, validate(personaBody), async (req, res) => {
+    const body = req.body as PersonaRequest;
     try {
       const result = generatePersona(body);
 
@@ -422,12 +426,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     res.json({ mode: getCurrentMode() });
   });
 
-  app.post('/persona/mode', requireAuth, async (req, res) => {
-    const body = req.body as { mode?: string } | undefined;
-    if (!body || (body.mode !== 'base' && body.mode !== 'deep')) {
-      res.status(400).json({ error: 'Invalid "mode". Use "base" or "deep".' });
-      return;
-    }
+  app.post('/persona/mode', requireAuth, validate(personaModeBody), async (req, res) => {
+    const body = req.body as { mode: 'base' | 'deep' };
     try {
       const { executeSwitch } = await import('../persona/dual-mode.js');
       executeSwitch(body.mode);
@@ -497,8 +497,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   });
 
   // GET /analytics/emotion — emotion trends (default 30 days)
-  app.get('/analytics/emotion', requireAuth, (req, res) => {
-    const days = parseInt(req.query.days as string, 10) || 30;
+  app.get('/analytics/emotion', requireAuth, validateQuery(analyticsQuery), (req, res) => {
+    const days = (req.query as unknown as { days?: number }).days ?? 30;
     res.json(getEmotionTrends(days));
   });
 
@@ -521,26 +521,19 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
 
   // GET /search?q=xxx&session=xxx&role=user&limit=20
   // Query param `q` is required; returns SearchResponse JSON.
-  app.get('/search', requireAuth, async (req, res) => {
-    const q = req.query.q as string | undefined;
-    if (!q || !q.trim()) {
-      res.status(400).json({ error: 'Missing required query parameter "q"' });
-      return;
-    }
-    const session = req.query.session as string | undefined;
-    const role = req.query.role as string | undefined;
-    const limit = parseInt(req.query.limit as string, 10) || undefined;
-
-    if (role && role !== 'user' && role !== 'assistant') {
-      res.status(400).json({ error: 'Invalid role. Use "user" or "assistant".' });
-      return;
-    }
+  app.get('/search', requireAuth, validateQuery(searchQuery), async (req, res) => {
+    const { q, session, role, limit } = req.query as unknown as {
+      q: string;
+      session?: string;
+      role?: 'user' | 'assistant';
+      limit?: number;
+    };
 
     res.json(
       await searchHandler(q, {
         sessionId: session,
         maxResults: limit,
-        role: role as 'user' | 'assistant' | undefined,
+        role,
       }),
     );
   });
@@ -620,7 +613,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   });
 
   // POST /character/:name/activate — activate a character
-  app.post('/character/:name/activate', requireAuth, (req, res) => {
+  app.post('/character/:name/activate', requireAuth, validateParams(characterNameParam), (req, res) => {
     try {
       const name = String(req.params.name);
       const char = activateCharacter(name);
@@ -632,14 +625,14 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   });
 
   // DELETE /character/:name — delete custom character
-  app.delete('/character/:name', requireAuth, (req, res) => {
+  app.delete('/character/:name', requireAuth, validateParams(characterNameParam), (req, res) => {
     const name = String(req.params.name);
     const result = deleteCharacter(name);
     res.status(result.success ? 200 : 400).json(result);
   });
 
   // GET /character/:name/life — character life journal
-  app.get('/character/:name/life', requireAuth, (req, res) => {
+  app.get('/character/:name/life', requireAuth, validateParams(characterNameParam), (req, res) => {
     try {
       const name = String(req.params.name);
       const events = readRecentEvents(name, 50);
@@ -711,7 +704,20 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     ws.on('message', async (raw) => {
       let payload: WsClientMessage;
       try {
-        payload = JSON.parse(raw.toString()) as WsClientMessage;
+        const parsed = JSON.parse(raw.toString());
+        const result = wsClientMessageSchema.safeParse(parsed);
+        if (!result.success) {
+          safeSend(ws, {
+            type: 'error',
+            error: 'Invalid message',
+            details: result.error.issues.map((i) => ({
+              path: i.path.join('.'),
+              message: i.message,
+            })),
+          });
+          return;
+        }
+        payload = result.data as WsClientMessage;
       } catch {
         safeSend(ws, { type: 'error', error: 'Invalid JSON' });
         return;
