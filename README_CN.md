@@ -12,6 +12,10 @@
   <img src="https://img.shields.io/badge/测试-108-brightgreen" alt="Tests">
 </p>
 
+<p align="center">
+  <sub><a href="README_CN.md">中文</a> | <a href="README.md">English</a></sub>
+</p>
+
 ---
 
 Mio 是一个完全运行在本机的情感 AI 陪伴智能体——无需云服务、无遥测、无账号。内置男友/女友双模式人格，搭载 PAD 三维情感模型、可通过对话演化的 OCEAN 人格特质，以及模拟睡眠记忆巩固的 3 阶段夜间记忆整合管线。
@@ -68,8 +72,6 @@ npm run test:e2e    # Playwright 端到端测试
 ## 文档
 
 完整架构、设计决策、API 端点、编码规范、状态文件布局 → **[CLAUDE.md](CLAUDE.md)**
-
-English documentation → **[README.md](README.md)**
 
 ## 运行要求
 

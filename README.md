@@ -12,6 +12,10 @@
   <img src="https://img.shields.io/badge/tests-108-brightgreen" alt="Tests">
 </p>
 
+<p align="center">
+  <sub><a href="README.md">English</a> | <a href="README_CN.md">中文</a></sub>
+</p>
+
 ---
 
 Mio is a privacy-first emotional AI companion that runs entirely on your machine — no cloud, no telemetry, no accounts. It ships with boyfriend/girlfriend personas, a PAD 3D emotional model, OCEAN personality traits that evolve through conversation, and a 3-phase nightly memory consolidation pipeline inspired by sleep neuroscience.
@@ -68,8 +72,6 @@ npm run test:e2e    # Playwright E2E
 ## Documentation
 
 Full architecture, design decisions, API endpoints, conventions, and state file layout → **[CLAUDE.md](CLAUDE.md)**
-
-中文文档 → **[README_CN.md](README_CN.md)**
 
 ## Requirements
 
