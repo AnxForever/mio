@@ -1,0 +1,185 @@
+/* ═══════════════════════════════════════════════════════════════════
+   tokens.css — 樱与雾 · 设计令牌系统
+
+   每一个值都经过推敲。间距用 4px 基线网格, 颜色有情感温度,
+   动效按交互意图分级, 圆角随亲密程度变化。
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root {
+
+  /* ═══ 品牌色 — 樱色梯度 ═══
+     从极淡到浓郁, 随好感度和关系阶段渐进变化。
+     500 档是主品牌色, 50-200 用于背景和卡片,
+     300-400 用于交互态, 600-700 用于按压和深色强调。 */
+
+  --sakura-50:    #fff5f7;
+  --sakura-100:   #ffe8ec;
+  --sakura-200:   #ffd0dc;
+  --sakura-300:   #ffb8c8;
+  --sakura-400:   #ff9aaf;
+  --sakura-500:   #ff7a95;
+  --sakura-600:   #e65d78;
+  --sakura-700:   #cc4560;
+
+
+  /* ═══ 中性色 — 雾灰梯度 ═══
+     从最浅的背景到最深的正文,
+     每一档之间有 4-6% 的明度差异, 刚好能被眼睛分辨
+     但又不会产生"分界线"的感觉。 */
+
+  --mist-50:      #fafafa;
+  --mist-100:     #f5f5f6;
+  --mist-200:     #eeeeef;
+  --mist-300:     #e4e4e6;
+  --mist-400:     #d1d1d4;
+  --mist-500:     #aeaeb2;
+  --mist-600:     #86868b;
+  --mist-700:     #636368;
+  --mist-800:     #3a3a3e;
+  --mist-900:     #1d1d1f;
+
+
+  /* ═══ 语义色 — 情绪信号 ═══
+     不刺眼, 不荧光, 柔和的情绪标记色。
+     用于 Canvas 情绪球底色插值、数据面板图表、
+     消息反应和系统级状态提示。 */
+
+  --joy:          #ffb347;
+  --joy-soft:     #fff3dc;
+  --calm:         #7ec8e3;
+  --calm-soft:    #eaf6fa;
+  --sadness:      #a3b1c6;
+  --sadness-soft: #f0f2f6;
+  --tension:      #ff6b6b;
+  --tension-soft: #ffeaea;
+  --warmth:       #ff9a76;
+  --warmth-soft:  #fff2ed;
+  --shy:          #d4a5d4;
+  --shy-soft:     #f9f0f9;
+
+
+  /* ═══ 功能色 ═══ */
+
+  --success:      #34c759;
+  --success-soft: #e8f9ed;
+  --warning:      #ff9f0a;
+  --warning-soft: #fff5e5;
+  --danger:       #ff3b30;
+  --danger-soft:  #ffe8e7;
+  --info:         #5ac8fa;
+  --info-soft:    #eaf6fe;
+
+
+  /* ═══ 玻璃态 — 模糊与透明 ═══
+     backdrop-filter 在移动端性能敏感,
+     仅在顶栏和底部输入栏使用, 其他地方用纯色。 */
+
+  --glass-bg:            rgba(255, 255, 255, 0.72);
+  --glass-bg-heavy:      rgba(255, 255, 255, 0.88);
+  --glass-border:        rgba(0, 0, 0, 0.06);
+  --glass-blur:          20px;
+  --glass-blur-heavy:    28px;
+  --overlay-bg:          rgba(0, 0, 0, 0.35);
+  --overlay-bg-light:    rgba(0, 0, 0, 0.18);
+  --sakura-glass:        rgba(255, 122, 149, 0.08);
+  --sakura-glass-hover:  rgba(255, 122, 149, 0.14);
+
+
+  /* ═══ 排版 — 呼吸的韵律 ═══ */
+
+  --font-sans: -apple-system, "system-ui", BlinkMacSystemFont,
+               "SF Pro Text", "PingFang SC", "Noto Sans SC",
+               "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+  --font-mono: "SF Mono", "Cascadia Code", "Fira Code",
+               "JetBrains Mono", "DengXian", monospace;
+
+  --text-caption:   11px;
+  --text-label:     12px;
+  --text-body-sm:   14px;
+  --text-body:      16px;
+  --text-body-lg:   18px;
+  --text-heading-sm: 20px;
+  --text-heading:    24px;
+  --text-heading-lg: 32px;
+
+  --leading-tight:  1.25;
+  --leading-snug:   1.35;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.6;
+  --leading-loose:  1.75;
+
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+
+
+  /* ═══ 间距 — 4px 基线网格 ═══ */
+
+  --space-1:   4px;
+  --space-2:   8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+
+  /* ═══ 圆角 — 亲密的弧度 ═══ */
+
+  --radius-none:  0;
+  --radius-xs:    4px;
+  --radius-sm:    8px;
+  --radius-md:   14px;
+  --radius-lg:   20px;
+  --radius-xl:   26px;
+  --radius-2xl:  34px;
+  --radius-full: 9999px;
+
+  /* iMessage 气泡 */
+  --radius-bubble-mio:   18px 18px 18px 6px;
+  --radius-bubble-user:  18px 18px 6px 18px;
+  --radius-bubble-mio-cont:   6px 18px 18px 6px;
+  --radius-bubble-user-cont:  18px 6px 6px 18px;
+
+
+  /* ═══ 阴影 — 轻盈的层次 ═══ */
+
+  --elevation-0: none;
+  --elevation-1: 0 0.5px 2px rgba(0, 0, 0, 0.04);
+  --elevation-2: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --elevation-3: 0 6px 20px rgba(0, 0, 0, 0.07);
+  --elevation-4: 0 12px 40px rgba(0, 0, 0, 0.10);
+  --elevation-5: 0 20px 60px rgba(0, 0, 0, 0.14);
+
+  --glow-sakura: 0 0 20px rgba(255, 122, 149, 0.20);
+  --glow-warm:   0 0 24px rgba(255, 154, 118, 0.18);
+  --inner-glow:  inset 0 1px 0 rgba(255, 255, 255, 0.6);
+
+
+  /* ═══ 动效 — 缓动曲线 ═══ */
+
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in:     cubic-bezier(0.4, 0, 1, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.25, 0.1, 0.25, 1.4);
+
+  --duration-instant: 100ms;
+  --duration-fast:    180ms;
+  --duration-normal:  280ms;
+  --duration-slow:    420ms;
+  --duration-glacial: 700ms;
+
+
+  /* ═══ 布局 ═══ */
+
+  --header-h:   56px;
+  --input-min-h: 56px;
+  --nav-h:      56px;
+  --safe-top:    env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --app-h:       100vh;
+}
+

@@ -1,0 +1,557 @@
+/* ════════════════════════════════════════════════════
+   studio.css — Persona Studio 样式
+
+   Mod 画廊: 横向滚动卡片
+   新建流程: 三步表单向导
+   编辑: soul.md 在线编辑器
+   ════════════════════════════════════════════════════ */
+
+/* ═══ 主容器 ═══ */
+.studio-view {
+  display: flex;
+  flex-direction: column;
+  height: var(--app-h, 100vh);
+  background: var(--mist-50);
+  overflow: hidden;
+}
+
+.studio-content {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--space-4) var(--space-4) var(--space-16);
+}
+
+/* ═══ 顶栏 ═══ */
+.studio-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--header-h);
+  padding: calc(var(--safe-top) + 8px) var(--space-4) var(--space-2);
+  background: var(--glass-bg-heavy);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--glass-blur));
+  backdrop-filter: saturate(180%) blur(var(--glass-blur));
+  border-bottom: 0.5px solid var(--glass-border);
+  z-index: 10;
+}
+
+.studio-header-title {
+  flex: 1;
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--mist-900);
+}
+
+.studio-back-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mist-600);
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.studio-back-btn:active {
+  background: var(--mist-200);
+}
+
+.studio-new-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--sakura-500);
+  color: #fff;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px var(--sakura-glass-hover);
+  transition: transform 0.15s var(--ease-spring);
+}
+
+.studio-new-btn:active {
+  transform: scale(0.9);
+}
+
+/* ═══ Mod 卡片列表 — 横向滚动 ═══ */
+.mod-section {
+  margin-bottom: var(--space-6);
+}
+
+.mod-section-title {
+  font-size: var(--text-label);
+  font-weight: var(--weight-semibold);
+  color: var(--mist-600);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: var(--space-3);
+  padding: 0 var(--space-1);
+}
+
+.mod-cards {
+  display: flex;
+  gap: var(--space-3);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--space-1);
+  scrollbar-width: none;
+}
+
+.mod-cards::-webkit-scrollbar { display: none; }
+
+/* ─── 单张 Mod 卡片 ─── */
+.mod-card {
+  flex-shrink: 0;
+  width: 160px;
+  padding: var(--space-5) var(--space-4);
+  background: #fff;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  scroll-snap-align: start;
+  cursor: pointer;
+  transition: box-shadow var(--duration-fast) var(--ease-out),
+              transform var(--duration-fast) var(--ease-out);
+  border: 1.5px solid transparent;
+  position: relative;
+}
+
+.mod-card:active {
+  transform: scale(0.97);
+}
+
+.mod-card.active {
+  border-color: var(--sakura-400);
+  box-shadow: var(--elevation-2), var(--glow-sakura);
+}
+
+.mod-card.active::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sakura-500);
+  box-shadow: 0 0 8px var(--sakura-glass-hover);
+  animation: dotBreathe 2s ease-in-out infinite;
+}
+
+.mod-card-avatar {
+  width: 56px;
+  height: 56px;
+}
+
+.mod-card-avatar canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.mod-card-name {
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--mist-900);
+  text-align: center;
+}
+
+.mod-card-style {
+  font-size: var(--text-caption);
+  color: var(--mist-600);
+  text-align: center;
+  line-height: var(--leading-snug);
+}
+
+/* ─── 新建 Mod 卡片 ─── */
+.mod-card-new {
+  border: 1.5px dashed var(--mist-300);
+  background: transparent;
+  box-shadow: none;
+  justify-content: center;
+}
+
+.mod-card-new:active {
+  background: var(--mist-100);
+}
+
+.mod-card-new .plus {
+  font-size: 28px;
+  color: var(--mist-400);
+  font-weight: 300;
+  margin-bottom: var(--space-1);
+}
+
+.mod-card-new .label {
+  font-size: var(--text-body-sm);
+  color: var(--mist-500);
+}
+
+/* ═══ Mod 详情卡片 ═══ */
+.mod-detail-card {
+  background: #fff;
+  border-radius: var(--radius-xl);
+  box-shadow: var(--elevation-1);
+  padding: var(--space-6);
+  margin-bottom: var(--space-4);
+}
+
+.mod-detail-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.mod-detail-avatar {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+}
+
+.mod-detail-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.mod-detail-name {
+  font-size: var(--text-body-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--mist-900);
+}
+
+.mod-detail-meta {
+  font-size: var(--text-body-sm);
+  color: var(--mist-600);
+  margin-top: 2px;
+}
+
+/* BASE/DEEP 模式切换 */
+.mode-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--mist-100);
+  border-radius: var(--radius-lg);
+}
+
+.mode-switch-label {
+  font-size: var(--text-body-sm);
+  color: var(--mist-700);
+}
+
+.mode-chips {
+  display: flex;
+  gap: var(--space-1);
+  background: var(--mist-200);
+  border-radius: var(--radius-full);
+  padding: 2px;
+}
+
+.mode-chip {
+  padding: 6px 14px;
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  border-radius: var(--radius-full);
+  color: var(--mist-500);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.mode-chip.selected {
+  background: #fff;
+  color: var(--mist-900);
+  font-weight: var(--weight-semibold);
+  box-shadow: var(--elevation-1);
+}
+
+.mode-chip.selected[data-mode="deep"] {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+/* 好感度条 */
+.affection-bar {
+  margin-bottom: var(--space-4);
+}
+
+.affection-bar-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-caption);
+  color: var(--mist-600);
+  margin-bottom: var(--space-1);
+}
+
+.affection-bar-track {
+  height: 4px;
+  background: var(--mist-200);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.affection-bar-fill {
+  height: 100%;
+  background: var(--sakura-500);
+  border-radius: var(--radius-full);
+  transition: width var(--duration-slow) var(--ease-out);
+}
+
+/* soul.md 预览 */
+.soul-preview {
+  background: var(--mist-100);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.soul-preview pre {
+  font-family: var(--font-mono);
+  font-size: var(--text-body-sm);
+  line-height: var(--leading-relaxed);
+  color: var(--mist-700);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* 操作按钮行 */
+.mod-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.mod-actions button {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-body-sm);
+  font-weight: var(--weight-medium);
+  text-align: center;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.btn-primary {
+  background: var(--sakura-500);
+  color: #fff;
+  box-shadow: 0 2px 6px var(--sakura-glass-hover);
+}
+
+.btn-primary:active {
+  transform: scale(0.96);
+  background: var(--sakura-600);
+}
+
+.btn-secondary {
+  background: var(--mist-100);
+  color: var(--mist-700);
+}
+
+.btn-secondary:active {
+  background: var(--mist-200);
+}
+
+.btn-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.btn-danger:active {
+  background: #ffd9d7;
+}
+
+/* ═══ 新建 Mod 表单向导 ═══ */
+
+/* 步骤指示器 */
+.step-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-8);
+}
+
+.step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mist-300);
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.step-dot.done {
+  background: var(--sakura-500);
+}
+
+.step-dot.current {
+  background: var(--sakura-500);
+  box-shadow: 0 0 0 3px var(--sakura-glass);
+  width: 10px;
+  height: 10px;
+}
+
+.step-line {
+  width: 32px;
+  height: 1px;
+  background: var(--mist-300);
+  transition: background var(--duration-normal) var(--ease-out);
+}
+
+.step-line.done {
+  background: var(--sakura-300);
+}
+
+/* 表单字段 */
+.form-group {
+  margin-bottom: var(--space-5);
+}
+
+.form-label {
+  display: block;
+  font-size: var(--text-body-sm);
+  font-weight: var(--weight-medium);
+  color: var(--mist-700);
+  margin-bottom: var(--space-2);
+}
+
+.form-input {
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: var(--mist-100);
+  border: 1px solid var(--mist-300);
+  border-radius: var(--radius-md);
+  font-size: var(--text-body);
+  color: var(--mist-900);
+  transition: border-color var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.form-input:focus {
+  border-color: var(--sakura-400);
+  box-shadow: 0 0 0 3px var(--sakura-glass);
+}
+
+.form-input::placeholder {
+  color: var(--mist-500);
+}
+
+/* 性别选择 — 大卡片 */
+.gender-select {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.gender-card {
+  padding: var(--space-5) var(--space-4);
+  background: #fff;
+  border: 1.5px solid var(--mist-300);
+  border-radius: var(--radius-lg);
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.gender-card:active {
+  transform: scale(0.97);
+}
+
+.gender-card.selected {
+  border-color: var(--sakura-400);
+  background: var(--sakura-50);
+  box-shadow: 0 0 0 3px var(--sakura-glass);
+}
+
+.gender-card-icon {
+  font-size: 32px;
+  margin-bottom: var(--space-2);
+  display: block;
+}
+
+.gender-card-label {
+  font-size: var(--text-body-sm);
+  font-weight: var(--weight-medium);
+  color: var(--mist-700);
+}
+
+/* 风格选择 — Chip */
+.style-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.style-chip {
+  padding: var(--space-2) var(--space-4);
+  background: var(--mist-100);
+  border: 1px solid var(--mist-300);
+  border-radius: var(--radius-full);
+  font-size: var(--text-body-sm);
+  color: var(--mist-600);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.style-chip:active {
+  transform: scale(0.96);
+}
+
+.style-chip.selected {
+  background: var(--sakura-50);
+  border-color: var(--sakura-400);
+  color: var(--sakura-600);
+  font-weight: var(--weight-medium);
+}
+
+/* 下一步按钮 */
+.wizard-next {
+  width: 100%;
+  padding: var(--space-4);
+  background: var(--sakura-500);
+  color: #fff;
+  border-radius: var(--radius-full);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  box-shadow: 0 4px 16px var(--sakura-glass-hover);
+  transition: all var(--duration-fast) var(--ease-out);
+  margin-top: var(--space-6);
+}
+
+.wizard-next:disabled {
+  opacity: 0.3;
+  box-shadow: none;
+}
+
+.wizard-next:active:not(:disabled) {
+  transform: scale(0.97);
+  background: var(--sakura-600);
+}
+
+/* ═══ 编辑模式 — soul 编辑器 ═══ */
+.soul-editor {
+  width: 100%;
+  min-height: 300px;
+  padding: var(--space-4);
+  background: var(--mist-100);
+  border: 1px solid var(--mist-300);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-body-sm);
+  line-height: var(--leading-relaxed);
+  color: var(--mist-800);
+  resize: vertical;
+}
+
+.soul-editor:focus {
+  border-color: var(--sakura-400);
+  box-shadow: 0 0 0 3px var(--sakura-glass);
+}

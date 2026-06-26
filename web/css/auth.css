@@ -1,0 +1,182 @@
+/* ════════════════════════════════════════════════════
+   认证浮层 — 启动屏 + 登录
+   ════════════════════════════════════════════════════ */
+
+.auth-overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: var(--app-h, 100vh);
+  background: var(--mist-50);
+  padding: var(--space-8) var(--space-6);
+  animation: fadeIn 0.5s var(--ease-out) both;
+}
+
+.auth-ball {
+  margin-bottom: var(--space-6);
+  animation: authBallIn 0.6s var(--ease-spring) both;
+}
+
+@keyframes authBallIn {
+  from { opacity: 0; transform: scale(0.8); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.auth-title {
+  font-size: var(--text-heading-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--mist-900);
+  letter-spacing: -0.01em;
+  animation: fadeIn 0.5s var(--ease-out) 0.15s both;
+}
+
+.auth-subtitle {
+  font-size: var(--text-body-sm);
+  color: var(--mist-600);
+  margin-top: var(--space-2);
+  margin-bottom: var(--space-8);
+  animation: fadeIn 0.5s var(--ease-out) 0.25s both;
+}
+
+.auth-input-wrap {
+  width: 100%;
+  max-width: 320px;
+  animation: fadeIn 0.5s var(--ease-out) 0.35s both;
+}
+
+.auth-input {
+  width: 100%;
+  padding: var(--space-4) var(--space-5);
+  background: #fff;
+  border: 1px solid var(--mist-300);
+  border-radius: var(--radius-full);
+  font-size: var(--text-body);
+  color: var(--mist-900);
+  text-align: center;
+  transition: border-color var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.auth-input:focus {
+  border-color: var(--sakura-400);
+  box-shadow: 0 0 0 3px var(--sakura-glass);
+}
+
+.auth-input::placeholder {
+  color: var(--mist-500);
+}
+
+.auth-input-server {
+  margin-top: var(--space-3);
+  font-size: var(--text-body-sm);
+  background: var(--mist-100);
+}
+
+/* 错误提示 */
+.auth-error {
+  color: var(--danger);
+  font-size: var(--text-body-sm);
+  text-align: center;
+  margin-top: var(--space-3);
+  display: none;
+  animation: fadeIn 0.2s var(--ease-out);
+}
+
+.auth-error.show {
+  display: block;
+}
+
+/* 连接按钮 */
+.auth-btn {
+  margin-top: var(--space-5);
+  padding: var(--space-4) var(--space-12);
+  background: var(--sakura-500);
+  color: #fff;
+  border-radius: var(--radius-full);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  box-shadow: 0 4px 16px var(--sakura-glass-hover);
+  transition: all var(--duration-fast) var(--ease-out);
+  animation: fadeIn 0.5s var(--ease-out) 0.45s both;
+  min-width: 160px;
+}
+
+.auth-btn:active {
+  transform: scale(0.97);
+  background: var(--sakura-600);
+}
+
+/* 连接中 */
+.auth-btn.loading {
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border-radius: 50%;
+  position: relative;
+  background: var(--mist-200);
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.auth-btn.loading::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  border: 2.5px solid var(--mist-300);
+  border-top-color: var(--sakura-500);
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 成功 */
+.auth-btn.success {
+  background: var(--success);
+  box-shadow: 0 4px 16px var(--success-soft);
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 错误抖动 */
+.auth-btn.shake {
+  animation: shake 0.4s var(--ease-in-out);
+  background: var(--danger);
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%      { transform: translateX(-6px); }
+  40%      { transform: translateX(6px); }
+  60%      { transform: translateX(-4px); }
+  80%      { transform: translateX(4px); }
+}
+
+/* 高级设置 */
+.auth-advanced-toggle {
+  margin-top: var(--space-4);
+  font-size: var(--text-caption);
+  color: var(--mist-500);
+  padding: var(--space-1) var(--space-3);
+  animation: fadeIn 0.5s var(--ease-out) 0.55s both;
+}
+
+.auth-advanced {
+  display: none;
+  width: 100%;
+  max-width: 320px;
+  animation: slideUp 0.3s var(--ease-out) both;
+}
+
+.auth-advanced.open {
+  display: block;
+}

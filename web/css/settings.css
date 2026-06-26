@@ -1,0 +1,172 @@
+/* ════════════════════════════════════════════════════
+   settings.css — 设置页样式
+   ════════════════════════════════════════════════════ */
+
+.settings-view {
+  display: flex;
+  flex-direction: column;
+  height: var(--app-h, 100vh);
+  background: var(--mist-50);
+  overflow: hidden;
+}
+
+.settings-content {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--space-4) var(--space-4) var(--space-16);
+}
+
+/* ═══ 设置分组卡片 ═══ */
+.settings-group {
+  background: #fff;
+  border-radius: var(--radius-xl);
+  box-shadow: var(--elevation-1);
+  margin-bottom: var(--space-4);
+  overflow: hidden;
+}
+
+.settings-group-header {
+  padding: var(--space-4) var(--space-4) var(--space-2);
+  font-size: var(--text-label);
+  font-weight: var(--weight-semibold);
+  color: var(--mist-500);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ═══ 设置行 ═══ */
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  min-height: 52px;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+  border-bottom: 1px solid var(--mist-100);
+}
+
+.settings-row:last-child {
+  border-bottom: none;
+}
+
+.settings-row:active {
+  background: var(--mist-50);
+}
+
+.settings-row-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.settings-row-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-row-label {
+  font-size: var(--text-body);
+  color: var(--mist-900);
+  line-height: var(--leading-snug);
+}
+
+.settings-row-desc {
+  font-size: var(--text-caption);
+  color: var(--mist-500);
+  margin-top: 1px;
+}
+
+.settings-row-value {
+  font-size: var(--text-body-sm);
+  color: var(--mist-600);
+  flex-shrink: 0;
+}
+
+.settings-row-arrow {
+  color: var(--mist-400);
+  flex-shrink: 0;
+  font-size: 18px;
+}
+
+/* ═══ 连接状态行 ═══ */
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.connection-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.connection-dot.off {
+  background: var(--mist-400);
+}
+
+.connection-dot.online {
+  animation: dotBreathe 2s ease-in-out infinite;
+}
+
+/* ═══ 通知渠道列表 ═══ */
+.channel-list {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.channel-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) 0;
+}
+
+.channel-name {
+  font-size: var(--text-body-sm);
+  color: var(--mist-700);
+}
+
+.channel-status {
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+}
+
+.channel-status.on {
+  color: var(--success);
+}
+
+.channel-status.off {
+  color: var(--mist-500);
+}
+
+/* ═══ 关于区域 ═══ */
+.about-section {
+  text-align: center;
+  padding: var(--space-8) var(--space-4);
+}
+
+.about-name {
+  font-size: var(--text-body-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--mist-900);
+}
+
+.about-version {
+  font-size: var(--text-body-sm);
+  color: var(--mist-500);
+  margin-top: var(--space-1);
+}
+
+.about-tagline {
+  font-size: var(--text-caption);
+  color: var(--mist-500);
+  margin-top: var(--space-3);
+}

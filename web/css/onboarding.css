@@ -1,0 +1,149 @@
+/* ════════════════════════════════════════════════════
+   onboarding.css — 新手引导样式
+   ════════════════════════════════════════════════════ */
+
+.onboarding-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: var(--app-h, 100vh);
+  background: #fff;
+  padding: var(--space-10) var(--space-6);
+  text-align: center;
+  overflow: hidden;
+}
+
+.onboarding-ball {
+  margin-bottom: var(--space-8);
+  transition: transform var(--duration-slow) var(--ease-out);
+}
+
+.onboarding-ball canvas {
+  display: block;
+}
+
+.onboarding-question {
+  font-size: var(--text-heading);
+  font-weight: var(--weight-semibold);
+  color: var(--mist-900);
+  line-height: var(--leading-snug);
+  margin-bottom: var(--space-8);
+  max-width: 280px;
+  animation: slideUp var(--duration-normal) var(--ease-out) both;
+}
+
+.onboarding-input {
+  width: 100%;
+  max-width: 320px;
+  padding: var(--space-4) var(--space-5);
+  background: var(--mist-100);
+  border: 1px solid var(--mist-300);
+  border-radius: var(--radius-full);
+  font-size: var(--text-body);
+  text-align: center;
+  color: var(--mist-900);
+  margin-bottom: var(--space-6);
+  transition: border-color var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.onboarding-input:focus {
+  border-color: var(--sakura-400);
+  box-shadow: 0 0 0 3px var(--sakura-glass);
+}
+
+.onboarding-input::placeholder {
+  color: var(--mist-500);
+}
+
+/* 关系/风格选择 */
+.onboarding-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: center;
+  margin-bottom: var(--space-8);
+  max-width: 340px;
+}
+
+.onboarding-choice {
+  padding: var(--space-3) var(--space-5);
+  background: var(--mist-50);
+  border: 1.5px solid var(--mist-300);
+  border-radius: var(--radius-full);
+  font-size: var(--text-body);
+  color: var(--mist-700);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  animation: slideUp var(--duration-normal) var(--ease-out) both;
+}
+
+.onboarding-choice:nth-child(1) { animation-delay: 60ms; }
+.onboarding-choice:nth-child(2) { animation-delay: 120ms; }
+.onboarding-choice:nth-child(3) { animation-delay: 180ms; }
+.onboarding-choice:nth-child(4) { animation-delay: 240ms; }
+
+.onboarding-choice:active {
+  transform: scale(0.96);
+}
+
+.onboarding-choice.selected {
+  border-color: var(--sakura-500);
+  background: var(--sakura-50);
+  color: var(--sakura-600);
+  font-weight: var(--weight-medium);
+  box-shadow: 0 0 0 3px var(--sakura-glass);
+}
+
+/* 下一步按钮 */
+.onboarding-next {
+  padding: var(--space-4) var(--space-10);
+  background: var(--sakura-500);
+  color: #fff;
+  border-radius: var(--radius-full);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  box-shadow: 0 4px 16px var(--sakura-glass-hover);
+  transition: all var(--duration-fast) var(--ease-out);
+  animation: slideUp var(--duration-normal) var(--ease-out) 300ms both;
+}
+
+.onboarding-next:active {
+  transform: scale(0.97);
+}
+
+.onboarding-next:disabled {
+  opacity: 0.3;
+  box-shadow: none;
+}
+
+/* 完成页 */
+.onboarding-done {
+  text-align: center;
+  animation: fadeIn var(--duration-slow) var(--ease-out) both;
+}
+
+.onboarding-done-check {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--success-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  margin: 0 auto var(--space-6);
+}
+
+.onboarding-done h2 {
+  font-size: var(--text-heading);
+  font-weight: var(--weight-semibold);
+  margin-bottom: var(--space-2);
+}
+
+.onboarding-done p {
+  font-size: var(--text-body-sm);
+  color: var(--mist-600);
+  margin-bottom: var(--space-8);
+}

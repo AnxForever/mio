@@ -1,0 +1,116 @@
+/* ═════════════════════════════════════════════════════
+   reset.css — 基础重置 + 排版基线
+
+   不引入 normalize.css。这里的每一条规则都有理由。
+   原则: 少即是多, 用 inherit 而非重新定义。 */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-relaxed);
+  color: var(--mist-900);
+  background: var(--mist-50);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
+img, svg, canvas {
+  display: block;
+  max-width: 100%;
+}
+
+img {
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+input, textarea, select {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--mist-500);
+}
+
+/* 选中文字颜色 — 樱色而非系统蓝 */
+::selection {
+  background: var(--sakura-200);
+  color: var(--mist-900);
+}
+
+/* 滚动条 — 极细, 几乎不可见 */
+::-webkit-scrollbar {
+  width: 3px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--mist-400);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--mist-500);
+}
+
+/* 移动端隐藏滚动条但保留滚动能力 */
+@media (max-width: 640px) {
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+}

@@ -1,0 +1,81 @@
+# Mio — Docker Compose
+#
+# Quick start:
+#   1. Copy .env.example to .env and fill in your API keys
+#   2. docker compose up -d
+#   3. curl http://localhost:3000/health
+#
+# Production mode (HTTP server):
+#   docker compose up -d mio
+#
+# REPL mode (interactive terminal):
+#   docker compose run --rm mio-repl
+
+version: "3.9"
+
+services:
+  # ─── Production: HTTP + WebSocket server ───
+  mio:
+    build: .
+    container_name: mio-server
+    restart: unless-stopped
+    ports:
+      - "${MIO_HTTP_PORT:-3000}:${MIO_HTTP_PORT:-3000}"
+    volumes:
+      - mio-data:/app/data
+    environment:
+      - NODE_ENV=production
+      - MIO_HTTP_PORT=${MIO_HTTP_PORT:-3000}
+      # Provider selection — set ONE of these:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - MOONSHOT_API_KEY=${MOONSHOT_API_KEY:-}
+      - ZHIPU_API_KEY=${ZHIPU_API_KEY:-}
+      - MINIMAX_API_KEY=${MINIMAX_API_KEY:-}
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
+      - DOUBAO_API_KEY=${DOUBAO_API_KEY:-}
+      - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Provider override:
+      - MIO_PROVIDER=${MIO_PROVIDER:-auto}
+      - COLA_MODEL=${COLA_MODEL:-}
+      # Auth (set to enable bearer token requirement):
+      - MIO_AUTH_TOKEN=${MIO_AUTH_TOKEN:-}
+      # Voice (optional):
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Nightly:
+      - MIO_NIGHTLY_CRON=${MIO_NIGHTLY_CRON:-30 21 * * *}
+      - MIO_NIGHTLY_ENABLED=${MIO_NIGHTLY_ENABLED:-true}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:${MIO_HTTP_PORT:-3000}/health').then(r=>r.json()).then(j=>j.ok?process.exit(0):process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ─── Dev: interactive REPL ───
+  mio-repl:
+    build: .
+    container_name: mio-repl
+    profiles: ["dev"]
+    stdin_open: true
+    tty: true
+    volumes:
+      - mio-data:/app/data
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - MOONSHOT_API_KEY=${MOONSHOT_API_KEY:-}
+      - ZHIPU_API_KEY=${ZHIPU_API_KEY:-}
+      - MINIMAX_API_KEY=${MINIMAX_API_KEY:-}
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
+      - DOUBAO_API_KEY=${DOUBAO_API_KEY:-}
+      - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - MIO_PROVIDER=${MIO_PROVIDER:-auto}
+      - COLA_MODEL=${COLA_MODEL:-}
+    command: ["node", "dist/index.js"]
+
+volumes:
+  mio-data:
+    driver: local

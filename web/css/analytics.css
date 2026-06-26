@@ -1,0 +1,280 @@
+/* ════════════════════════════════════════════════════
+   analytics.css — 数据面板样式
+
+   故事卡片设计: 不是冷冰冰的图表, 是回忆相册。
+   ════════════════════════════════════════════════════ */
+
+.analytics-view {
+  display: flex;
+  flex-direction: column;
+  height: var(--app-h, 100vh);
+  background: var(--mist-50);
+  overflow: hidden;
+}
+
+.analytics-content {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--space-4) var(--space-4) var(--space-16);
+}
+
+/* ═══ 顶栏 ═══ */
+.analytics-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--header-h);
+  padding: calc(var(--safe-top) + 8px) var(--space-4) var(--space-2);
+  background: var(--glass-bg-heavy);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--glass-blur));
+  backdrop-filter: saturate(180%) blur(var(--glass-blur));
+  border-bottom: 0.5px solid var(--glass-border);
+  z-index: 10;
+}
+
+/* ═══ 数据卡片 ═══ */
+.data-card {
+  background: #fff;
+  border-radius: var(--radius-xl);
+  box-shadow: var(--elevation-1);
+  padding: var(--space-5);
+  margin-bottom: var(--space-4);
+  animation: slideUp var(--duration-normal) var(--ease-out) both;
+}
+
+.data-card:nth-child(1) { animation-delay: 0ms; }
+.data-card:nth-child(2) { animation-delay: 60ms; }
+.data-card:nth-child(3) { animation-delay: 120ms; }
+.data-card:nth-child(4) { animation-delay: 180ms; }
+
+.data-card-title {
+  font-size: var(--text-label);
+  font-weight: var(--weight-semibold);
+  color: var(--mist-500);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: var(--space-4);
+}
+
+/* ─── 情绪曲线 ─── */
+.emotion-chart-wrap {
+  position: relative;
+  width: 100%;
+  height: 200px;
+}
+
+.emotion-chart-wrap canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.mood-legend {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.mood-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-caption);
+  color: var(--mist-600);
+}
+
+.mood-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* ─── 关系进度 ─── */
+.stage-track {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+  position: relative;
+}
+
+.stage-track::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--mist-200);
+  z-index: 0;
+}
+
+.stage-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  z-index: 1;
+  font-size: var(--text-caption);
+  color: var(--mist-500);
+}
+
+.stage-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--mist-200);
+  border: 2px solid #fff;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.stage-node.reached .stage-dot {
+  background: var(--sakura-500);
+  box-shadow: 0 0 0 4px var(--sakura-glass);
+}
+
+.stage-node.current .stage-dot {
+  background: var(--sakura-500);
+  box-shadow: 0 0 0 6px var(--sakura-glass);
+  animation: dotBreathe 2s ease-in-out infinite;
+}
+
+.stage-node.reached .stage-label {
+  color: var(--sakura-500);
+  font-weight: var(--weight-medium);
+}
+
+.stage-node.current .stage-label {
+  color: var(--mist-900);
+  font-weight: var(--weight-semibold);
+}
+
+.progress-ring-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4) 0;
+}
+
+.progress-ring-wrap canvas {
+  width: 120px;
+  height: 120px;
+}
+
+.progress-center {
+  position: absolute;
+  text-align: center;
+  font-size: var(--text-heading);
+  font-weight: var(--weight-semibold);
+  color: var(--mist-900);
+}
+
+.progress-center small {
+  display: block;
+  font-size: var(--text-caption);
+  font-weight: var(--weight-regular);
+  color: var(--mist-500);
+  margin-top: 2px;
+}
+
+/* ─── 里程碑 ─── */
+.milestone-list {
+  list-style: none;
+}
+
+.milestone-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--mist-100);
+}
+
+.milestone-item:last-child {
+  border-bottom: none;
+}
+
+.milestone-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--sakura-50);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.milestone-text {
+  font-size: var(--text-body-sm);
+  color: var(--mist-700);
+  line-height: var(--leading-relaxed);
+}
+
+/* ─── 数字快照 ─── */
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.stat-item {
+  text-align: center;
+  padding: var(--space-4);
+  background: var(--mist-50);
+  border-radius: var(--radius-md);
+}
+
+.stat-value {
+  font-size: var(--text-heading-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--mist-900);
+  line-height: var(--leading-tight);
+}
+
+.stat-label {
+  font-size: var(--text-caption);
+  color: var(--mist-500);
+  margin-top: var(--space-1);
+}
+
+/* ─── 话题气泡 ─── */
+.topic-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.topic-tag {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--text-body-sm);
+  color: var(--mist-700);
+  transition: transform var(--duration-fast) var(--ease-spring);
+}
+
+.topic-tag:active {
+  transform: scale(0.95);
+}
+
+/* 话题颜色 — 按频率分5档 */
+.topic-tag.hot  { background: var(--sakura-100); color: var(--sakura-600); font-size: var(--text-body); }
+.topic-tag.warm { background: var(--warmth-soft); color: var(--warmth); font-size: var(--text-body-sm); }
+.topic-tag.mild { background: var(--calm-soft); color: var(--calm); }
+.topic-tag.cool { background: var(--mist-100); color: var(--mist-600); font-size: var(--text-body-sm); }
+.topic-tag.cold { background: var(--mist-100); color: var(--mist-500); font-size: var(--text-caption); }
+
+/* ═══ 空态 ═══ */
+.data-empty {
+  text-align: center;
+  padding: var(--space-8) var(--space-4);
+  color: var(--mist-500);
+}
+
+.data-empty p {
+  font-size: var(--text-body-sm);
+  margin-top: var(--space-2);
+}
