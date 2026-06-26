@@ -1,0 +1,19 @@
+{
+  "name": "@mio/emotion",
+  "version": "0.6.0",
+  "description": "PAD 3D emotional model + OCEAN personality traits + 5-axis affinity — reusable, zero LLM-call emotion engine",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": "./src/index.js",
+    "./pad": "./src/pad.js",
+    "./affinity": "./src/affinity.js",
+    "./ghost": "./src/ghost.js",
+    "./frustration": "./src/frustration.js",
+    "./classifier": "./src/classifier.js",
+    "./trait-state": "./src/trait-state.js",
+    "./experience-trait": "./src/experience-trait.js"
+  },
+  "license": "MIT"
+}

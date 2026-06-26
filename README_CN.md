@@ -1,8 +1,8 @@
 # Mio
 
 <p align="center">
-  <strong>情感陪伴智能体</strong><br>
-  本地优先 &middot; 多轴情感引擎 &middot; 插件架构
+  <strong>开源情感智能工具包</strong><br>
+  可复用的情感引擎 &middot; 知识图谱人格记忆 &middot; 插件架构
 </p>
 
 <p align="center">
@@ -18,18 +18,75 @@
 
 ---
 
-Mio 是一个完全运行在本机的情感 AI 陪伴智能体——无需云服务、无遥测、无账号。内置男友/女友双模式人格，搭载 PAD 三维情感模型、可通过对话演化的 OCEAN 人格特质，以及模拟睡眠记忆巩固的 3 阶段夜间记忆整合管线。
+Mio **不是一个产品**——它是一个用于构建情感智能应用的组合式工具包，外加一个参考实现（即"Mio"陪伴智能体）。你可以把情感引擎、知识图谱检索、插件系统用在任何自己的项目里，无需引入整个陪伴应用。
 
-## 核心特性
+## 你可以用它构建什么
 
-- **PAD 三维情感 + OCEAN 人格** — 维度化情感模型（愉悦度/唤醒度/支配度）配合指数衰减；五大人格特质通过"经验→特质"微调实现闭环演化
-- **五轴亲密度系统** — 亲密度、信任度、私密度、耐心度、紧张度各自独立追踪；挫折连续检测触发迷你危机；依恋风格自动推导
-- **ID-RAG 知识图谱** — 人格由单一 `soul.md` 文件定义；上下文感知子图检索（约 800 tokens vs 完整 soul 约 1500 tokens）
-- **三阶段记忆整合** — 模拟 LIGHT（筛选）→ DEEP（写入）→ REM（模式提取）的夜间管线，配合 ACE 质量反射器（去重、衰减、合并）
-- **插件架构** — 生命周期钩子（`onLoad`、`beforeTurn`、`afterTurn`）+ 依赖解析；5 个内置情感插件
-- **智能主动消息** — 泊松过程替代固定定时，根据用户活跃模式动态调整发送概率
-- **危机检测** — 黄/红两级关键词触发自动升级
-- **零框架 Web 界面** — Canvas 情感驱动虚拟形象 + SPA 路由 + WebSocket 全双工对话
+- **AI 陪伴应用** — 参考实现内置男友/女友双模式人格 + 关系阶段演进
+- **游戏 NPC 对话系统** — 赋予角色持久的人格特质和情感记忆
+- **心理健康工具** — 危机检测、情绪状态追踪、依恋风格分析
+- **角色扮演聊天机器人** — ID-RAG 让你用单一 `soul.md` 文件定义任意角色
+- **学术研究** — PAD 三维模型 + OCEAN 人格演化有心理学理论支撑
+
+## 核心库
+
+### 情感引擎 (`src/emotion/`)
+
+基于心理学的多维情感系统。零 LLM 调用——纯计算。
+
+| 模块 | 说明 | 文件 |
+|------|------|------|
+| PAD 三维模型 | 愉悦度-唤醒度-支配度 + 指数衰减冷却 | `pad.ts` |
+| OCEAN 人格特质 | 五大人格 + "经验→特质"微调闭环 | `experience-trait.ts`, `trait-state.ts` |
+| 五轴亲密度 | 亲密度/信任度/私密度/耐心度/紧张度 | `affinity.ts`, `multi-axis.ts` |
+| 挫折追踪 | 连续检测、迷你危机触发、依恋风格推导 | `frustration.ts` |
+| 幽灵沉默 | 上下文驱动的"已读不回" | `ghost.ts` |
+| 意图分类 | 12 类意图匹配（无 LLM） | `classifier.ts` |
+
+### ID-RAG 知识图谱 (`src/persona/`)
+
+用 Markdown 定义角色，推理时只检索相关内容。
+
+```typescript
+import { bootstrapGraph } from './persona/extractor.js';
+import { retrieveContext } from './persona/graph.js';
+
+const graph = bootstrapGraph(fs.readFileSync('soul.md', 'utf-8'));
+const context = retrieveContext(graph, {
+  userMessage: "你还记得我们第一次见面吗？",
+  maxTokens: 800,
+});
+// → "你们第一次见面在一个咖啡馆。她当时在读村上春树..."
+```
+
+约 800 tokens vs 完整 soul 约 1500 tokens——**节省 47% 上下文窗口**。
+
+### 记忆整合 (`src/memory/`)
+
+夜间管线：评分书签 → 提取实体 → 发现跨会话模式。
+
+```
+Phase 1 LIGHT（筛选前 30%）→ Phase 2 DEEP（ACE 质量审计+写入）→ Phase 3 REM（模式提取）
+```
+
+### 插件系统 (`src/plugins/`)
+
+在智能体循环的任意生命周期点注入逻辑。
+
+```typescript
+registry.register({
+  name: 'custom-mood-tracker',
+  version: '1.0.0',
+  hooks: {
+    afterTurn(ctx, result) { /* 记录情感变化 */ },
+    getPromptFragment(ctx) { return '<custom>注入数据</custom>'; },
+  },
+});
+```
+
+### 提供商适配器 (`src/providers/`)
+
+9 个 LLM 后端 + 自动检测 + 故障转移链。可扩展。
 
 ## 快速开始
 
@@ -37,45 +94,33 @@ Mio 是一个完全运行在本机的情感 AI 陪伴智能体——无需云服
 git clone https://github.com/AnxForever/mio.git
 cd mio && npm install
 
-# 设置一个 LLM API key 即可
-MINIMAX_API_KEY="sk-cp-..." MIO_PROVIDER=minimax npm run dev   # CLI 交互模式
-MINIMAX_API_KEY="sk-cp-..." MIO_PROVIDER=minimax npm start serve  # Web 界面 → :3000
+# 运行参考实现
+MINIMAX_API_KEY="sk-cp-..." MIO_PROVIDER=minimax npm run dev
+
+# 或只引入需要的库
+# import { computePAD, decayPAD } from 'mio/emotion/pad.js';
+# import { bootstrapGraph } from 'mio/persona/graph.js';
 ```
-
-## LLM 提供商
-
-设置一个环境变量即可，`MIO_PROVIDER=auto` 自动检测。内置故障转移链。
-
-| 环境变量 | 提供商 | 模型 |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | Claude | `claude-sonnet-4-20250514` |
-| `OPENAI_API_KEY` | OpenAI | `gpt-4o` |
-| `DEEPSEEK_API_KEY` | DeepSeek（深度求索） | `deepseek-chat` |
-| `MOONSHOT_API_KEY` | Moonshot / Kimi（月之暗面） | `moonshot-v1-8k` |
-| `ZHIPU_API_KEY` | 智谱 / GLM | `glm-4-flash` |
-| `MINIMAX_API_KEY` | MiniMax（稀宇科技） | `MiniMax-M3` |
-| `DASHSCOPE_API_KEY` | Qwen / 通义千问（阿里云） | `qwen-plus` |
-| `DOUBAO_API_KEY` | Doubao / 豆包（字节跳动） | `doubao-pro-32k` |
-| `SILICONFLOW_API_KEY` | SiliconFlow（硅基流动） | `deepseek-ai/DeepSeek-V3` |
 
 ## 命令
 
 ```bash
-npm run build       # 编译 TypeScript → dist/
-npm run typecheck   # 仅类型检查
-npm run dev         # 启动 REPL
-npm start           # 运行编译后服务
-npm test            # 54 单元 + 42 情感 + 12 冒烟测试
-npm run test:e2e    # Playwright 端到端测试
+npm run build        # 编译 TypeScript
+npm run typecheck    # 类型检查
+npm run dev          # REPL 交互模式
+npm test             # 51 单元 + 41 情感 + 12 冒烟
+npm run test:e2e     # Playwright 端到端
 ```
 
 ## 文档
 
-完整架构、设计决策、API 端点、编码规范、状态文件布局 → **[CLAUDE.md](CLAUDE.md)**
+- **[CLAUDE.md](CLAUDE.md)** — 完整架构、设计决策、规范、API 端点
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** — 贡献指南
+- **[README.md](README.md)** — English documentation
 
 ## 运行要求
 
-Node.js ≥ 22 · ESM · 一个 LLM API key
+Node.js ≥ 22 · ESM · 参考应用需要一个 LLM API Key（库本身无需）
 
 ## 许可证
 

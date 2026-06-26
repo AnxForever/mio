@@ -1,12 +1,13 @@
 {
-  "name": "mio",
+  "name": "mio-monorepo",
   "version": "0.6.0",
-  "description": "Mio — emotional companion agent with switchable boyfriend/girlfriend persona",
+  "private": true,
+  "description": "Mio — open-source emotional intelligence toolkit",
   "type": "module",
-  "main": "dist/index.js",
-  "bin": {
-    "mio": "./dist/index.js"
-  },
+  "workspaces": [
+    "packages/emotion",
+    "packages/idrag"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
@@ -20,6 +21,8 @@
     "node": ">=22"
   },
   "dependencies": {
+    "@mio/emotion": "*",
+    "@mio/idrag": "*",
     "croner": "^9.0.0",
     "express": "^5.2.1",
     "sharp": "^0.34.5",

@@ -1,0 +1,39 @@
+{
+  "name": "mio",
+  "version": "0.6.0",
+  "description": "Mio — reference emotional companion implementation built on @mio/emotion and @mio/idrag",
+  "type": "module",
+  "main": "./src/index.js",
+  "bin": {
+    "mio": "./src/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node src/index.js",
+    "test": "npm run build && node --experimental-strip-types ../../tests/unit.ts && node --experimental-strip-types ../../tests/unit-emotion.ts && node --experimental-strip-types ../../tests/smoke.ts",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "npx playwright test --config ../../tests/e2e/playwright.config.ts",
+    "test:emotion": "npm run build && node --experimental-strip-types ../../tests/unit-emotion.ts"
+  },
+  "dependencies": {
+    "@mio/emotion": "*",
+    "@mio/idrag": "*",
+    "croner": "^9.0.0",
+    "express": "^5.2.1",
+    "sharp": "^0.34.5",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}

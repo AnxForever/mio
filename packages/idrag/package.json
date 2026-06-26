@@ -1,0 +1,19 @@
+{
+  "name": "@mio/idrag",
+  "version": "0.6.0",
+  "description": "ID-RAG knowledge graph — bootstrap a persona from markdown, retrieve contextually relevant subgraphs at inference time",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": "./src/index.js",
+    "./graph": "./src/graph.js",
+    "./extractor": "./src/extractor.js",
+    "./generator": "./src/generator.js",
+    "./driver": "./src/driver.js"
+  },
+  "dependencies": {
+    "@mio/emotion": "*"
+  },
+  "license": "MIT"
+}
