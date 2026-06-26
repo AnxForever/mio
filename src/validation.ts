@@ -20,7 +20,7 @@ export type ChatBody = z.infer<typeof chatBody>;
 // ─── Mod switch ───
 
 export const modBody = z.object({
-  name: z.enum(['male', 'female']),
+  name: z.string().min(1).max(50),
 });
 
 export type ModBody = z.infer<typeof modBody>;

@@ -33,6 +33,7 @@ import { modManager } from './mod/mod-manager.js';
 import { readEmotionState } from './emotion/state.js';
 import { readRelationshipState, getProgressInfo } from './relationship/progression.js';
 import { nightlyScheduler } from './scheduler/nightly.js';
+import { lifeScheduler } from './scheduler/life.js';
 import { startServer } from './server/index.js';
 import { runDiary } from './subagent/diary.js';
 import { selectProvider, getProviderInfo } from './providers/index.js';
@@ -416,6 +417,7 @@ switch (command) {
     if (portIdx >= 0 && args[portIdx + 1]) {
       port = parseInt(args[portIdx + 1], 10);
     }
+    lifeScheduler().start();
     startServer({ port }).catch((err) => {
       console.error(err);
       process.exit(1);

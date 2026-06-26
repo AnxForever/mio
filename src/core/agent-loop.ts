@@ -112,7 +112,7 @@ import { getMultiAxis } from '../emotion/multi-axis.js';
 import { getRecentSignalHistory } from '../emotion/signals.js';
 import { lifeEngine } from '../character/life-engine.js';
 import { readActiveCharacter } from '../character/factory.js';
-import { acknowledgeRecentEvents } from '../character/memory-stream.js';
+import { acknowledgeRecentEvents, getMemoryContext } from '../character/memory-stream.js';
 import type {
   AIProvider,
   StreamingProvider,
@@ -443,6 +443,19 @@ function buildSystemPrompt(
   });
 
   // L11: Emotion tracking note — medium priority (important for feature function)
+  // Life events — character's own life (autonomous + user interactions)
+  engine.register('life-events', {
+    type: 'life-events',
+    content: () => {
+      if (!getConfig().features.lifeEngine) return '';
+      const name = readActiveCharacter();
+      if (!name) return '';
+      return getMemoryContext(name, '', 3);
+    },
+    priority: 'medium',
+    condition: () => getConfig().features.lifeEngine && readActiveCharacter() !== null,
+  });
+
   engine.register('emotion-note', {
     type: 'emotion-note',
     content: EMOTION_NOTE,

@@ -339,14 +339,14 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   });
 
   app.post('/mod', requireAuth, validate(modBody), async (req, res) => {
-    const body = req.body as { name?: string } | undefined;
-    if (!body || (body.name !== 'male' && body.name !== 'female')) {
-      res.status(400).json({ error: 'Invalid "name". Use "male" or "female".' });
+    const name = (req.body as { name: string }).name;
+    if (!modManager().isValidMod(name)) {
+      res.status(400).json({ error: `Invalid mod. Available: ${modManager().listMods().join(', ')}` });
       return;
     }
     try {
-      await modManager().switchMod(body.name);
-      updateConfig({ gender: body.name as Gender });
+      await modManager().switchMod(name);
+      updateConfig({ gender: name as Gender });
       res.json({ activeMod: modManager().activeMod });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -724,7 +724,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
           return;
 
         case 'switch_mod': {
-          if (payload.name !== 'male' && payload.name !== 'female') {
+          if (!modManager().isValidMod(payload.name)) {
             safeSend(ws, { type: 'error', error: 'Invalid mod name' });
             return;
           }
