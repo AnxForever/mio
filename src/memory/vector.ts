@@ -176,7 +176,7 @@ export function fuseDenseWithKeyword<T extends { id: string; text: string }>(
 export interface VectorIndexEntry {
   id: string;
   text: string;
-  source: 'bookmark' | 'note' | 'user_profile' | 'diary' | 'manual';
+  source: 'bookmark' | 'note' | 'user_profile' | 'diary' | 'manual' | 'knowledge';
   timestamp: string;
   embeddingType: 'tf' | 'minimax';
   /** Sparse vector (object) or base64-encoded Float32Array (string). */
@@ -357,26 +357,31 @@ export async function search(
   query: string,
   limit: number = 5,
   minScore: number = 0.05,
+  sources?: string[],
 ): Promise<Array<MaterializedEntry & { score: number }>> {
   ensureMigrated();
   const provider = getEmbeddingProvider();
   const queryVecs = await provider.embed([query]);
   if (queryVecs.length === 0) return [];
   const queryVec = queryVecs[0];
+  const inSources = (s: string): boolean => !sources || sources.includes(s);
 
   if (queryVec instanceof Float32Array) {
     // Dense → sqlite-vec KNN, then RRF-fuse with a free TF keyword ranking so
     // exact keyword matches the pure-semantic KNN would miss get surfaced.
-    const pool = Math.max(limit * 4, 20);
+    // Oversample the pool when a source filter is set to offset post-filtering.
+    const pool = Math.max(limit * 4, 20) * (sources ? 3 : 1);
     const candidates = store
       .searchDense(queryVec, pool, minScore)
-      .map((r) => ({ ...toMaterialized(r), score: r.score }));
+      .map((r) => ({ ...toMaterialized(r), score: r.score }))
+      .filter((c) => inSources(c.source));
     return fuseDenseWithKeyword(query, candidates, limit);
   }
 
   // Sparse (tf) → application-level cosine over tf entries.
   const scored: Array<MaterializedEntry & { score: number }> = [];
   for (const e of store.readSparse()) {
+    if (!inSources(e.source)) continue;
     const score = similarity(queryVec, e.embedding as AnyVector);
     if (score >= minScore) scored.push({ ...toMaterialized(e), score });
   }
