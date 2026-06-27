@@ -253,3 +253,13 @@ captureExplicitDirectives(userInput, mioReply, intent):
 - **web 捏人面板**：可视化调 L2/L3。
 - **P5 接线快赢**：复活 `getResponseStyle`→生成参数、`Judge`→steering 闭环、降 `durableFacts` 门槛。
 - **隐式偏好强化** + **persona-fidelity eval**（C 路线）：度量「像不像这一版人设」「用户是否更喜欢了」。
+
+---
+
+## 14. 实现后已知边界（final review，2026-06-27）
+
+本切片 7/7 完成、33 单测全绿、全量回归通过、与并发 codex 工作无冲突。final review 记录以下边界——留待 **P1 多用户**统一收口（codex 已在并发期间把 L2/L3 提前 per-user 化为 `sessionId` 键控 + `paths.ts` 的 `usersDir()`/`userDir()`，属 P1 提前落地），**本切片不动**：
+
+- **L4 隔离不一致**：`progression.ts` 的 `setNicknames`/`recordSharedMemory`/`readRelationshipState` 仍全局（无 userId），而 L2/L3 已按 `sessionId` 隔离 → 多 contact 部署下 L4（昵称/共同史）会串户。P1 给这三个写入器加 userId 维度。
+- **跨重启持久化 + 测试盲区**：L2/L3 键控 `sessionId`；裸 REPL 每进程新随机 sessionId 且不落盘 → 重启不保持（§9 Demo step4 仅对 REPL 失效；web 用 localStorage、IM 用稳定 per-contact id 均正常）。现 33 单测全传 `default`，不覆盖 `runTurn→sessionId` 键控路径——P1 补 runTurn 层「固定 sessionId 跨调用读回 + 不同 sessionId 不串」测试。
+- **Minor**：`agent-loop.ts` 推理后 `captureExplicitDirectives` 回退分支冗余（推理前已捕一次，`capturedDirectiveCount===0` 时必再命中 0），可删；`buildPostPrompt`（`postHistoryInjection` 默认关闭）不含 L0/L2/L3。
