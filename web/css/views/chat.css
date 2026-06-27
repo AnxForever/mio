@@ -75,60 +75,6 @@
 
 .status-dot.online { background: var(--accent); }
 
-/* ─── 人格切换(保留功能) ─── */
-.persona-toggle {
-  position: relative;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  padding: 2px;
-  border-radius: var(--r-input);
-  background: var(--bubble-them);
-}
-
-.persona-toggle input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.persona-toggle::before {
-  content: "";
-  position: absolute;
-  z-index: 0;
-  top: 2px;
-  bottom: 2px;
-  left: 2px;
-  width: calc(50% - 2px);
-  border-radius: var(--r-input);
-  background: var(--bg);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  transition: left var(--t) var(--spring);
-}
-
-.persona-toggle:has(input:checked)::before { left: 50%; }
-
-.pt-label {
-  position: relative;
-  z-index: 1;
-  min-width: 34px;
-  padding: 5px 9px;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-  text-align: center;
-  color: var(--text-2);
-  cursor: pointer;
-  transition: color var(--t) var(--ease);
-}
-
-.persona-toggle:has(input:not(:checked)) .pt-label[data-mod="girlfriend"],
-.persona-toggle:has(input:checked) .pt-label[data-mod="boyfriend"] {
-  color: var(--text);
-}
-
 /* ─── 消息区 ─── */
 .chat-messages {
   flex: 1;

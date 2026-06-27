@@ -27,8 +27,6 @@ const ASSETS_TO_CACHE = [
   '/js/utils/haptics.js',
   '/js/utils/time.js',
   '/js/components/bubble.js',
-  '/js/components/emotion-ball.js',
-  '/js/components/emotion-worker.js',
   '/js/components/tab-bar.js',
   '/js/components/toast.js',
   '/js/views/analytics.js',

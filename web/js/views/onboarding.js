@@ -3,13 +3,12 @@ import { el } from '../utils/dom.js';
 import { Store } from '../store.js';
 import { api } from '../api.js';
 import { navigate } from '../router.js';
-import { EmotionBall } from '../components/emotion-ball.js';
+import { mascotSrc } from '../mascot.js';
 import { renderGenderPicker } from './gender.js';
 
 export class OnboardingView extends BaseView {
   constructor(params) {
     super(params);
-    this.ball = null;
     this.step = 1;
     this.answers = {};
   }
@@ -17,10 +16,13 @@ export class OnboardingView extends BaseView {
   render() {
     this.el = el('div', { className: 'onboarding-view', id: 'onboarding-view' });
 
-    /* 情绪球 */
+    /* 线条猫头像 */
     const ballWrap = el('div', { className: 'onboarding-ball' });
-    const ballCanvas = el('canvas', { width: '96', height: '96' });
-    ballWrap.appendChild(ballCanvas);
+    const avatar = el('div', { className: 'avatar', style: { width: '96px', height: '96px' } });
+    const img = el('img', { alt: 'Mio', src: mascotSrc('gentle') });
+    img.addEventListener('error', () => { img.style.visibility = 'hidden'; });
+    avatar.appendChild(img);
+    ballWrap.appendChild(avatar);
     this.el.appendChild(ballWrap);
 
     /* 内容 */
@@ -31,13 +33,6 @@ export class OnboardingView extends BaseView {
   }
 
   mount() {
-    const ballCanvas = this.el.querySelector('.onboarding-ball canvas');
-    if (ballCanvas) {
-      this.ball = new EmotionBall(ballCanvas, { size: 96 });
-      this.ball.setState('平静', 0, 'acquaintance');
-      this.ball.start();
-    }
-
     this.step = 1;
     this.answers = {};
     this.renderStep(1);
@@ -45,10 +40,6 @@ export class OnboardingView extends BaseView {
 
   unmount() {
     super.unmount();
-    if (this.ball) {
-      this.ball.destroy();
-      this.ball = null;
-    }
   }
 
   renderStep(n) {
@@ -68,8 +59,6 @@ export class OnboardingView extends BaseView {
 
   renderStep1(content) {
     /* "嘿。" */
-    if (this.ball) this.ball.setState('calm', 5, 'acquaintance');
-
     content.appendChild(el('h2', { className: 'onboarding-question', textContent: '嘿。' }));
     content.appendChild(el('button', {
       className: 'onboarding-next',
@@ -80,8 +69,6 @@ export class OnboardingView extends BaseView {
 
   renderStep2(content) {
     /* "我叫 Mio。你怎么称呼？" */
-    if (this.ball) this.ball.setState('calm', 10, 'acquaintance');
-
     content.appendChild(el('h2', {
       className: 'onboarding-question',
       textContent: '我叫 Mio。\n你怎么称呼？',
@@ -116,8 +103,6 @@ export class OnboardingView extends BaseView {
 
   renderStep3(content) {
     /* 选择 Mio 的性别 —— 只选"她 / 他",不预设任何恋爱标签 */
-    if (this.ball) this.ball.setState('shy', 15, 'acquaintance');
-
     content.appendChild(el('h2', {
       className: 'onboarding-question',
       textContent: 'Mio 会是\n她，还是他？',
@@ -146,8 +131,6 @@ export class OnboardingView extends BaseView {
 
   renderStep4(content) {
     /* "你希望我是什么性格？" */
-    if (this.ball) this.ball.setState('shy', 20, 'acquaintance');
-
     content.appendChild(el('h2', {
       className: 'onboarding-question',
       textContent: '你希望我\n是什么性格？',
@@ -182,8 +165,6 @@ export class OnboardingView extends BaseView {
 
   renderStep5(content) {
     /* 完成 */
-    if (this.ball) this.ball.setState('warmth', 30, 'familiar');
-
     content.appendChild(el('div', { className: 'onboarding-done' }, [
       el('div', { className: 'onboarding-done-check', textContent: '✓' }),
       el('h2', { textContent: '好的。' }),
