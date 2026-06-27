@@ -12,6 +12,7 @@ dist/
 
 # Runtime data (user state, transcripts, memory)
 data/
+eval/.data/
 *.jsonl
 *.log
 *.tar.gz
@@ -40,3 +41,4 @@ __pycache__/
 /*.png
 .playwright-mcp/
 web/mio-*.png
+.superpowers/
