@@ -44,6 +44,7 @@ import type { ContextSections } from '../prompt/xml-context.js';
 import { ContextEngine, getContextEngine } from '../prompt/context-engine.js';
 import { getEvaluationGraph, getBuilderChain, type EvaluationResult } from '../prompt/builder-chain.js';
 import { buildKernel, applyPersonaDelta, buildPreferencePrompt } from '../persona/layered.js';
+import { captureExplicitDirectives } from '../persona/directive-capture.js';
 import { readPersonaDelta, readPreferences } from '../memory/persona-delta.js';
 import { selectProvider } from '../providers/index.js';
 import { getRouterConfig, routeTask } from '../providers/router.js';
@@ -856,6 +857,7 @@ async function applyPostTurnSideEffects({
 
   scheduleLearningSideEffects(input, text, config);
   updateRelationalSideEffects(input, text, intent, crisisResult, config);
+  captureExplicitDirectives(input.text);  // L2/L3/L4：对话内显式捏人，白天即时落库
   await updatePersonalitySideEffects(input, text, sessionCtx);
   persistTurnMemorySideEffects(input, text, sessionId, crisisResult, isNewSession);
 

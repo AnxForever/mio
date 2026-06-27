@@ -17,6 +17,8 @@ const { readPersonaDelta, writePersonaDelta, readPreferences, upsertPreference, 
   await import('../dist/memory/persona-delta.js');
 const { buildKernel, applyPersonaDelta, buildDeltaFragment, buildPreferencePrompt } = await import('../dist/persona/layered.js');
 const { ContextEngine } = await import('../dist/prompt/context-engine.js');
+const { detectDirectives, captureExplicitDirectives } = await import('../dist/persona/directive-capture.js');
+const prog2 = await import('../dist/relationship/progression.js');
 // === END IMPORTS ===
 
 const results: { ok: boolean; msg: string }[] = [];
@@ -78,6 +80,21 @@ console.log('\n\x1b[1mMio — layered persona tests\x1b[0m\n');
   engine.register('soul', { type: 'persona', content: 'S'.repeat(40000), priority: 'high' });
   const out = engine.assemble(2000);
   ok(out.includes('皮一点别老哄我'), 'preference survives hard-cap (critical)');
+}
+
+// --- Task 5: 对话内捏人捕获 ---
+{
+  ok(detectDirectives('以后叫我阿哲吧').some((d) => d.kind === 'nickname' && d.value === '阿哲'), 'detect nickname');
+  ok(detectDirectives('你其实是开酒吧的，别当插画师了').some((d) => d.kind === 'persona'), 'detect persona override');
+  ok(detectDirectives('你能不能皮一点').some((d) => d.kind === 'preference'), 'detect preference');
+  ok(detectDirectives('今天天气不错').length === 0, 'no false positive on plain chat');
+
+  captureExplicitDirectives('以后叫我阿哲吧');
+  ok(prog2.readRelationshipState().nicknames.agentCallsUser === '阿哲', 'nickname persisted to relationship-state');
+  captureExplicitDirectives('你其实是开酒吧的');
+  ok((readPersonaDelta()?.personaOverride ?? '').includes('开酒吧的'), 'persona override persisted to delta');
+  captureExplicitDirectives('你能不能皮一点');
+  ok((readPreferences()?.explicit.length ?? 0) >= 1, 'preference persisted');
 }
 
 // === APPEND NEW TEST BLOCKS ABOVE THIS LINE ===
