@@ -13,6 +13,7 @@ import { ICONS } from './utils/icons.js';
 import { mascotSrc } from './mascot.js';
 import { renderChat,       mountChat,       unmountChat       } from './views/chat.js';
 import { renderMessages,   mountMessages,   unmountMessages   } from './views/messages.js';
+import { renderMemories,   mountMemories,   unmountMemories   } from './views/memories.js';
 import { renderMood,       mountMood,       unmountMood       } from './views/mood.js';
 import { renderStudio,     mountStudio,     unmountStudio     } from './views/studio.js';
 import { renderAnalytics,  mountAnalytics,  unmountAnalytics  } from './views/analytics.js';
@@ -38,9 +39,9 @@ setAppHeight();
    ═══════════════════════════════════════════════════ */
 
 const NAV_ITEMS = [
-  { route: '/messages',  iconFn: ICONS.chat,      label: 'Messages' },
-  { route: '/studio',    iconFn: ICONS.studio,    label: 'Persona' },
-  { route: '/analytics', iconFn: ICONS.analytics, label: 'Signals' },
+  { route: '/chat',      iconFn: ICONS.chat,      label: 'Chat' },
+  { route: '/memories',  iconFn: ICONS.memory,    label: 'Memories' },
+  { route: '/analytics', iconFn: ICONS.analytics, label: 'Reflections' },
   { route: '/settings',  iconFn: ICONS.settings,  label: 'Settings' },
 ];
 
@@ -61,7 +62,7 @@ function buildShell() {
   brandAvatar.appendChild(brandImg);
   const brandText = el('div', {}, [
     el('div', { className: 'app-sidebar-brand-text', textContent: 'Mio' }),
-    el('div', { className: 'app-sidebar-brand-sub', textContent: 'Agent console' }),
+    el('div', { className: 'app-sidebar-brand-sub', textContent: 'Private companion' }),
   ]);
   brand.appendChild(brandAvatar);
   brand.appendChild(brandText);
@@ -122,6 +123,7 @@ let currentView = null;
 const viewMap = {
   '/chat':       { render: renderChat,       mount: mountChat,       unmount: unmountChat },
   '/messages':   { render: renderMessages,   mount: mountMessages,   unmount: unmountMessages },
+  '/memories':   { render: renderMemories,   mount: mountMemories,   unmount: unmountMemories },
   '/mood':       { render: renderMood,       mount: mountMood,       unmount: unmountMood },
   '/studio':     { render: renderStudio,     mount: mountStudio,     unmount: unmountStudio },
   '/analytics':  { render: renderAnalytics,  mount: mountAnalytics,  unmount: unmountAnalytics },
@@ -148,6 +150,7 @@ function switchView(viewName, params) {
 /* ─── 路由注册 ─── */
 route('/chat',       () => switchView('/chat'));
 route('/messages',   () => switchView('/messages'));
+route('/memories',   () => switchView('/memories'));
 route('/mood',       () => switchView('/mood'));
 route('/studio',     () => switchView('/studio'));
 route('/studio/:id', (p) => switchView('/studio', p));

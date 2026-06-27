@@ -13,6 +13,7 @@ const ASSETS_TO_CACHE = [
   '/css/studio.css',
   '/css/analytics.css',
   '/css/settings.css',
+  '/css/views/memories.css',
   '/css/onboarding.css',
   '/css/auth.css',
   '/js/app.js',
@@ -33,6 +34,7 @@ const ASSETS_TO_CACHE = [
   '/js/views/auth.js',
   '/js/views/BaseView.js',
   '/js/views/chat.js',
+  '/js/views/memories.js',
   '/js/views/onboarding.js',
   '/js/views/settings.js',
   '/js/views/studio.js'
@@ -67,9 +69,30 @@ self.addEventListener('activate', (event) => {
 // 拦截请求
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+  const apiPrefixes = [
+    '/health',
+    '/status',
+    '/avatar',
+    '/voice',
+    '/chat',
+    '/mod',
+    '/persona',
+    '/onboarding',
+    '/analytics',
+    '/search',
+    '/memories',
+    '/proactive',
+    '/notify',
+    '/admin',
+    '/character',
+    '/characters',
+  ];
+  const isApi = url.pathname.startsWith('/api/')
+    || url.pathname.startsWith('/ws/')
+    || apiPrefixes.some((prefix) => url.pathname === prefix || url.pathname.startsWith(prefix + '/'));
 
   // 仅拦截同源的静态资源请求 (排除 API 和 WS)
-  if (url.origin === location.origin && !url.pathname.startsWith('/api/') && !url.pathname.startsWith('/ws/')) {
+  if (url.origin === location.origin && !isApi) {
     event.respondWith(
       caches.match(event.request).then((response) => {
         // Cache First 策略
