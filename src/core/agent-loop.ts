@@ -43,6 +43,7 @@ import { buildXmlContext } from '../prompt/xml-context.js';
 import type { ContextSections } from '../prompt/xml-context.js';
 import { ContextEngine, getContextEngine } from '../prompt/context-engine.js';
 import { getEvaluationGraph, getBuilderChain, type EvaluationResult } from '../prompt/builder-chain.js';
+import { buildKernel } from '../persona/layered.js';
 import { selectProvider } from '../providers/index.js';
 import { getRouterConfig, routeTask } from '../providers/router.js';
 import { ensurePluginsLoaded, ensureToolsRegistered, type ToolRegistryLike } from './tool-runtime.js';
@@ -229,6 +230,13 @@ function registerPromptSections(
   engine.register('core', {
     type: 'identity',
     content: CORE_IDENTITY,
+    priority: 'critical',
+  });
+
+  // L0: Kernel — 不可变内核，永远注入、不可裁剪（critical）
+  engine.register('kernel', {
+    type: 'kernel',
+    content: buildKernel(),
     priority: 'critical',
   });
 

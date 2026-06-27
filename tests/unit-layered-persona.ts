@@ -15,6 +15,8 @@ mkdirSync(join(dir, 'memory-bank'), { recursive: true });
 // === IMPORTS (each task appends here) ===
 const { readPersonaDelta, writePersonaDelta, readPreferences, upsertPreference, patchPersonaDelta } =
   await import('../dist/memory/persona-delta.js');
+const { buildKernel } = await import('../dist/persona/layered.js');
+const { ContextEngine } = await import('../dist/prompt/context-engine.js');
 // === END IMPORTS ===
 
 const results: { ok: boolean; msg: string }[] = [];
@@ -38,6 +40,20 @@ console.log('\n\x1b[1mMio — layered persona tests\x1b[0m\n');
   ok((readPreferences()?.explicit.length ?? 0) === 1, 'preference upsert persists');
   upsertPreference('皮一点别老哄我', 'unit');
   ok((readPreferences()?.explicit.length ?? 0) === 1, 'preference upsert dedupes identical rule');
+}
+
+// --- Task 2: L0 Kernel + 不可裁 ---
+{
+  const kernel = buildKernel();
+  ok(kernel.length > 0 && /真实的人/.test(kernel), 'kernel non-empty and contains identity floor');
+
+  const engine = new ContextEngine();
+  engine.register('kernel', { type: 'kernel', content: kernel, priority: 'critical' });
+  // 一个超大 high soul，逼出 hard-cap
+  engine.register('soul', { type: 'persona', content: 'S'.repeat(40000), priority: 'high' });
+  const out = engine.assemble(2000);
+  ok(out.includes(kernel), 'kernel survives hard-cap (critical never trimmed)');
+  ok(!engine.getTrimmedSections().includes('kernel'), 'kernel not in trimmed list');
 }
 
 // === APPEND NEW TEST BLOCKS ABOVE THIS LINE ===
