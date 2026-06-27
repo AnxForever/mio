@@ -257,6 +257,8 @@ export interface PersonaDelta {
   personaOverride?: string;       // 自由文本：对 Mio 设定的补充/改写（职业/背景/性格）
   updatedAt: string;
   history: PersonaDeltaChange[];   // append-only 变更记录（可解释、可回滚）
+  /** C4: per-persona 工具白名单。缺省/空=全部工具；非空=仅这些工具可用（借鉴 AstrBot Persona.tools）。 */
+  allowedTools?: string[];
 }
 
 export interface PreferenceRule { rule: string; source: string; createdAt: string; }

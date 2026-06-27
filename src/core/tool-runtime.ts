@@ -8,6 +8,7 @@ import { registerSessionTools } from '../tools/session.js';
 import { registerWorkTools } from '../tools/work.js';
 import { registerRecallTools } from '../tools/recall.js';
 import { registerKnowledgeTools } from '../tools/knowledge.js';
+import { readPersonaDelta } from '../memory/persona-delta.js';
 
 export interface ToolRegistryLike {
   listDefs(names?: string[]): { name: string; description: string; inputSchema: Record<string, unknown> }[];
@@ -30,21 +31,43 @@ export function scopedToolRegistry(
   registry: ToolRegistryLike,
   ctx: SessionContext,
 ): ToolRegistryLike {
-  if (ctx.isolatedMemory !== true) return registry;
+  if (ctx.isolatedMemory === true) {
+    return {
+      listDefs(names?: string[]) {
+        const requested = names
+          ? names.filter((name) => ISOLATED_SESSION_TOOL_NAMES.has(name))
+          : [...ISOLATED_SESSION_TOOL_NAMES];
+        return registry.listDefs(requested);
+      },
+      async execute(call, execCtx) {
+        if (!ISOLATED_SESSION_TOOL_NAMES.has(call.name)) {
+          return {
+            id: call.id,
+            name: call.name,
+            output: `Tool "${call.name}" is not available in isolated IM contact sessions.`,
+            isError: true,
+          };
+        }
+        return registry.execute(call, execCtx);
+      },
+    };
+  }
 
+  // C4: per-persona tool allowlist (borrowed from AstrBot Persona.tools).
+  // Absent/empty → all tools; non-empty → only the whitelisted tools.
+  const allow = readPersonaDelta(ctx.sessionId)?.allowedTools;
+  if (!allow || allow.length === 0) return registry;
+  const allowed = new Set(allow);
   return {
     listDefs(names?: string[]) {
-      const requested = names
-        ? names.filter((name) => ISOLATED_SESSION_TOOL_NAMES.has(name))
-        : [...ISOLATED_SESSION_TOOL_NAMES];
-      return registry.listDefs(requested);
+      return registry.listDefs(names).filter((d) => allowed.has(d.name));
     },
     async execute(call, execCtx) {
-      if (!ISOLATED_SESSION_TOOL_NAMES.has(call.name)) {
+      if (!allowed.has(call.name)) {
         return {
           id: call.id,
           name: call.name,
-          output: `Tool "${call.name}" is not available in isolated IM contact sessions.`,
+          output: `Tool "${call.name}" is not in this persona's allowed-tools list.`,
           isError: true,
         };
       }
