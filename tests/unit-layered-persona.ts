@@ -19,6 +19,7 @@ const { buildKernel, applyPersonaDelta, buildDeltaFragment, buildPreferencePromp
 const { ContextEngine } = await import('../dist/prompt/context-engine.js');
 const { detectDirectives, captureExplicitDirectives } = await import('../dist/persona/directive-capture.js');
 const prog2 = await import('../dist/relationship/progression.js');
+const { buildRelationshipContext } = await import('../dist/prompt/templates.js');
 // === END IMPORTS ===
 
 const results: { ok: boolean; msg: string }[] = [];
@@ -107,6 +108,15 @@ console.log('\n\x1b[1mMio — layered persona tests\x1b[0m\n');
   ok(detectDirectives('你能不能帮我看看吗').every((d) => d.kind !== 'preference'), 'no preference FP: task request');
   const negPref = detectDirectives('别老哄我了').find((d) => d.kind === 'preference');
   ok(!!negPref && negPref.value.startsWith('别'), 'negation preference keeps 别 (not inverted)');
+}
+
+// --- Task 6: L4 共同史端到端注入 ---
+{
+  captureExplicitDirectives('记住：我们说好下周去看海');
+  ok(prog2.readRelationshipState().sharedMemories.some((m) => m.includes('看海')), 'shared memory persisted');
+  const relCtx = buildRelationshipContext(prog2.readRelationshipState());
+  ok(relCtx.includes('阿哲'), 'nickname rendered into relationship prompt');
+  ok(relCtx.includes('看海'), 'shared memory rendered into relationship prompt');
 }
 
 // === APPEND NEW TEST BLOCKS ABOVE THIS LINE ===
