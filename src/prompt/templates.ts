@@ -83,6 +83,7 @@ import { isPADEnabled, getPADState, type PADState } from '../emotion/pad.js';
 import { promoteToPromptContext } from '../emotion/lexical-mood.js';
 import { getSignalContext } from '../emotion/signals.js';
 import { getAffinity } from '../emotion/affinity.js';
+import { describeCircadianState } from '../emotion/circadian.js';
 import {
   getMultiAxis,
   getMultiAxisContext,
@@ -194,14 +195,8 @@ export function buildTimeContext(
 
   parts.push(timeStr);
 
-  // Time-of-day hint
-  if (hour >= 0 && hour < 6) parts.push('现在是深夜。');
-  else if (hour >= 6 && hour < 9) parts.push('现在是清晨。');
-  else if (hour >= 9 && hour < 12) parts.push('现在是上午。');
-  else if (hour >= 12 && hour < 14) parts.push('现在是中午。');
-  else if (hour >= 14 && hour < 18) parts.push('现在是下午。');
-  else if (hour >= 18 && hour < 22) parts.push('现在是晚上。');
-  else parts.push('现在是深夜了。');
+  // Time-of-day state + behavioral guidance（昼夜节律：让语气随作息走，不再 24 小时一个样）
+  parts.push(describeCircadianState(hour).guidance);
 
   // Time since last interaction
   if (lastInteraction) {
