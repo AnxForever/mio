@@ -1,0 +1,324 @@
+/* ════════════════════════════════════════════════════
+   views/chat.css — 聊天页
+
+   只管聊天页。颜色/间距一律 var(--*)，
+   仅在无对应 token 的结构尺寸上用字面量(与 components.css 一致)。
+   复用 components.css 的 .bubble--*、.avatar、.tap。
+   ════════════════════════════════════════════════════ */
+
+.chat-view {
+  position: relative;          /* 供 .new-msg-toast 绝对定位 */
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* ─── 顶栏 ─── */
+.chat-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s2) var(--s4);
+  border-bottom: .5px solid var(--hairline);
+  background: var(--bg);
+}
+
+.chat-back {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-left: calc(var(--s2) * -1);   /* 光学对齐左边缘 */
+  color: var(--text);
+}
+
+.chat-header .avatar {
+  width: 40px;
+  height: 40px;
+}
+
+.chat-header-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-header-name {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-header-status {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--text-2);
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+  transition: background var(--t) var(--ease);
+}
+
+.status-dot.online { background: var(--accent); }
+
+/* ─── 人格切换(保留功能) ─── */
+.persona-toggle {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: var(--r-input);
+  background: var(--bubble-them);
+}
+
+.persona-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.persona-toggle::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc(50% - 2px);
+  border-radius: var(--r-input);
+  background: var(--bg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  transition: left var(--t) var(--spring);
+}
+
+.persona-toggle:has(input:checked)::before { left: 50%; }
+
+.pt-label {
+  position: relative;
+  z-index: 1;
+  min-width: 34px;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  text-align: center;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: color var(--t) var(--ease);
+}
+
+.persona-toggle:has(input:not(:checked)) .pt-label[data-mod="girlfriend"],
+.persona-toggle:has(input:checked) .pt-label[data-mod="boyfriend"] {
+  color: var(--text);
+}
+
+/* ─── 消息区 ─── */
+.chat-messages {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding: var(--s4);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* 气泡 — 复用 components.css 的 .bubble--them/.me/.proactive。
+   这里只补充流式光标与轻微的连续消息收紧。 */
+.bubble.error { color: var(--text-2); }
+
+.bubble + .bubble { margin-top: 0; }
+
+/* 打字光标 — 柔和竖条 */
+.bubble--them.is-streaming::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--text-2);
+  border-radius: 1px;
+  animation: blink 1s steps(2, start) infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* 等待首个 token 的三点指示器 */
+.typing {
+  align-self: flex-start;
+  display: none;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: var(--r-bubble) var(--r-bubble) var(--r-bubble) 5px;
+  background: var(--bubble-them);
+}
+
+.typing.show { display: inline-flex; }
+
+.typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-2);
+  animation: typing-bounce 1.2s var(--ease) infinite;
+}
+
+.typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.typing-dot:nth-child(3) { animation-delay: 0.30s; }
+
+@keyframes typing-bounce {
+  0%, 60%, 100% { opacity: 0.35; transform: translateY(0); }
+  30% { opacity: 0.9; transform: translateY(-4px); }
+}
+
+/* ─── 空状态 ─── */
+.chat-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s4);
+  padding: var(--s8) var(--s5);
+  text-align: center;
+  animation: bubble-in var(--t-enter) var(--ease) both;
+}
+
+.chat-empty .avatar {
+  width: 88px;
+  height: 88px;
+}
+
+.chat-empty-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.chat-empty-sub {
+  max-width: 28ch;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+/* ─── 新消息悬浮提示 ─── */
+.new-msg-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 84px;
+  z-index: 10;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: var(--r-input);
+  background: var(--text);
+  color: var(--bg);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+  cursor: pointer;
+}
+
+/* ─── 输入栏 ─── */
+.chat-input-area {
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  padding-bottom: max(var(--s2), env(safe-area-inset-bottom));
+  border-top: .5px solid var(--hairline);   /* 顶部发丝线 */
+  background: var(--bg);
+}
+
+.chat-input-wrap {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  min-height: 40px;
+  padding: 2px var(--s4);
+  border-radius: var(--r-input);
+  background: var(--bubble-them);
+}
+
+.chat-input-wrap textarea {
+  flex: 1;
+  max-height: 120px;
+  padding: 9px 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.chat-input-wrap textarea::placeholder { color: var(--text-2); }
+
+.voice-btn,
+.send-btn {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+}
+
+.voice-btn { color: var(--text-2); }
+.voice-btn.recording { color: var(--accent); background: var(--bubble-them); }
+
+/* 黑色圆形发送按钮 + 内嵌白色箭头 */
+.send-btn {
+  background: var(--bubble-me);
+  color: #fff;
+}
+
+.send-btn:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+/* ─── 桌面端:居中收窄,提升可读性 ─── */
+@media (min-width: 960px) {
+  .chat-header,
+  .chat-messages,
+  .chat-input-area {
+    width: 100%;
+    max-width: 760px;
+    margin-inline: auto;
+  }
+}
+
+/* ─── 尊重减少动效 ─── */
+@media (prefers-reduced-motion: reduce) {
+  .chat-messages { scroll-behavior: auto; }
+  .bubble--them.is-streaming::after,
+  .typing-dot,
+  .chat-empty { animation: none; }
+}
