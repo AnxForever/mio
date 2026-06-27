@@ -105,6 +105,22 @@ interface SSEPayload {
   choices: SSEChoice[];
 }
 
+/**
+ * Drop content blocks the target model can't consume. Text-only models get
+ * images replaced by a short text placeholder, so the turn keeps its context
+ * instead of erroring on an unsupported image_url. (Borrowed from AstrBot's
+ * per-provider modality gating — Mio already tagged supportsVision but never
+ * enforced it.)
+ */
+export function stripUnsupportedModality(blocks: ContentBlock[], supportsVision: boolean): ContentBlock[] {
+  if (supportsVision) return blocks;
+  return blocks.map((b) =>
+    b.type === 'image'
+      ? ({ type: 'text', text: '[图片：当前模型不支持图像，已省略]' } as ContentBlock)
+      : b,
+  );
+}
+
 // ─── OpenAICompatibleProvider ───
 
 export class OpenAICompatibleProvider implements StreamingProvider {
@@ -114,6 +130,7 @@ export class OpenAICompatibleProvider implements StreamingProvider {
   private readonly defaultModel: string;
   private readonly authHeader: string;
   private readonly presetName: string;
+  private readonly supportsVision: boolean;
 
   /**
    * @param preset  Provider preset config (from config.ts PROVIDER_PRESETS).
@@ -131,6 +148,7 @@ export class OpenAICompatibleProvider implements StreamingProvider {
     this.baseUrl = preset.baseUrl;
     this.defaultModel = model || preset.defaultModel;
     this.authHeader = preset.authHeader.replace('${apiKey}', apiKey);
+    this.supportsVision = preset.supportsVision;
   }
 
   get isAvailable(): boolean {
@@ -214,8 +232,9 @@ export class OpenAICompatibleProvider implements StreamingProvider {
 
       // Content blocks (text + optional images)
       if (Array.isArray(msg.content)) {
+        const blocks = stripUnsupportedModality(msg.content as ContentBlock[], this.supportsVision);
         const parts: Record<string, unknown>[] = [];
-        for (const block of msg.content as ContentBlock[]) {
+        for (const block of blocks) {
           if (block.type === 'text') {
             parts.push({ type: 'text', text: block.text });
           } else if (block.type === 'image') {
