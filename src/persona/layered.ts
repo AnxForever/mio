@@ -42,3 +42,10 @@ export function applyPersonaDelta(base: string, delta: PersonaDelta | null | und
   const frag = buildDeltaFragment(delta);
   return frag ? `${base}\n\n${frag}` : base;
 }
+
+/** L3：渲染用户显式偏好（取最近 8 条）。无偏好返回空串。 */
+export function buildPreferencePrompt(prefs: UserPreferences | null | undefined): string {
+  if (!prefs || prefs.explicit.length === 0) return '';
+  const lines = prefs.explicit.slice(-8).map((p) => `- ${p.rule}`);
+  return `## 用户明确说过的偏好（务必照做）\n${lines.join('\n')}`;
+}

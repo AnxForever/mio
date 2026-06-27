@@ -43,7 +43,7 @@ import { buildXmlContext } from '../prompt/xml-context.js';
 import type { ContextSections } from '../prompt/xml-context.js';
 import { ContextEngine, getContextEngine } from '../prompt/context-engine.js';
 import { getEvaluationGraph, getBuilderChain, type EvaluationResult } from '../prompt/builder-chain.js';
-import { buildKernel, applyPersonaDelta } from '../persona/layered.js';
+import { buildKernel, applyPersonaDelta, buildPreferencePrompt } from '../persona/layered.js';
 import { readPersonaDelta, readPreferences } from '../memory/persona-delta.js';
 import { selectProvider } from '../providers/index.js';
 import { getRouterConfig, routeTask } from '../providers/router.js';
@@ -239,6 +239,14 @@ function registerPromptSections(
     type: 'kernel',
     content: buildKernel(),
     priority: 'critical',
+  });
+
+  // L3: Preference — 用户显式偏好，critical 不可裁（根治"个性化最先被砍"）
+  engine.register('preference', {
+    type: 'preference',
+    content: () => buildPreferencePrompt(ctx.preferences),
+    priority: 'critical',
+    condition: () => !!ctx.preferences && ctx.preferences.explicit.length > 0,
   });
 
   // L2: Persona (ID-RAG) — high priority, the main personality

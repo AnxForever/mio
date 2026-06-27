@@ -15,7 +15,7 @@ mkdirSync(join(dir, 'memory-bank'), { recursive: true });
 // === IMPORTS (each task appends here) ===
 const { readPersonaDelta, writePersonaDelta, readPreferences, upsertPreference, patchPersonaDelta } =
   await import('../dist/memory/persona-delta.js');
-const { buildKernel, applyPersonaDelta, buildDeltaFragment } = await import('../dist/persona/layered.js');
+const { buildKernel, applyPersonaDelta, buildDeltaFragment, buildPreferencePrompt } = await import('../dist/persona/layered.js');
 const { ContextEngine } = await import('../dist/prompt/context-engine.js');
 // === END IMPORTS ===
 
@@ -63,6 +63,21 @@ console.log('\n\x1b[1mMio — layered persona tests\x1b[0m\n');
   const merged = applyPersonaDelta(base, { userId: 'default', personaOverride: '开酒吧的', tone: 'teasing', updatedAt: '', history: [] });
   ok(merged.includes(base) && merged.includes('开酒吧的'), 'delta overlays after L1 base');
   ok(buildDeltaFragment(null) === '', 'no delta → empty fragment');
+}
+
+// --- Task 4: L3 偏好渲染 + 不可裁 ---
+{
+  ok(buildPreferencePrompt(null) === '', 'no prefs → empty');
+  ok(buildPreferencePrompt({ userId: 'default', explicit: [], updatedAt: '' }) === '', 'empty prefs → empty');
+  const rendered = buildPreferencePrompt({ userId: 'default', explicit: [{ rule: '皮一点别老哄我', source: 'unit', createdAt: '' }], updatedAt: '' });
+  ok(rendered.includes('皮一点别老哄我'), 'preference rule rendered');
+
+  const engine = new ContextEngine();
+  engine.register('kernel', { type: 'kernel', content: buildKernel(), priority: 'critical' });
+  engine.register('preference', { type: 'preference', content: rendered, priority: 'critical' });
+  engine.register('soul', { type: 'persona', content: 'S'.repeat(40000), priority: 'high' });
+  const out = engine.assemble(2000);
+  ok(out.includes('皮一点别老哄我'), 'preference survives hard-cap (critical)');
 }
 
 // === APPEND NEW TEST BLOCKS ABOVE THIS LINE ===
