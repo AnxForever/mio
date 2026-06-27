@@ -38,6 +38,7 @@ Thumbs.db
 *.local
 __pycache__/
 *.pyc
+scripts/wechat-bridge/
 
 # Local screenshots / scratch (Playwright captures, design previews)
 /*.png
