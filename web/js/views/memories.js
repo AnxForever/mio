@@ -21,6 +21,17 @@ function formatDate(value) {
   return `${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
+/** 清理来源文本:去掉内部 <time=...> 标记与前导分隔符(日期已单独展示),只留可读来源。 */
+function formatSource(source) {
+  if (!source) return '无来源';
+  const cleaned = source
+    .replace(/<time=[^>]*>/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s·\-]+/, '')
+    .trim();
+  return cleaned || '无来源';
+}
+
 export class MemoriesView extends BaseView {
   constructor(params) {
     super(params);
@@ -151,7 +162,7 @@ export class MemoriesView extends BaseView {
     ]);
 
     const content = el('div', { className: 'memory-content', textContent: item.content });
-    const details = el('div', { className: 'memory-details', textContent: `${formatDate(item.lastSeen)} · 置信度 ${Math.round(item.confidence * 100)}% · ${item.source || '无来源'}` });
+    const details = el('div', { className: 'memory-details', textContent: `${formatDate(item.lastSeen)} · 置信度 ${Math.round(item.confidence * 100)}% · ${formatSource(item.source)}` });
 
     const actions = el('div', { className: 'memory-actions' }, [
       el('button', { type: 'button', className: 'memory-action tap', textContent: '编辑', onClick: () => this.startEdit(card, item) }),
