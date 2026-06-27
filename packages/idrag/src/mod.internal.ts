@@ -1,4 +1,6 @@
-export const modManager = {
-  get activeMod() { return 'boyfriend'; },
-  getModPath(name: string) { return `./mods/${name}`; },
-};
+export function modManager() {
+  return {
+    get activeMod() { return 'female'; },
+    getModPath(name: string) { return `./mods/${name}`; },
+  };
+}

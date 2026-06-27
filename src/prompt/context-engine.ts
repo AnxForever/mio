@@ -61,6 +61,19 @@ export interface BudgetReport {
   trimmed: string[];  // section types that were trimmed due to budget
 }
 
+export interface ContextTraceSection extends BudgetLine {
+  content: string;
+}
+
+export interface ContextTrace {
+  sections: ContextTraceSection[];
+  totalTokens: number;
+  totalChars: number;
+  usedTokens: number;
+  maxTokens: number;
+  trimmed: string[];
+}
+
 // ─── Priority ordering ───
 
 const PRIORITY_ORDER: SectionPriority[] = ['critical', 'high', 'medium', 'low'];
@@ -423,6 +436,25 @@ export class ContextEngine {
    */
   getTrimmedSections(): string[] {
     return [...this.trimmedSections];
+  }
+
+  /**
+   * Get a full section trace for the last assemble() call.
+   *
+   * Intended for evaluation/debug tooling. Unlike getBudget(), this includes
+   * the resolved section content so downstream analysis can tell whether a
+   * fact was absent, present-but-trimmed, or present in the prompt.
+   */
+  getTrace(): ContextTrace {
+    const budget = this.getBudget();
+    const sections = budget.lines.map((line) => ({
+      ...line,
+      content: this.resolvedContent.get(line.type) ?? '',
+    }));
+    return {
+      ...budget,
+      sections,
+    };
   }
 
   /**

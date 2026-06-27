@@ -53,6 +53,41 @@ export const onboardingBody = z.object({
 
 export type OnboardingBody = z.infer<typeof onboardingBody>;
 
+// ─── Memory review ───
+
+export const memoryQuery = z.object({
+  q: z.string().trim().max(500).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+export type MemoryQuery = z.infer<typeof memoryQuery>;
+
+export const memoryIdParam = z.object({
+  id: z.string().trim().min(1).max(80).regex(/^[a-f0-9]+$/i, 'Invalid memory id'),
+});
+
+export type MemoryIdParam = z.infer<typeof memoryIdParam>;
+
+export const memoryPatchBody = z.object({
+  type: z.enum(['fact', 'preference', 'event', 'decision', 'intention', 'emotion']).optional(),
+  content: z.string().trim().min(1).max(500).optional(),
+  confidence: z.number().min(0).max(1).optional(),
+}).refine((body) => Object.keys(body).length > 0, {
+  message: 'At least one field is required',
+});
+
+export type MemoryPatchBody = z.infer<typeof memoryPatchBody>;
+
+// ─── Proactive preferences ───
+
+export const proactivePreferencesBody = z.object({
+  enabled: z.boolean().optional(),
+  minIntervalMinutes: z.number().int().min(30).max(10080).optional(),
+  responseThreshold: z.number().min(0).max(1).optional(),
+});
+
+export type ProactivePreferencesBody = z.infer<typeof proactivePreferencesBody>;
+
 // ─── Admin ───
 
 export const backupPruneBody = z.object({
@@ -207,8 +242,13 @@ export function validateQuery<T>(schema: z.ZodSchema<T>) {
       });
       return;
     }
-    // Replace query with parsed values (handles coercion)
-    req.query = result.data as Record<string, string>;
+    // Express 5 exposes req.query through a getter; define an own property so
+    // downstream handlers can keep reading coerced values from req.query.
+    Object.defineProperty(req, 'query', {
+      value: result.data as Record<string, string>,
+      configurable: true,
+      enumerable: true,
+    });
     next();
   };
 }

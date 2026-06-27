@@ -2,20 +2,16 @@
  * Transcript stubs for @mio/emotion.
  */
 import { getIO } from './context.js';
+import type { TranscriptEntry } from './types.internal.js';
+export type { TranscriptEntry } from './types.internal.js';
 
-export function getRecentTranscripts(count?: number): unknown[] {
+export function getRecentTranscripts(count?: number): TranscriptEntry[] {
   // Simplified — host app implements actual retrieval
   return [];
 }
 
-export type TranscriptEntry = {
-  time: string;
-  role: 'user' | 'agent' | 'system';
-  text: string;
-};
-
-export function readTranscript(sessionId: string): unknown[] {
-  return getIO().readTranscript(sessionId);
+export function readTranscript(sessionId: string): TranscriptEntry[] {
+  return getIO().readTranscript(sessionId) as TranscriptEntry[];
 }
 
 export function listTranscripts(): string[] {

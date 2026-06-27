@@ -3,17 +3,45 @@
   "version": "0.6.0",
   "description": "PAD 3D emotional model + OCEAN personality traits + 5-axis affinity — reusable, zero LLM-call emotion engine",
   "type": "module",
-  "main": "./src/index.js",
-  "types": "./src/index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.js",
-    "./pad": "./src/pad.js",
-    "./affinity": "./src/affinity.js",
-    "./ghost": "./src/ghost.js",
-    "./frustration": "./src/frustration.js",
-    "./classifier": "./src/classifier.js",
-    "./trait-state": "./src/trait-state.js",
-    "./experience-trait": "./src/experience-trait.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./pad": {
+      "types": "./dist/pad.d.ts",
+      "import": "./dist/pad.js"
+    },
+    "./affinity": {
+      "types": "./dist/affinity.d.ts",
+      "import": "./dist/affinity.js"
+    },
+    "./ghost": {
+      "types": "./dist/ghost.d.ts",
+      "import": "./dist/ghost.js"
+    },
+    "./frustration": {
+      "types": "./dist/frustration.d.ts",
+      "import": "./dist/frustration.js"
+    },
+    "./classifier": {
+      "types": "./dist/classifier.d.ts",
+      "import": "./dist/classifier.js"
+    },
+    "./trait-state": {
+      "types": "./dist/trait-state.d.ts",
+      "import": "./dist/trait-state.js"
+    },
+    "./experience-trait": {
+      "types": "./dist/experience-trait.d.ts",
+      "import": "./dist/experience-trait.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "license": "MIT"
 }

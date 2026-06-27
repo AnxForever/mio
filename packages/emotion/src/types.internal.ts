@@ -3,21 +3,31 @@
  * Mirrors the relevant subset of src/types.ts.
  */
 
+import type { IntentLabel } from './classifier.js';
+
 // ─── Core emotion ───
 export interface EmotionState {
   myMood: string;
   userMood: string;
   affection: number;
-  energy: 'low' | 'medium' | 'high';
+  energy: 'high' | 'mid' | 'low';
+  lastInteraction: string;
+  unresolvedThread: string | null;
   recentTopics: string[];
 }
 
-export type Gender = 'boyfriend' | 'girlfriend';
+export type Gender = 'male' | 'female';
 
 export interface RelationshipState {
   stage: string;
   interactionCount: number;
   emotionalDepth: number;
+  stageChangedAt?: string;
+  sharedMemories?: string[];
+  nicknames?: {
+    userCallsAgent: string | null;
+    agentCallsUser: string | null;
+  };
 }
 
 export interface SessionContext {
@@ -84,17 +94,29 @@ export interface FrustrationState {
 
 // ─── Intent ───
 export interface IntentResult {
-  label: string;
-  category: string;
-  confidence: number;
+  primary: IntentLabel;
+  all: { label: IntentLabel; confidence: number }[];
+  tone: 'positive' | 'negative' | 'neutral';
+  energy: 'high' | 'mid' | 'low';
+  topics: string[];
 }
 
 // ─── Signals ───
 export interface ResponseSignals {
-  emotionalTone?: string;
-  warmth?: number;
-  energy?: number;
-  formality?: number;
+  responseLatencyMs: number;
+  messageBurst: boolean;
+  lengthRatio: number;
+  sessionGapHours: number;
+  engagementTrend: 'rising' | 'steady' | 'falling';
+}
+
+export interface TranscriptEntry {
+  type?: string;
+  role?: 'user' | 'assistant' | 'agent' | 'system';
+  content?: string;
+  text?: string;
+  timestamp?: string;
+  time?: string;
 }
 
 // Re-export IntentLabel for convenience

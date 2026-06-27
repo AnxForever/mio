@@ -6,30 +6,45 @@
  * relevant subgraphs at inference time.
  *
  * Usage:
- *   import { bootstrapGraph, retrieveContext } from '@mio/idrag';
+ *   import { extractGraphFromSoul, retrieveRelevantNodes, graphToPrompt } from '@mio/idrag';
  */
 
 // Knowledge graph
 export {
-  bootstrapGraph,
-  retrieveContext,
-  addNode,
-  addEdge,
-  querySubgraph,
+  extractGraphFromSoul,
+  retrieveRelevantNodes,
+  graphToPrompt,
+  evolveGraph,
   serializeGraph,
   deserializeGraph,
+  defaultGraph,
 } from './graph.js';
+export type { PersonaGraph, PersonaNode, PersonaEdge, RetrievalContext } from './graph.js';
 
 // Extraction
-export { extractPersonaGraph } from './extractor.js';
+export { ensurePersonaGraph, refreshPersonaGraph, loadPersonaGraph, needsRefresh } from './extractor.js';
 
 // Generation
-export { generatePersonaResponse } from './generator.js';
+export { generatePersona, previewPersona } from './generator.js';
 export type { PersonaRequest, PersonaResult } from './types.internal.js';
 
 // Driver
-export { runPersonaDriver } from './driver.js';
+export {
+  isPersonalityDriverEnabled,
+  defaultPersonalityState,
+  getPersonalityState,
+  updatePersonalityFromContext,
+  rotateActivity,
+  getPersonalityContext,
+  getResponseStyle,
+  simulateLifeEvent,
+  applyIgnoredEffect,
+  applyWelcomeBackEffect,
+  applyWarmUpEffect,
+  resetPersonalityState,
+} from './driver.js';
+export type { PersonalityState, ResponseStyle } from './driver.js';
 
 // Dual mode
-export { switchMode, getActiveMode, getDualModeState } from './dual-mode.js';
+export { getCurrentMode, shouldSwitchMode, executeSwitch, recordTurn, getDualModePrompt } from './dual-mode.js';
 export type { DualModeState, PersonaMode } from './types.internal.js';

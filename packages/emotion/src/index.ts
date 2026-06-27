@@ -57,36 +57,38 @@ export {
 export type { MultiAxisState } from './types.internal.js';
 
 // Ghost silence
-export { shouldGhost, resetGhostState, doGhost } from './ghost.js';
+export { shouldGhost, resetGhostState, markReplied, isEndingConversation } from './ghost.js';
 
 // Frustration tracking
 export {
-  trackFrustration,
-  deriveAttachmentStyle,
+  resetFrustrationState,
+  getFrustrationState,
+  updateFrustration,
+  deriveAttachmentLevel,
+  getAttachmentContext,
 } from './frustration.js';
 export type { AttachmentStyle, FrustrationState } from './types.internal.js';
 
 // Intent classifier
 export { classifyIntent, intentLabel } from './classifier.js';
-export type { IntentResult } from './types.internal.js';
-export type { IntentLabel } from './classifier.js';
+export type { IntentLabel, IntentResult } from './classifier.js';
 
 // Response signals
 export { analyzeSignals, getRecentSignalHistory } from './signals.js';
 export type { ResponseSignals } from './types.internal.js';
 
 // Ritual detection
-export { detectRitual, updateCardboardScore } from './ritual.js';
+export { detectRitual, observeRitual, updateCardboard, getRitualContext, getCardboardContext } from './ritual.js';
 
 // Lexical mood
-export { analyzeLexicalMood } from './lexical-mood.js';
+export { lexicalMood, promoteToPromptContext } from './lexical-mood.js';
 
 // State management
 export { readEmotionState, updateEmotionState, syncPADToEmotionState } from './state.js';
 export type { EmotionState } from './types.internal.js';
 
 // Post-turn tracker
-export { trackPostTurn } from './tracker.js';
+export { trackEmotion } from './tracker.js';
 
 // Session context
 export type { SessionContext, RelationshipState } from './types.internal.js';

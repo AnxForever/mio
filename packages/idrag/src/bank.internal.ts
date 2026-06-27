@@ -1,2 +1,19 @@
-export function readFileSyncSafe(p: string) { try { const fs = require('fs'); return fs.readFileSync(p, 'utf-8'); } catch { return null; } }
-export function writeFileSyncSafe(p: string, d: string) { try { const fs = require('fs'); fs.writeFileSync(p, d, 'utf-8'); } catch {} }
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+
+export function readFileSyncSafe(path: string, fallback = ''): string {
+  try {
+    return existsSync(path) ? readFileSync(path, 'utf-8') : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function writeFileSyncSafe(path: string, content: string): void {
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, content, 'utf-8');
+  } catch {
+    // Best-effort package stub.
+  }
+}

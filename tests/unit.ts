@@ -256,6 +256,95 @@ async function main(): Promise<void> {
     });
   }
 
+  // ─── File tools / restricted bash ───
+  {
+    const { ToolRegistry } = await import('../dist/tools/registry.js');
+    const { registerFileTools } = await import('../dist/tools/file.js');
+
+    const registry = new ToolRegistry();
+    registerFileTools(registry);
+    writeFileSync(join(dataDir, 'safe.txt'), 'safe\n', 'utf-8');
+
+    const ctx = {
+      sessionId: 'unit-file-tools',
+      model: 'mock',
+      apiKey: undefined,
+      gender: 'female' as const,
+      emotionState: { myMood: '平静', userMood: '未知', affection: 50, energy: 'mid' as const, lastInteraction: '', unresolvedThread: null, recentTopics: [] },
+      relationshipState: {
+        stage: 'acquaintance' as const,
+        stageChangedAt: new Date(0).toISOString(),
+        interactionCount: 0,
+        emotionalDepth: 0,
+        sharedMemories: [],
+        nicknames: { userCallsAgent: null, agentCallsUser: null },
+      },
+      activeMod: 'female',
+      colaDir: dataDir,
+      outputDir: join(dataDir, 'output'),
+    };
+
+    const bash = async (command: string, cwd = dataDir): Promise<string> => {
+      const result = await registry.execute({ id: `bash:${command}`, name: 'bash', input: { command, cwd } }, ctx);
+      return result.output;
+    };
+
+    await test('file bash: allows read-only command in data dir', async () => {
+      const output = await bash('pwd');
+      assertEq(output.trim(), dataDir, 'pwd output');
+    });
+
+    await test('file bash: allows reading an allowed absolute path', async () => {
+      const output = await bash(`cat ${join(dataDir, 'safe.txt')}`);
+      assertEq(output.trim(), 'safe', 'cat output');
+    });
+
+    await test('file find: walks the resolved safe path', async () => {
+      const result = await registry.execute({ id: 'find:safe', name: 'find', input: { path: dataDir, pattern: 'safe.txt' } }, ctx);
+      assertEq(result.output.trim(), 'safe.txt', 'find output');
+    });
+
+    await test('file bash: rejects code execution commands', async () => {
+      const output = await bash('node -e "console.log(1)"');
+      assert(output.includes('Command "node" not allowed'), output);
+    });
+
+    await test('file bash: rejects package manager commands', async () => {
+      const output = await bash('npm test');
+      assert(output.includes('Command "npm" not allowed'), output);
+    });
+
+    await test('file bash: rejects mutating git subcommands', async () => {
+      const output = await bash('git checkout main');
+      assert(output.includes('Git subcommand "checkout" not allowed'), output);
+    });
+
+    await test('file bash: rejects shell composition', async () => {
+      const output = await bash('pwd && date');
+      assert(output.includes('Shell control operators'), output);
+    });
+
+    await test('file bash: rejects redirection', async () => {
+      const output = await bash('cat safe.txt > /tmp/mio-unit-out');
+      assert(output.includes('Shell control operators'), output);
+    });
+
+    await test('file bash: rejects destructive find options', async () => {
+      const output = await bash('find . -delete');
+      assert(output.includes('find -exec and -delete are not allowed'), output);
+    });
+
+    await test('file bash: rejects cwd outside allowed dirs', async () => {
+      const output = await bash('pwd', '/tmp');
+      assert(output.includes('outside allowed directories'), output);
+    });
+
+    await test('file bash: rejects absolute paths outside allowed dirs', async () => {
+      const output = await bash('cat /etc/passwd');
+      assert(output.includes('Absolute path outside allowed directories'), output);
+    });
+  }
+
   // ─── Persistence helpers ───
   {
     const { writeFileSyncSafe, readFileSyncSafe } = await import('../dist/memory/bank.js');
