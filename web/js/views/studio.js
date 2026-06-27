@@ -4,17 +4,33 @@ import { Store } from '../store.js';
 import { api } from '../api.js';
 import { wsManager } from '../ws.js';
 import { navigate } from '../router.js';
-import { EmotionBall } from '../components/emotion-ball.js';
+import { renderGenderPicker } from './gender.js';
+import { mascotSrc } from '../mascot.js';
 import { toast } from '../components/toast.js';
 import { ICONS } from '../utils/icons.js';
 
 const VALID_MODS = ['girlfriend', 'boyfriend'];
 
+/* 内部 mod 名 → 用户可见称呼(UI 永不显示 girlfriend/boyfriend) */
+const PRONOUN = { girlfriend: '她', boyfriend: '他' };
+const displayName = (name) => PRONOUN[name] || name;
+
+/* 圆形头像 — 复用 components.css 的 .avatar + 线条猫立绘。
+   资源缺失时隐藏 img,露出 .avatar 的 --surface 圆底兜底(best-effort 降级)。 */
+function modAvatar(extraClass = '', expr = 'gentle') {
+  const wrap = el('div', { className: `avatar ${extraClass}`.trim(), 'aria-hidden': 'true' });
+  wrap.appendChild(el('img', {
+    alt: '',
+    src: mascotSrc(expr),
+    onError: (e) => { e.target.style.display = 'none'; },
+  }));
+  return wrap;
+}
+
 export class StudioView extends BaseView {
   constructor(params) {
     super(params);
     this._wizardState = null;
-    this.emotionBalls = []; // 存储创建的情绪球实例以便清理
   }
 
   render() {
@@ -23,14 +39,15 @@ export class StudioView extends BaseView {
     /* 顶栏 */
     const header = el('header', { className: 'studio-header' });
     const backBtn = el('button', {
-      className: 'studio-back-btn',
+      className: 'studio-back-btn tap',
       'aria-label': '返回聊天',
       onClick: () => navigate('/chat'),
     });
     backBtn.appendChild(ICONS.back(18));
-    const title = el('h1', { className: 'studio-header-title', textContent: this.params.id ? '编辑人格' : '人格工作室' });
+    const title = el('h1', { className: 'studio-header-title title', textContent: this.params.id ? '编辑人格' : '人格工作室' });
     const newBtn = el('button', {
-      className: 'studio-new-btn',
+      className: 'studio-new-btn tap',
+      'aria-label': '新建人格',
       textContent: '+',
       onClick: () => this.startNewMod(),
     });
@@ -51,23 +68,10 @@ export class StudioView extends BaseView {
     if (content) this.loadModList(content);
   }
 
-  unmount() {
-    super.unmount();
-    // 清理所有的 EmotionBall 实例
-    this.emotionBalls.forEach(ball => {
-      if (ball && typeof ball.destroy === 'function') ball.destroy();
-    });
-    this.emotionBalls = [];
-  }
+  /* unmount 由 BaseView 统一处理(无 Canvas 资源需额外清理) */
 
   /* ─── 加载 Mod 列表 ─── */
   async loadModList(container) {
-    // 清理旧的 emotionBalls
-    this.emotionBalls.forEach(ball => {
-      if (ball && typeof ball.stop === 'function') ball.stop();
-    });
-    this.emotionBalls = [];
-
     container.innerHTML = '';
 
     /* 先展示骨架 */
@@ -81,11 +85,8 @@ export class StudioView extends BaseView {
       container.appendChild(this.renderModGallery(mods, data));
     } catch {
       container.innerHTML = '';
-      container.appendChild(el('div', {
-        className: 'welcome',
-        style: { padding: '60px 32px' },
-      }, [
-        el('p', { textContent: '加载失败，请检查连接', style: { color: 'var(--mist-500)' } }),
+      container.appendChild(el('div', { className: 'studio-state' }, [
+        el('p', { className: 'studio-state-text', textContent: '加载失败，请检查连接' }),
       ]));
     }
   }
@@ -117,8 +118,8 @@ export class StudioView extends BaseView {
 
   getStyleForMod(name, data) {
     /* 尝试从 soul 内容推断风格 */
-    if (name === 'boyfriend') return '默认男友';
-    if (name === 'girlfriend') return '默认女友';
+    if (name === 'boyfriend') return '默认 · 他';
+    if (name === 'girlfriend') return '默认 · 她';
     return '自定义';
   }
 
@@ -132,7 +133,7 @@ export class StudioView extends BaseView {
 
     if (activeMods.length > 0) {
       frag.appendChild(el('div', { className: 'mod-section' }, [
-        el('div', { className: 'mod-section-title', textContent: '当前活跃' }),
+        el('div', { className: 'mod-section-title label', textContent: '当前活跃' }),
         this.renderActiveDetail(activeMods[0], statusData),
       ]));
     }
@@ -140,7 +141,7 @@ export class StudioView extends BaseView {
     /* 其他人格 */
     if (inactiveMods.length > 0) {
       frag.appendChild(el('div', { className: 'mod-section' }, [
-        el('div', { className: 'mod-section-title', textContent: '其他人格' }),
+        el('div', { className: 'mod-section-title label', textContent: '其他人格' }),
         el('div', { className: 'mod-cards' }, [
           ...inactiveMods.map(mod => this.renderModCard(mod)),
           this.renderNewCard(),
@@ -148,7 +149,7 @@ export class StudioView extends BaseView {
       ]));
     } else {
       frag.appendChild(el('div', { className: 'mod-section' }, [
-        el('div', { className: 'mod-section-title', textContent: '其他人格' }),
+        el('div', { className: 'mod-section-title label', textContent: '其他人格' }),
         el('div', { className: 'mod-cards' }, [this.renderNewCard()]),
       ]));
     }
@@ -161,29 +162,15 @@ export class StudioView extends BaseView {
 
     /* 头部 */
     const header = el('div', { className: 'mod-detail-header' });
-    const avatarWrap = el('div', { className: 'mod-detail-avatar' });
-    const ballCanvas = el('canvas', { width: '56', height: '56' });
-    avatarWrap.appendChild(ballCanvas);
-    header.appendChild(avatarWrap);
+    header.appendChild(modAvatar('mod-detail-avatar'));
 
     const info = el('div', { className: 'mod-detail-info' });
-    info.appendChild(el('div', { className: 'mod-detail-name', textContent: mod.name === 'girlfriend' ? '女友' : mod.name === 'boyfriend' ? '男友' : mod.name }));
-    info.appendChild(el('div', { className: 'mod-detail-meta', textContent: `${mod.style} · ${mod.gender === 'boyfriend' ? '男友' : '女友'}` }));
+    info.appendChild(el('div', { className: 'mod-detail-name', textContent: displayName(mod.name) }));
+    info.appendChild(el('div', { className: 'mod-detail-meta', textContent: mod.style }));
     header.appendChild(info);
     card.appendChild(header);
 
-    /* 延迟渲染情绪球 */
-    setTimeout(() => {
-      if (ballCanvas && ballCanvas.isConnected) { // 只在 DOM 中存在时初始化
-        const ball = new EmotionBall(ballCanvas, { size: 56 });
-        const mood = statusData?.emotion?.myMood || '平静';
-        ball.setState(mood, statusData?.emotion?.affection || 0, statusData?.relationship?.stage || 'acquaintance');
-        ball.start();
-        this.emotionBalls.push(ball);
-      }
-    }, 100);
-
-    /* BASE/DEEP 切换 */
+    /* 日常 / 深度 切换 */
     const mode = statusData?.personaMode || Store.get('personaMode') || 'base';
     const modeSwitch = el('div', { className: 'mode-switch' });
     modeSwitch.appendChild(el('span', { className: 'mode-switch-label', textContent: '陪伴模式' }));
@@ -205,15 +192,15 @@ export class StudioView extends BaseView {
     modeSwitch.appendChild(chips);
     card.appendChild(modeSwitch);
 
-    /* 好感度 */
+    /* 好感度 — 复用 .progress 组件 */
     const aff = statusData?.emotion?.affection || 0;
     card.appendChild(el('div', { className: 'affection-bar' }, [
       el('div', { className: 'affection-bar-label' }, [
         el('span', { textContent: '好感度' }),
         el('span', { textContent: `${aff}` }),
       ]),
-      el('div', { className: 'affection-bar-track' }, [
-        el('div', { className: 'affection-bar-fill', style: { width: `${aff}%` } }),
+      el('div', { className: 'progress' }, [
+        el('i', { style: { width: `${aff}%` } }),
       ]),
     ]));
 
@@ -254,23 +241,9 @@ export class StudioView extends BaseView {
       },
     });
 
-    const avatar = el('div', { className: 'mod-card-avatar' });
-    const ballCanvas = el('canvas', { width: '56', height: '56' });
-    avatar.appendChild(ballCanvas);
-    card.appendChild(avatar);
-
-    card.appendChild(el('div', { className: 'mod-card-name', textContent: mod.name === 'girlfriend' ? '女友' : mod.name === 'boyfriend' ? '男友' : mod.name }));
+    card.appendChild(modAvatar('mod-card-avatar'));
+    card.appendChild(el('div', { className: 'mod-card-name', textContent: displayName(mod.name) }));
     card.appendChild(el('div', { className: 'mod-card-style', textContent: mod.style }));
-
-    /* 延迟渲染 */
-    setTimeout(() => {
-      if (ballCanvas && ballCanvas.isConnected) {
-        const ball = new EmotionBall(ballCanvas, { size: 56 });
-        ball.setState('平静', 0, 'acquaintance');
-        ball.start();
-        this.emotionBalls.push(ball);
-      }
-    }, 100);
 
     return card;
   }
@@ -281,7 +254,7 @@ export class StudioView extends BaseView {
       onClick: () => this.startNewMod(),
     }, [
       el('div', { className: 'plus', textContent: '+' }),
-      el('div', { className: 'label', textContent: '新建人格' }),
+      el('div', { className: 'mod-card-new-label', textContent: '新建人格' }),
     ]);
   }
 
@@ -342,13 +315,16 @@ export class StudioView extends BaseView {
       }),
     ]));
 
-    /* 性别 */
+    /* 性别 — 复用全局 renderGenderPicker(UI 只出现「她 / 他」) */
     form.appendChild(el('div', { className: 'form-group' }, [
       el('label', { className: 'form-label', textContent: '性别' }),
-      el('div', { className: 'gender-select' }, [
-        this.renderGenderCard('girlfriend', '🤍', '女友', this._wizardState.gender),
-        this.renderGenderCard('boyfriend', '💙', '男友', this._wizardState.gender),
-      ]),
+      renderGenderPicker({
+        value: this._wizardState.gender,
+        onSelect: (mod) => {
+          this._wizardState.gender = mod;
+          this.updateWizardNext();
+        },
+      }),
     ]));
 
     /* 风格 */
@@ -364,7 +340,7 @@ export class StudioView extends BaseView {
     ]));
 
     /* 年龄 + 职业 */
-    const row = el('div', { className: 'form-group', style: { display: 'flex', gap: 'var(--space-3)' } });
+    const row = el('div', { className: 'form-group', style: { display: 'flex', gap: 'var(--s3)' } });
     row.appendChild(el('input', {
       className: 'form-input',
       type: 'number',
@@ -398,21 +374,6 @@ export class StudioView extends BaseView {
     }));
   }
 
-  renderGenderCard(gender, icon, label, selected) {
-    return el('div', {
-      className: `gender-card${selected === gender ? ' selected' : ''}`,
-      onClick: (e) => {
-        this._wizardState.gender = gender;
-        const cards = e.currentTarget.parentElement.querySelectorAll('.gender-card');
-        cards.forEach(c => c.classList.toggle('selected', c.textContent.includes(label)));
-        this.updateWizardNext();
-      },
-    }, [
-      el('span', { className: 'gender-card-icon', textContent: icon }),
-      el('span', { className: 'gender-card-label', textContent: label }),
-    ]);
-  }
-
   selectStyle(style, parent) {
     this._wizardState.style = style;
     parent.querySelectorAll('.style-chip').forEach(c => c.classList.remove('selected'));
@@ -438,11 +399,9 @@ export class StudioView extends BaseView {
 
   /* ─── Step 2: AI 生成预览 ─── */
   async renderWizardStep2(container) {
-    container.appendChild(el('div', { className: 'text-center py-8' }, [
-      el('div', { className: 'w-mark', style: { margin: '0 auto var(--space-4)' } }, [
-        el('canvas', { width: '56', height: '56' }),
-      ]),
-      el('p', { className: 'text-body text-muted', textContent: '正在生成人格…' }),
+    container.appendChild(el('div', { className: 'studio-state' }, [
+      modAvatar('studio-mascot'),
+      el('p', { className: 'studio-state-text', textContent: '正在生成人格…' }),
     ]));
 
     try {
@@ -460,43 +419,37 @@ export class StudioView extends BaseView {
       /* 预览 */
       container.appendChild(el('div', { className: 'form-group' }, [
         el('label', { className: 'form-label', textContent: '生成预览' }),
-        el('div', { className: 'soul-preview', style: { maxHeight: '280px' } }, [
+        el('div', { className: 'soul-preview' }, [
           el('pre', { textContent: result.preview || result.soul?.slice(0, 400) || '生成成功' }),
         ]),
       ]));
 
       container.appendChild(el('p', {
-        className: 'text-caption text-muted',
+        className: 'wizard-hint',
         textContent: `Token 估算: ~${result.tokenEstimate || '—'}`,
-        style: { marginBottom: 'var(--space-5)' },
       }));
 
       /* 按钮 */
-      const actions = el('div', { style: { display: 'flex', gap: 'var(--space-3)' } });
-      actions.appendChild(el('button', {
-        className: 'btn-secondary',
-        style: { flex: 1, padding: 'var(--space-4)' },
-        textContent: '重新生成',
-        onClick: () => this.renderWizardStep2(container),
-      }));
-      actions.appendChild(el('button', {
-        className: 'btn-primary',
-        style: { flex: 1, padding: 'var(--space-4)' },
-        textContent: '保存并激活',
-        onClick: () => this.savePersona(result),
-      }));
-      container.appendChild(actions);
+      container.appendChild(el('div', { className: 'wizard-actions' }, [
+        el('button', {
+          className: 'btn-secondary',
+          textContent: '重新生成',
+          onClick: () => this.renderWizardStep2(container),
+        }),
+        el('button', {
+          className: 'btn-primary',
+          textContent: '保存并激活',
+          onClick: () => this.savePersona(result),
+        }),
+      ]));
 
     } catch (err) {
       container.innerHTML = '';
-      container.appendChild(el('p', {
-        className: 'text-body text-muted text-center',
-        textContent: `生成失败: ${err.message || '未知错误'}`,
-        style: { padding: 'var(--space-8)' },
-      }));
+      container.appendChild(el('div', { className: 'studio-state' }, [
+        el('p', { className: 'studio-state-text', textContent: `生成失败: ${err.message || '未知错误'}` }),
+      ]));
       container.appendChild(el('button', {
-        className: 'btn-secondary',
-        style: { width: '100%', padding: 'var(--space-4)' },
+        className: 'btn-secondary w-full',
         textContent: '返回重试',
         onClick: () => this.renderWizard(1),
       }));
@@ -508,9 +461,11 @@ export class StudioView extends BaseView {
     const container = this.el.querySelector('#studio-content');
     if (!container) return;
 
+    const name = this._wizardState?.name || '';
+
     container.innerHTML = '';
-    container.appendChild(el('div', { className: 'text-center py-8' }, [
-      el('p', { className: 'text-body text-muted', textContent: '正在保存…' }),
+    container.appendChild(el('div', { className: 'studio-state' }, [
+      el('p', { className: 'studio-state-text', textContent: '正在保存…' }),
     ]));
 
     try {
@@ -524,15 +479,10 @@ export class StudioView extends BaseView {
       });
 
       container.innerHTML = '';
-      container.appendChild(el('div', {
-        className: 'text-center',
-        style: { padding: 'var(--space-16) var(--space-6)' },
-      }, [
-        el('div', { className: 'w-mark', style: { margin: '0 auto var(--space-5)', background: 'var(--success-soft)' } }, [
-          el('span', { textContent: '✓', style: { fontSize: '32px', color: 'var(--success)' } }),
-        ]),
-        el('h2', { className: 'text-heading', textContent: '创建成功' }),
-        el('p', { className: 'text-body text-muted', textContent: `${this._wizardState.name} 已激活`, style: { marginTop: 'var(--space-2)' } }),
+      container.appendChild(el('div', { className: 'studio-done' }, [
+        modAvatar('studio-mascot', 'happy'),
+        el('h2', { className: 'studio-done-title title', textContent: '创建成功' }),
+        el('p', { className: 'studio-done-sub', textContent: `${name} 已激活` }),
         el('button', {
           className: 'wizard-next',
           textContent: '开始对话',
@@ -540,7 +490,7 @@ export class StudioView extends BaseView {
         }),
       ]));
 
-      Store.set('activeMod', this._wizardState?.name || Store.get('activeMod'));
+      Store.set('activeMod', name || Store.get('activeMod'));
       this._wizardState = null;
 
     } catch (err) {
@@ -597,7 +547,7 @@ export class StudioView extends BaseView {
     container.innerHTML = '';
 
     container.appendChild(el('div', { className: 'form-group' }, [
-      el('label', { className: 'form-label', textContent: `编��� ${modName} 的 soul.md` }),
+      el('label', { className: 'form-label', textContent: `编辑 ${displayName(modName)} 的 soul.md` }),
       el('textarea', {
         className: 'soul-editor',
         textContent: soulContent,
@@ -605,37 +555,35 @@ export class StudioView extends BaseView {
       }),
     ]));
 
-    const actions = el('div', { style: { display: 'flex', gap: 'var(--space-3)' } });
-    actions.appendChild(el('button', {
-      className: 'btn-secondary',
-      style: { flex: 1, padding: 'var(--space-4)' },
-      textContent: '取消',
-      onClick: () => this.loadModList(container),
-    }));
-    actions.appendChild(el('button', {
-      className: 'btn-primary',
-      style: { flex: 1, padding: 'var(--space-4)' },
-      textContent: '保存',
-      onClick: async () => {
-        try {
-          await api.put(`/mods/${modName}/soul`, { soul: soulContent });
-          toast('保存成功', 'success');
-          this.loadModList(container);
-        } catch {
-          toast('保存失败', 'error');
-        }
-      },
-    }));
-    container.appendChild(actions);
+    container.appendChild(el('div', { className: 'wizard-actions' }, [
+      el('button', {
+        className: 'btn-secondary',
+        textContent: '取消',
+        onClick: () => this.loadModList(container),
+      }),
+      el('button', {
+        className: 'btn-primary',
+        textContent: '保存',
+        onClick: async () => {
+          try {
+            await api.put(`/mods/${modName}/soul`, { soul: soulContent });
+            toast('保存成功', 'success');
+            this.loadModList(container);
+          } catch {
+            toast('保存失败', 'error');
+          }
+        },
+      }),
+    ]));
   }
 
   skeletonModList() {
     return el('div', { className: 'mod-section' }, [
-      el('div', { className: 'mod-detail-card', style: { height: '240px' } }),
+      el('div', { className: 'mod-detail-card studio-skeleton', style: { height: '240px' } }),
       el('div', { className: 'mod-cards' }, [
         ...[1, 2, 3].map(() => el('div', {
-          className: 'mod-card',
-          style: { height: '160px', background: 'var(--mist-100)', animation: 'shimmer 1.5s linear infinite' },
+          className: 'mod-card studio-skeleton',
+          style: { height: '160px' },
         })),
       ]),
     ]);

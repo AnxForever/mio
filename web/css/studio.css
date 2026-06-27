@@ -1,9 +1,10 @@
 /* ════════════════════════════════════════════════════
-   studio.css — Persona Studio 样式
+   studio.css — Persona 工作室
 
-   Mod 画廊: 横向滚动卡片
-   新建流程: 三步表单向导
-   编辑: soul.md 在线编辑器
+   全部基于 tokens.css + components.css(.avatar/.tap/.progress)。
+   配色克制:页底 --surface,卡片白底 + 0.5px --hairline,
+   强调极少量用 --accent。性别选择器(.gender-*)样式定义在
+   onboarding.css(全局共享),本页直接复用 renderGenderPicker。
    ════════════════════════════════════════════════════ */
 
 /* ═══ 主容器 ═══ */
@@ -12,7 +13,7 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  background: var(--mist-50);
+  background: var(--surface);
   overflow: hidden;
 }
 
@@ -20,7 +21,7 @@
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: var(--space-4) var(--space-4) var(--space-16);
+  padding: var(--s5) var(--s4) 64px;
 }
 
 /* ═══ 顶栏 ═══ */
@@ -28,78 +29,54 @@
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  min-height: var(--header-h);
-  padding: calc(var(--safe-top) + 8px) var(--space-4) var(--space-2);
-  background: var(--glass-bg-heavy);
-  -webkit-backdrop-filter: saturate(180%) blur(var(--glass-blur));
-  backdrop-filter: saturate(180%) blur(var(--glass-blur));
-  border-bottom: 0.5px solid var(--glass-border);
-  z-index: 10;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  background: var(--bg);
+  border-bottom: .5px solid var(--hairline);
 }
 
 .studio-header-title {
   flex: 1;
-  font-size: var(--text-heading-sm);
-  font-weight: var(--weight-semibold);
-  color: var(--mist-900);
+  font-size: 18px;               /* .title 基类提供字重/字距/颜色 */
 }
 
 .studio-back-btn {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
   border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--mist-600);
-  transition: background var(--duration-fast) var(--ease-out);
-}
-
-.studio-back-btn:active {
-  background: var(--mist-200);
+  color: var(--text);
 }
 
 .studio-new-btn {
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  background: var(--sakura-500);
+  background: var(--accent);
   color: #fff;
   font-size: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 8px var(--sakura-glass-hover);
-  transition: transform 0.15s var(--ease-spring);
-}
-
-.studio-new-btn:active {
-  transform: scale(0.9);
+  display: grid;
+  place-items: center;
 }
 
 /* ═══ Mod 卡片列表 — 横向滚动 ═══ */
 .mod-section {
-  margin-bottom: var(--space-6);
+  margin-bottom: var(--s6);
 }
 
 .mod-section-title {
-  font-size: var(--text-label);
-  font-weight: var(--weight-semibold);
-  color: var(--mist-600);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: var(--space-3);
-  padding: 0 var(--space-1);
+  margin-bottom: var(--s3);
+  padding: 0 var(--s2);          /* .label 基类提供字号/颜色/大写/字距 */
 }
 
 .mod-cards {
   display: flex;
-  gap: var(--space-3);
+  gap: var(--s3);
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
-  padding: var(--space-1);
+  padding: var(--s1);
   scrollbar-width: none;
 }
 
@@ -109,20 +86,19 @@
 .mod-card {
   flex-shrink: 0;
   width: 160px;
-  padding: var(--space-5) var(--space-4);
-  background: #fff;
-  border-radius: var(--radius-lg);
-  box-shadow: var(--elevation-1);
+  padding: var(--s5) var(--s4);
+  background: var(--bg);
+  border: 1.5px solid var(--hairline);
+  border-radius: var(--r-card);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--s3);
   scroll-snap-align: start;
   cursor: pointer;
-  transition: box-shadow var(--duration-fast) var(--ease-out),
-              transform var(--duration-fast) var(--ease-out);
-  border: 1.5px solid transparent;
   position: relative;
+  transition: border-color var(--t-fast) var(--ease),
+              transform var(--t-fast) var(--ease);
 }
 
 .mod-card:active {
@@ -130,91 +106,83 @@
 }
 
 .mod-card.active {
-  border-color: var(--sakura-400);
-  box-shadow: var(--elevation-2), var(--glow-sakura);
+  border-color: var(--accent);
 }
 
 .mod-card.active::before {
   content: '';
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: var(--s2);
+  right: var(--s2);
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--sakura-500);
-  box-shadow: 0 0 8px var(--sakura-glass-hover);
-  animation: dotBreathe 2s ease-in-out infinite;
+  background: var(--accent);
+  animation: studio-pulse 2s var(--ease) infinite;
 }
 
 .mod-card-avatar {
   width: 56px;
-  height: 56px;
-}
-
-.mod-card-avatar canvas {
-  width: 100%;
-  height: 100%;
+  height: 56px;                  /* .avatar 基类提供圆形底/裁切 */
 }
 
 .mod-card-name {
-  font-size: var(--text-body);
-  font-weight: var(--weight-semibold);
-  color: var(--mist-900);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
   text-align: center;
 }
 
 .mod-card-style {
-  font-size: var(--text-caption);
-  color: var(--mist-600);
+  font-size: 13px;
+  color: var(--text-2);
   text-align: center;
-  line-height: var(--leading-snug);
+  line-height: 1.4;
 }
 
 /* ─── 新建 Mod 卡片 ─── */
 .mod-card-new {
-  border: 1.5px dashed var(--mist-300);
+  border: 1.5px dashed var(--text-3);
   background: transparent;
-  box-shadow: none;
   justify-content: center;
 }
 
 .mod-card-new:active {
-  background: var(--mist-100);
+  background: var(--surface);
 }
 
 .mod-card-new .plus {
   font-size: 28px;
-  color: var(--mist-400);
+  color: var(--text-3);
   font-weight: 300;
-  margin-bottom: var(--space-1);
+  margin-bottom: var(--s1);
 }
 
-.mod-card-new .label {
-  font-size: var(--text-body-sm);
-  color: var(--mist-500);
+.mod-card-new-label {
+  font-size: 14px;
+  color: var(--text-2);
 }
 
 /* ═══ Mod 详情卡片 ═══ */
 .mod-detail-card {
-  background: #fff;
-  border-radius: var(--radius-xl);
-  box-shadow: var(--elevation-1);
-  padding: var(--space-6);
-  margin-bottom: var(--space-4);
+  background: var(--bg);
+  border: .5px solid var(--hairline);
+  border-radius: var(--r-card);
+  padding: var(--s6);
+  margin-bottom: var(--s4);
 }
 
 .mod-detail-header {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  margin-bottom: var(--space-4);
+  gap: var(--s4);
+  margin-bottom: var(--s4);
 }
 
 .mod-detail-avatar {
   width: 56px;
   height: 56px;
-  flex-shrink: 0;
+  flex-shrink: 0;                /* .avatar 基类提供圆形底/裁切 */
 }
 
 .mod-detail-info {
@@ -223,151 +191,131 @@
 }
 
 .mod-detail-name {
-  font-size: var(--text-body-lg);
-  font-weight: var(--weight-semibold);
-  color: var(--mist-900);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
 }
 
 .mod-detail-meta {
-  font-size: var(--text-body-sm);
-  color: var(--mist-600);
+  font-size: 13px;
+  color: var(--text-2);
   margin-top: 2px;
 }
 
-/* BASE/DEEP 模式切换 */
+/* 日常 / 深度 模式切换 */
 .mode-switch {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  background: var(--mist-100);
-  border-radius: var(--radius-lg);
+  gap: var(--s3);
+  margin-bottom: var(--s4);
+  padding: var(--s3) var(--s4);
+  background: var(--surface);
+  border-radius: var(--r-card);
 }
 
 .mode-switch-label {
-  font-size: var(--text-body-sm);
-  color: var(--mist-700);
+  font-size: 14px;
+  color: var(--text-2);
 }
 
 .mode-chips {
   display: flex;
-  gap: var(--space-1);
-  background: var(--mist-200);
-  border-radius: var(--radius-full);
+  gap: var(--s1);
+  margin-left: auto;
+  background: var(--hairline);
+  border-radius: 999px;
   padding: 2px;
 }
 
 .mode-chip {
   padding: 6px 14px;
-  font-size: var(--text-label);
-  font-weight: var(--weight-medium);
-  border-radius: var(--radius-full);
-  color: var(--mist-500);
-  transition: all var(--duration-fast) var(--ease-out);
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 999px;
+  color: var(--text-2);
+  transition: color var(--t-fast) var(--ease),
+              background var(--t-fast) var(--ease);
 }
 
 .mode-chip.selected {
-  background: #fff;
-  color: var(--mist-900);
-  font-weight: var(--weight-semibold);
-  box-shadow: var(--elevation-1);
+  background: var(--bg);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
 }
 
 .mode-chip.selected[data-mode="deep"] {
-  background: var(--info-soft);
-  color: var(--info);
+  color: var(--accent);          /* 深度模式选中态用暖橙强调 */
 }
 
-/* 好感度条 */
+/* 好感度条 — 复用 components.css 的 .progress */
 .affection-bar {
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--s4);
 }
 
 .affection-bar-label {
   display: flex;
   justify-content: space-between;
-  font-size: var(--text-caption);
-  color: var(--mist-600);
-  margin-bottom: var(--space-1);
-}
-
-.affection-bar-track {
-  height: 4px;
-  background: var(--mist-200);
-  border-radius: var(--radius-full);
-  overflow: hidden;
-}
-
-.affection-bar-fill {
-  height: 100%;
-  background: var(--sakura-500);
-  border-radius: var(--radius-full);
-  transition: width var(--duration-slow) var(--ease-out);
+  font-size: 13px;
+  color: var(--text-2);
+  margin-bottom: var(--s2);
 }
 
 /* soul.md 预览 */
 .soul-preview {
-  background: var(--mist-100);
-  border-radius: var(--radius-md);
-  padding: var(--space-4);
-  margin-bottom: var(--space-4);
+  background: var(--surface);
+  border-radius: var(--r-card);
+  padding: var(--s4);
+  margin-bottom: var(--s4);
   max-height: 200px;
   overflow-y: auto;
 }
 
 .soul-preview pre {
-  font-family: var(--font-mono);
-  font-size: var(--text-body-sm);
-  line-height: var(--leading-relaxed);
-  color: var(--mist-700);
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-2);
   white-space: pre-wrap;
   word-wrap: break-word;
 }
 
-/* 操作按钮行 */
+/* 操作按钮 */
 .mod-actions {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--s2);
 }
 
-.mod-actions button {
+.btn-primary,
+.btn-secondary {
   flex: 1;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  font-size: var(--text-body-sm);
-  font-weight: var(--weight-medium);
+  padding: var(--s3) var(--s4);
+  border-radius: var(--r-card);
+  font-size: 14px;
+  font-weight: 500;
   text-align: center;
-  transition: all var(--duration-fast) var(--ease-out);
+  transition: transform var(--t-fast) var(--ease),
+              background var(--t-fast) var(--ease),
+              opacity var(--t-fast) var(--ease);
 }
 
 .btn-primary {
-  background: var(--sakura-500);
+  background: var(--accent);
   color: #fff;
-  box-shadow: 0 2px 6px var(--sakura-glass-hover);
 }
 
 .btn-primary:active {
   transform: scale(0.96);
-  background: var(--sakura-600);
+  opacity: .9;
 }
 
 .btn-secondary {
-  background: var(--mist-100);
-  color: var(--mist-700);
+  background: var(--surface);
+  color: var(--text);
 }
 
 .btn-secondary:active {
-  background: var(--mist-200);
-}
-
-.btn-danger {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-
-.btn-danger:active {
-  background: #ffd9d7;
+  background: var(--hairline);
 }
 
 /* ═══ 新建 Mod 表单向导 ═══ */
@@ -377,25 +325,25 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-8);
+  gap: var(--s2);
+  margin-bottom: var(--s8);
 }
 
 .step-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--mist-300);
-  transition: all var(--duration-normal) var(--ease-out);
+  background: var(--text-3);
+  transition: all var(--t) var(--ease);
 }
 
 .step-dot.done {
-  background: var(--sakura-500);
+  background: var(--accent);
 }
 
 .step-dot.current {
-  background: var(--sakura-500);
-  box-shadow: 0 0 0 3px var(--sakura-glass);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 159, 90, .08);
   width: 10px;
   height: 10px;
 }
@@ -403,103 +351,73 @@
 .step-line {
   width: 32px;
   height: 1px;
-  background: var(--mist-300);
-  transition: background var(--duration-normal) var(--ease-out);
+  background: var(--hairline);
+  transition: background var(--t) var(--ease);
 }
 
 .step-line.done {
-  background: var(--sakura-300);
+  background: var(--accent);
 }
 
 /* 表单字段 */
 .form-group {
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--s5);
 }
 
 .form-label {
   display: block;
-  font-size: var(--text-body-sm);
-  font-weight: var(--weight-medium);
-  color: var(--mist-700);
-  margin-bottom: var(--space-2);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-2);
+  margin-bottom: var(--s2);
 }
 
 .form-input {
   width: 100%;
-  padding: var(--space-3) var(--space-4);
-  background: var(--mist-100);
-  border: 1px solid var(--mist-300);
-  border-radius: var(--radius-md);
-  font-size: var(--text-body);
-  color: var(--mist-900);
-  transition: border-color var(--duration-fast) var(--ease-out),
-              box-shadow var(--duration-fast) var(--ease-out);
+  padding: var(--s3) var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-input);
+  font-size: 15px;
+  color: var(--text);
+  transition: border-color var(--t-fast) var(--ease),
+              box-shadow var(--t-fast) var(--ease);
 }
 
 .form-input:focus {
-  border-color: var(--sakura-400);
-  box-shadow: 0 0 0 3px var(--sakura-glass);
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 159, 90, .08);
 }
 
 .form-input::placeholder {
-  color: var(--mist-500);
+  color: var(--text-3);
 }
 
-/* 性别选择 — 大卡片 */
-.gender-select {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-3);
-}
-
-.gender-card {
-  padding: var(--space-5) var(--space-4);
-  background: #fff;
-  border: 1.5px solid var(--mist-300);
-  border-radius: var(--radius-lg);
-  text-align: center;
-  cursor: pointer;
-  transition: all var(--duration-fast) var(--ease-out);
-}
-
-.gender-card:active {
-  transform: scale(0.97);
-}
-
-.gender-card.selected {
-  border-color: var(--sakura-400);
-  background: var(--sakura-50);
-  box-shadow: 0 0 0 3px var(--sakura-glass);
-}
-
-.gender-card-icon {
-  font-size: 32px;
-  margin-bottom: var(--space-2);
-  display: block;
-}
-
-.gender-card-label {
-  font-size: var(--text-body-sm);
-  font-weight: var(--weight-medium);
-  color: var(--mist-700);
+/* 性别选择器嵌入向导表单:撑满表单宽、去掉组件自带的底距 */
+.form-group .gender-picker {
+  max-width: none;
+  margin-bottom: 0;
 }
 
 /* 风格选择 — Chip */
 .style-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: var(--s2);
 }
 
 .style-chip {
-  padding: var(--space-2) var(--space-4);
-  background: var(--mist-100);
-  border: 1px solid var(--mist-300);
-  border-radius: var(--radius-full);
-  font-size: var(--text-body-sm);
-  color: var(--mist-600);
+  padding: var(--s2) var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  font-size: 14px;
+  color: var(--text-2);
   cursor: pointer;
-  transition: all var(--duration-fast) var(--ease-out);
+  transition: transform var(--t-fast) var(--ease),
+              border-color var(--t-fast) var(--ease),
+              color var(--t-fast) var(--ease);
 }
 
 .style-chip:active {
@@ -507,52 +425,113 @@
 }
 
 .style-chip.selected {
-  background: var(--sakura-50);
-  border-color: var(--sakura-400);
-  color: var(--sakura-600);
-  font-weight: var(--weight-medium);
+  background: var(--bg);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 500;
 }
 
-/* 下一步按钮 */
+/* 下一步 / 主 CTA 按钮 */
 .wizard-next {
   width: 100%;
-  padding: var(--space-4);
-  background: var(--sakura-500);
+  padding: var(--s4);
+  background: var(--accent);
   color: #fff;
-  border-radius: var(--radius-full);
-  font-size: var(--text-body);
-  font-weight: var(--weight-semibold);
-  box-shadow: 0 4px 16px var(--sakura-glass-hover);
-  transition: all var(--duration-fast) var(--ease-out);
-  margin-top: var(--space-6);
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 600;
+  transition: transform var(--t-fast) var(--ease),
+              opacity var(--t-fast) var(--ease);
+  margin-top: var(--s6);
 }
 
 .wizard-next:disabled {
   opacity: 0.3;
-  box-shadow: none;
+  cursor: default;
 }
 
 .wizard-next:active:not(:disabled) {
   transform: scale(0.97);
-  background: var(--sakura-600);
+  opacity: .9;
+}
+
+/* 向导按钮行(预览/编辑场景) */
+.wizard-actions {
+  display: flex;
+  gap: var(--s3);
+}
+
+.wizard-hint {
+  font-size: 13px;
+  color: var(--text-3);
+  margin-bottom: var(--s5);
+}
+
+/* ═══ 加载 / 空 / 完成 状态 ═══ */
+.studio-state {
+  text-align: center;
+  padding: var(--s8) var(--s4);
+}
+
+.studio-state-text {
+  font-size: 15px;
+  color: var(--text-2);
+}
+
+.studio-mascot {
+  width: 72px;
+  height: 72px;
+  margin: 0 auto var(--s4);      /* .avatar 基类提供圆形底/裁切 */
+}
+
+.studio-done {
+  text-align: center;
+  padding: 64px var(--s6);
+}
+
+.studio-done-title {
+  font-size: 22px;               /* .title 基类提供字重/字距/颜色 */
+}
+
+.studio-done-sub {
+  font-size: 15px;
+  color: var(--text-2);
+  margin-top: var(--s2);
 }
 
 /* ═══ 编辑模式 — soul 编辑器 ═══ */
 .soul-editor {
   width: 100%;
   min-height: 300px;
-  padding: var(--space-4);
-  background: var(--mist-100);
-  border: 1px solid var(--mist-300);
-  border-radius: var(--radius-md);
-  font-family: var(--font-mono);
-  font-size: var(--text-body-sm);
-  line-height: var(--leading-relaxed);
-  color: var(--mist-800);
+  padding: var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
   resize: vertical;
 }
 
 .soul-editor:focus {
-  border-color: var(--sakura-400);
-  box-shadow: 0 0 0 3px var(--sakura-glass);
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 159, 90, .08);
+}
+
+/* 骨架屏 */
+.studio-skeleton {
+  background: var(--surface);
+  animation: studio-skeleton 1.4s var(--ease) infinite;
+}
+
+@keyframes studio-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .4; }
+}
+
+@keyframes studio-skeleton {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .5; }
 }
