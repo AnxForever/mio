@@ -20,6 +20,7 @@
 
 import type { StreamingProvider, Message, ToolCall, ToolDef } from '../types.js';
 import { logger } from '../utils/logger.js';
+import { fetchWithRetry } from './http.js';
 
 /**
  * Configuration for connecting to a LoRA inference server.
@@ -136,7 +137,7 @@ class LoRAProvider implements StreamingProvider {
   ): Promise<{ text: string; toolCalls?: ToolCall[] }> {
     const openaiMessages = this.toOpenAIMessages(messages, systemPrompt);
 
-    const response = await fetch(`${this.config.baseUrl}/v1/chat/completions`, {
+    const response = await fetchWithRetry(`${this.config.baseUrl}/v1/chat/completions`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({
@@ -183,7 +184,7 @@ class LoRAProvider implements StreamingProvider {
     let fullText = '';
 
     try {
-      const response = await fetch(`${this.config.baseUrl}/v1/chat/completions`, {
+      const response = await fetchWithRetry(`${this.config.baseUrl}/v1/chat/completions`, {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify({
