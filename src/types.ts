@@ -242,6 +242,31 @@ export interface RelationshipState {
   };
 }
 
+// ─── Layered Persona (per-user) ───
+
+export interface PersonaDeltaChange { field: string; value: string; source: string; at: string; }
+
+/** L2：用户对 Mio 的专属覆盖。空字段表示不覆盖。 */
+export interface PersonaDelta {
+  userId: string;                 // 本切片固定 "default"
+  tone?: string;                  // 相处基调：playful/teasing/gentle/cool/mature/自由词
+  clinginess?: number;            // 黏度 0..1
+  initiative?: number;            // 主动频率 0..1
+  personaOverride?: string;       // 自由文本：对 Mio 设定的补充/改写（职业/背景/性格）
+  updatedAt: string;
+  history: PersonaDeltaChange[];   // append-only 变更记录（可解释、可回滚）
+}
+
+export interface PreferenceRule { rule: string; source: string; createdAt: string; }
+
+/** L3：用户偏好。 */
+export interface UserPreferences {
+  userId: string;
+  explicit: PreferenceRule[];
+  implicit?: Record<string, unknown>;
+  updatedAt: string;
+}
+
 // ─── Persona Studio ───
 
 export interface PersonaRequest {
@@ -359,4 +384,8 @@ export interface PromptCtx {
    * memory prompt section. Absent when there is no input or no match.
    */
   semanticMemories?: SemanticMemory[];
+  /** L2 用户专属人格覆盖（per-user，本切片 default）。 */
+  personaDelta?: PersonaDelta;
+  /** L3 用户显式偏好。 */
+  preferences?: UserPreferences;
 }

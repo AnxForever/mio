@@ -118,6 +118,17 @@ export function structuredMemoryPath(): string {
   return join(memoryBankDir(), 'structured-memory.json');
 }
 
+/** L2 per-user 人格覆盖文件 */
+export function personaDeltaPath(_userId = 'default'): string {
+  // 多用户(P1)时改为 join(colaDir(), 'users', _userId, 'persona-delta.json')
+  return join(memoryBankDir(), 'persona-delta.json');
+}
+
+/** L3 per-user 偏好文件 */
+export function preferencesPath(_userId = 'default'): string {
+  return join(memoryBankDir(), 'preferences.json');
+}
+
 /** mid-term memory 目录 (MTM: topic-segmented summaries) */
 export function midTermDir(): string {
   return join(memoryBankDir(), 'mid-term');
