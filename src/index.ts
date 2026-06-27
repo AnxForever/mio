@@ -34,6 +34,7 @@ import { modManager } from './mod/mod-manager.js';
 import { readEmotionState } from './emotion/state.js';
 import { readRelationshipState, getProgressInfo } from './relationship/progression.js';
 import { nightlyScheduler } from './scheduler/nightly.js';
+import { proactiveScheduler } from './scheduler/proactive.js';
 import { lifeScheduler } from './scheduler/life.js';
 import { startServer } from './server/index.js';
 import { runDiary } from './subagent/diary.js';
@@ -419,6 +420,8 @@ switch (command) {
       port = parseInt(args[portIdx + 1], 10);
     }
     lifeScheduler().start();
+    nightlyScheduler().start();   // arm nightly consolidation: long-term memory固化 / stage 晋升 / diary
+    proactiveScheduler().start(); // arm proactive messages: 主动关心 (morning/evening/check-in by stage)
     startServer({ port }).catch((err) => {
       console.error(err);
       process.exit(1);

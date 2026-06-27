@@ -58,7 +58,7 @@ import {
 } from '../tools/session.js';
 import { trackEmotion, classifyIntent } from '../emotion/tracker.js';
 import { readEmotionState, defaultEmotionState } from '../emotion/state.js';
-import { readRelationshipState, defaultRelationshipState } from '../relationship/progression.js';
+import { readRelationshipState, defaultRelationshipState, checkProgression } from '../relationship/progression.js';
 import { updateActiveContext, appendBookmark, ensureBankStructure, readUserProfile, readRecentBookmarks, readStructuredMemoryFile } from '../memory/bank.js';
 import { deserializeMemory } from '../memory/structured-memory.js';
 import { reindexBookmarks, search as searchMemory } from '../memory/vector.js';
@@ -279,6 +279,8 @@ function registerPromptSections(
   ctx: PromptCtx,
   recovery: 'new' | 'compact' | 'none',
 ): void {
+  const sectionEnabled = (section: string): boolean => !isEvalSectionDisabled(section);
+
   // L1: Core identity — critical, always included
   engine.register('core', {
     type: 'identity',
@@ -296,6 +298,7 @@ function registerPromptSections(
     },
     priority: 'high',
     condition: () => {
+      if (!sectionEnabled('soul')) return false;
       // Only include if we have content
       const fragment = buildPersonaFragment(ctx);
       return fragment !== null || (ctx.soulContent != null && ctx.soulContent.trim().length > 0);
@@ -307,6 +310,7 @@ function registerPromptSections(
     type: 'relationship',
     content: () => buildRelationshipContext(ctx.relationshipState),
     priority: 'high',
+    condition: () => sectionEnabled('relationship'),
   });
 
   // L4: User context — high priority
@@ -314,6 +318,7 @@ function registerPromptSections(
     type: 'user',
     content: () => buildUserContext(readUserProfile(), ctx.emotionState.recentTopics),
     priority: 'high',
+    condition: () => sectionEnabled('user'),
   });
 
   // L5: Memory context — medium priority, may be trimmed.
@@ -323,7 +328,7 @@ function registerPromptSections(
     type: 'memory',
     content: () => buildMemorySection(ctx),
     priority: 'medium',
-    condition: () => buildMemorySection(ctx).length > 0,
+    condition: () => sectionEnabled('memory') && buildMemorySection(ctx).length > 0,
   });
 
   // L5b: Structured memory — medium priority, best-effort
@@ -343,6 +348,7 @@ function registerPromptSections(
     },
     priority: 'medium',
     condition: () => {
+      if (!sectionEnabled('structured-memory')) return false;
       try {
         const raw = readStructuredMemoryFile();
         return raw !== null && raw.trim().length > 0;
@@ -363,6 +369,7 @@ function registerPromptSections(
       return getLorebookContext(recentTexts) ?? '';
     },
     priority: 'medium',
+    condition: () => sectionEnabled('lorebook'),
   });
 
   // L6b: Entity relations (temporal knowledge graph) — current-state facts
@@ -370,7 +377,7 @@ function registerPromptSections(
     type: 'relations',
     content: () => getRelationContext(),
     priority: 'medium',
-    condition: () => getRelationContext().trim().length > 0,
+    condition: () => sectionEnabled('relations') && getRelationContext().trim().length > 0,
   });
 
   // L7: Time context — high priority
@@ -378,6 +385,7 @@ function registerPromptSections(
     type: 'time',
     content: () => buildTimeContext(ctx.emotionState.lastInteraction || null),
     priority: 'high',
+    condition: () => sectionEnabled('time'),
   });
 
   // L7: Emotional context — high priority
@@ -385,6 +393,7 @@ function registerPromptSections(
     type: 'emotion',
     content: () => buildEmotionContext(ctx.emotionState),
     priority: 'high',
+    condition: () => sectionEnabled('emotion'),
   });
 
   // L7b: PAD emotional context — medium priority
@@ -392,7 +401,7 @@ function registerPromptSections(
     type: 'pad-emotion',
     content: () => buildPADEmotionContext() ?? '',
     priority: 'medium',
-    condition: () => buildPADEmotionContext() !== null,
+    condition: () => sectionEnabled('pad-emotion') && buildPADEmotionContext() !== null,
   });
 
   // L7c: Personality driver context — medium priority
@@ -406,6 +415,7 @@ function registerPromptSections(
     },
     priority: 'medium',
     condition: () => {
+      if (!sectionEnabled('personality')) return false;
       if (!isPersonalityDriverEnabled()) return false;
       return getPersonalityContext() !== null;
     },
@@ -419,7 +429,7 @@ function registerPromptSections(
       return affinityCtx ? `## 亲密\n${affinityCtx}` : '';
     },
     priority: 'medium',
-    condition: () => getAffinityContext() !== null,
+    condition: () => sectionEnabled('affinity') && getAffinityContext() !== null,
   });
 
   // L9: Attachment context — medium priority
@@ -430,7 +440,7 @@ function registerPromptSections(
       return attachCtx ? `## 依赖\n${attachCtx}` : '';
     },
     priority: 'medium',
-    condition: () => getAttachmentContext() !== null,
+    condition: () => sectionEnabled('attachment') && getAttachmentContext() !== null,
   });
 
   // L10: Ritual context — low priority (trimmed first)
@@ -441,7 +451,7 @@ function registerPromptSections(
       return ritualCtx ? `## 习惯\n${ritualCtx}` : '';
     },
     priority: 'low',
-    condition: () => getRitualContext() !== null,
+    condition: () => sectionEnabled('ritual') && getRitualContext() !== null,
   });
 
   // L10b: Cardboard context — low priority
@@ -452,7 +462,7 @@ function registerPromptSections(
       return cardboardCtx ? `## 对话状态\n${cardboardCtx}` : '';
     },
     priority: 'low',
-    condition: () => getCardboardContext() !== null,
+    condition: () => sectionEnabled('cardboard') && getCardboardContext() !== null,
   });
 
   // L10c: Mirroring hint — low priority
@@ -460,7 +470,7 @@ function registerPromptSections(
     type: 'mirror',
     content: () => getMirrorHint() ?? '',
     priority: 'low',
-    condition: () => getMirrorHint() !== null,
+    condition: () => sectionEnabled('mirror') && getMirrorHint() !== null,
   });
 
   // L10d: Feedback hint — low priority
@@ -468,7 +478,7 @@ function registerPromptSections(
     type: 'feedback',
     content: () => getFeedbackHint() ?? '',
     priority: 'low',
-    condition: () => getFeedbackHint() !== null,
+    condition: () => sectionEnabled('feedback') && getFeedbackHint() !== null,
   });
 
   // L10e: Procedural memory — medium priority (learned interaction patterns)
@@ -476,7 +486,7 @@ function registerPromptSections(
     type: 'procedural-memory',
     content: () => buildProceduralMemoryContext() ?? '',
     priority: 'medium',
-    condition: () => buildProceduralMemoryContext() !== null,
+    condition: () => sectionEnabled('procedural-memory') && buildProceduralMemoryContext() !== null,
   });
 
   // L11: Emotion tracking note — medium priority (important for feature function)
@@ -490,13 +500,14 @@ function registerPromptSections(
       return getMemoryContext(name, '', 3);
     },
     priority: 'medium',
-    condition: () => getConfig().features.lifeEngine && readActiveCharacter() !== null,
+    condition: () => sectionEnabled('life-events') && getConfig().features.lifeEngine && readActiveCharacter() !== null,
   });
 
   engine.register('emotion-note', {
     type: 'emotion-note',
     content: EMOTION_NOTE,
     priority: 'medium',
+    condition: () => sectionEnabled('emotion-note'),
   });
 
   // Few-shot examples — low priority
@@ -504,6 +515,7 @@ function registerPromptSections(
     type: 'fewshot',
     content: FEWSHOT_TEMPLATE,
     priority: 'low',
+    condition: () => sectionEnabled('fewshot'),
   });
 
   // Dynamic few-shot — low priority, complements static fewshot
@@ -515,6 +527,7 @@ function registerPromptSections(
     },
     priority: 'low',
     condition: () => {
+      if (!sectionEnabled('dynamic-fewshot')) return false;
       if (!getConfig().features.dynamicFewShot) return false;
       return getDynamicFewShot() !== null;
     },
@@ -532,8 +545,18 @@ function registerPromptSections(
       return '';
     },
     priority: 'high',
-    condition: () => recovery !== 'none',
+    condition: () => sectionEnabled('recovery') && recovery !== 'none',
   });
+}
+
+function isEvalSectionDisabled(section: string): boolean {
+  const raw = process.env.MIO_EVAL_DISABLE_SECTIONS;
+  if (!raw) return false;
+  const disabled = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return disabled.includes(section) || disabled.includes('*');
 }
 
 /**
@@ -952,7 +975,7 @@ async function applyPostTurnSideEffects({
     timestamp: new Date().toISOString(),
   };
   recordMessage(sessionId, assistantMsg);
-  trackEmotion(input.text ?? '', text);
+  trackEmotion(input.text ?? '', text, sessionId);
 
   scheduleLearningSideEffects(input, text, config);
   updateRelationalSideEffects(input, text, intent, crisisResult, config);
@@ -1011,6 +1034,13 @@ function updateRelationalSideEffects(
   }
 
   recordDualModeTurn(intent, crisisResult.shouldIntervene);
+
+  // Lightweight per-turn stage-progression check. checkProgression was
+  // previously only called in nightly (never armed under serve), so the
+  // relationship stayed frozen at "acquaintance". Running it per turn — after
+  // trackEmotion has bumped interactionCount + emotionalDepth — unfreezes the
+  // progression arc (familiar → ambiguous → intimate) and the gated behaviors.
+  checkProgression();
 }
 
 async function updatePersonalitySideEffects(

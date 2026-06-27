@@ -20,6 +20,7 @@ import { selectProvider } from '../providers/index.js';
 import { getConfig } from '../config.js';
 import { decideProactiveMessage, recordProactiveMessage } from './smart-proactive.js';
 import { sendToAllChannels, isNotifyEnabled } from '../server/notify.js';
+import { appendBookmark } from '../memory/bank.js';
 import type { StreamingProvider, SessionContext, EmotionState, RelationshipState, RelationshipStage } from '../types.js';
 
 /** 主动消息类型 */
@@ -214,6 +215,20 @@ export class ProactiveScheduler {
       timestamp: new Date().toISOString(),
     };
     this.messageBuffer.push(message);
+
+    // Record the outreach as a bookmark so Mio "remembers" she reached out —
+    // it gets indexed for semantic recall and consolidated at night. Without
+    // this, a proactive message leaves no trace and the next user reply has
+    // no context that she just messaged them.
+    try {
+      appendBookmark({
+        time: message.timestamp,
+        what: `我主动联系了 ta（${type}）`,
+        evidence: trimmed.slice(0, 120),
+      });
+    } catch {
+      // Best-effort — never let a bookmark write break message delivery.
+    }
 
     if (this.onMessage) {
       this.onMessage(message);

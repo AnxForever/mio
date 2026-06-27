@@ -1,7 +1,9 @@
 /* ════════════════════════════════════════════════════
-   analytics.css — 数据面板样式
+   analytics.css — 数据页 / "我们的数据"
 
-   故事卡片设计: 不是冷冰冰的图表, 是回忆相册。
+   白色极简,克制留白。卡片 = --surface 微底 + --r-card 圆角
+   + 0.5px --hairline 描边。强调色(--accent)只用于关系进度,
+   心情分布取 --mood-*。零图表库,纯 DOM/CSS。
    ════════════════════════════════════════════════════ */
 
 .analytics-view {
@@ -9,273 +11,268 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  background: var(--mist-50);
+  height: 100%;
+  background: var(--bg);
   overflow: hidden;
 }
 
-.analytics-content {
+/* ─── 顶栏 ─── */
+.ana-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4);
+  background: var(--bg);
+  border-bottom: .5px solid var(--hairline);
+}
+
+.ana-back {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--text);
+}
+
+.ana-title {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  color: var(--text);
+}
+
+/* ─── 滚动内容 ─── */
+.ana-content {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: var(--space-4) var(--space-4) var(--space-16);
-}
-
-/* ═══ 顶栏 ═══ */
-.analytics-header {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: var(--header-h);
-  padding: calc(var(--safe-top) + 8px) var(--space-4) var(--space-2);
-  background: var(--glass-bg-heavy);
-  -webkit-backdrop-filter: saturate(180%) blur(var(--glass-blur));
-  backdrop-filter: saturate(180%) blur(var(--glass-blur));
-  border-bottom: 0.5px solid var(--glass-border);
-  z-index: 10;
-}
-
-/* ═══ 数据卡片 ═══ */
-.data-card {
-  background: #fff;
-  border-radius: var(--radius-xl);
-  box-shadow: var(--elevation-1);
-  padding: var(--space-5);
-  margin-bottom: var(--space-4);
-  animation: slideUp var(--duration-normal) var(--ease-out) both;
-}
-
-.data-card:nth-child(1) { animation-delay: 0ms; }
-.data-card:nth-child(2) { animation-delay: 60ms; }
-.data-card:nth-child(3) { animation-delay: 120ms; }
-.data-card:nth-child(4) { animation-delay: 180ms; }
-
-.data-card-title {
-  font-size: var(--text-label);
-  font-weight: var(--weight-semibold);
-  color: var(--mist-500);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: var(--space-4);
-}
-
-/* ─── 情绪曲线 ─── */
-.emotion-chart-wrap {
-  position: relative;
-  width: 100%;
-  height: 200px;
-}
-
-.emotion-chart-wrap canvas {
-  width: 100%;
-  height: 100%;
-}
-
-.mood-legend {
-  display: flex;
-  gap: var(--space-3);
-  margin-top: var(--space-3);
-  flex-wrap: wrap;
-}
-
-.mood-legend-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: var(--text-caption);
-  color: var(--mist-600);
-}
-
-.mood-legend-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-/* ─── 关系进度 ─── */
-.stage-track {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--space-4);
-  position: relative;
-}
-
-.stage-track::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: var(--mist-200);
-  z-index: 0;
-}
-
-.stage-node {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--space-1);
-  z-index: 1;
-  font-size: var(--text-caption);
-  color: var(--mist-500);
+  gap: var(--s4);
+  padding: var(--s4) var(--s4) var(--s8);
 }
 
-.stage-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--mist-200);
-  border: 2px solid #fff;
-  transition: all var(--duration-normal) var(--ease-out);
+/* ─── 卡片(复用 .card,scoped 自给样式,不污染其它视图) ─── */
+.analytics-view .card {
+  background: var(--surface);
+  border: .5px solid var(--hairline);
+  border-radius: var(--r-card);
+  padding: var(--s5);
+  animation: ana-rise var(--t) var(--ease) both;
 }
 
-.stage-node.reached .stage-dot {
-  background: var(--sakura-500);
-  box-shadow: 0 0 0 4px var(--sakura-glass);
+.analytics-view .card:nth-child(2) { animation-delay: 40ms; }
+.analytics-view .card:nth-child(3) { animation-delay: 80ms; }
+.analytics-view .card:nth-child(4) { animation-delay: 120ms; }
+
+.ana-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--text-2);
+  margin-bottom: var(--s3);
 }
 
-.stage-node.current .stage-dot {
-  background: var(--sakura-500);
-  box-shadow: 0 0 0 6px var(--sakura-glass);
-  animation: dotBreathe 2s ease-in-out infinite;
-}
-
-.stage-node.reached .stage-label {
-  color: var(--sakura-500);
-  font-weight: var(--weight-medium);
-}
-
-.stage-node.current .stage-label {
-  color: var(--mist-900);
-  font-weight: var(--weight-semibold);
-}
-
-.progress-ring-wrap {
+/* ─── 关系卡 ─── */
+.ana-rel-top {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-4) 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-bottom: var(--s3);
 }
 
-.progress-ring-wrap canvas {
-  width: 120px;
-  height: 120px;
+.ana-rel-stage {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  color: var(--text);
 }
 
-.progress-center {
-  position: absolute;
-  text-align: center;
-  font-size: var(--text-heading);
-  font-weight: var(--weight-semibold);
-  color: var(--mist-900);
-}
-
-.progress-center small {
-  display: block;
-  font-size: var(--text-caption);
-  font-weight: var(--weight-regular);
-  color: var(--mist-500);
-  margin-top: 2px;
-}
-
-/* ─── 里程碑 ─── */
-.milestone-list {
-  list-style: none;
-}
-
-.milestone-item {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--mist-100);
-}
-
-.milestone-item:last-child {
-  border-bottom: none;
-}
-
-.milestone-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--sakura-50);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
+.ana-rel-count {
   flex-shrink: 0;
+  font-size: 13px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
 }
 
-.milestone-text {
-  font-size: var(--text-body-sm);
-  color: var(--mist-700);
-  line-height: var(--leading-relaxed);
+.ana-rel-next {
+  margin-top: var(--s2);
+  font-size: 13px;
+  color: var(--text-2);
 }
 
-/* ─── 数字快照 ─── */
-.stat-grid {
+/* ─── 心情卡 ─── */
+.ana-mood-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+}
+
+.ana-mood-emoji {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.ana-mood-label {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ana-mood-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.ana-mood-dist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  margin-top: var(--s4);
+}
+
+.ana-mood-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+}
+
+.ana-mood-row-name {
+  flex-shrink: 0;
+  width: 48px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.ana-mood-row-count {
+  flex-shrink: 0;
+  width: 28px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 条形:轨道复用 hairline,填充色由内联 --mood-* 提供 */
+.ana-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--hairline);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.ana-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  transition: width var(--t-enter) var(--ease);
+}
+
+/* ─── 话题卡(复用 .cell,去左右内边距对齐卡片留白) ─── */
+.analytics-view .cell {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.ana-topic-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ana-topic-count {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── 点滴卡(数字网格) ─── */
+.ana-stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--space-4);
+  gap: var(--s4);
 }
 
-.stat-item {
-  text-align: center;
-  padding: var(--space-4);
-  background: var(--mist-50);
-  border-radius: var(--radius-md);
-}
-
-.stat-value {
-  font-size: var(--text-heading-lg);
-  font-weight: var(--weight-semibold);
-  color: var(--mist-900);
-  line-height: var(--leading-tight);
-}
-
-.stat-label {
-  font-size: var(--text-caption);
-  color: var(--mist-500);
-  margin-top: var(--space-1);
-}
-
-/* ─── 话题气泡 ─── */
-.topic-cloud {
+.ana-stat {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
+  flex-direction: column;
+  gap: 2px;
 }
 
-.topic-tag {
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-full);
-  font-size: var(--text-body-sm);
-  color: var(--mist-700);
-  transition: transform var(--duration-fast) var(--ease-spring);
+.ana-stat-num {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  color: var(--text);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
 }
 
-.topic-tag:active {
-  transform: scale(0.95);
+.ana-stat-label {
+  font-size: 12px;
+  color: var(--text-2);
 }
 
-/* 话题颜色 — 按频率分5档 */
-.topic-tag.hot  { background: var(--sakura-100); color: var(--sakura-600); font-size: var(--text-body); }
-.topic-tag.warm { background: var(--warmth-soft); color: var(--warmth); font-size: var(--text-body-sm); }
-.topic-tag.mild { background: var(--calm-soft); color: var(--calm); }
-.topic-tag.cool { background: var(--mist-100); color: var(--mist-600); font-size: var(--text-body-sm); }
-.topic-tag.cold { background: var(--mist-100); color: var(--mist-500); font-size: var(--text-caption); }
+/* ─── 卡内占位 ─── */
+.ana-empty {
+  padding: var(--s2) 0;
+  font-size: 14px;
+  color: var(--text-3);
+}
 
-/* ═══ 空态 ═══ */
-.data-empty {
+/* ─── 整页空态 ─── */
+.ana-blank {
+  margin: auto;
   text-align: center;
-  padding: var(--space-8) var(--space-4);
-  color: var(--mist-500);
+  padding: var(--s8) var(--s4);
 }
 
-.data-empty p {
-  font-size: var(--text-body-sm);
-  margin-top: var(--space-2);
+.ana-blank-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ana-blank-sub {
+  margin-top: var(--s2);
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+/* ─── 骨架 ─── */
+.ana-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+.ana-skel-card {
+  height: 132px;
+  border-radius: var(--r-card);
+  background: var(--surface);
+  border: .5px solid var(--hairline);
+  animation: ana-pulse 1.4s var(--ease) infinite;
+}
+
+@keyframes ana-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes ana-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .55; }
 }

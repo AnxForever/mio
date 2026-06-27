@@ -10,8 +10,10 @@ import { checkAuth } from './auth.js';
 import { wsManager } from './ws.js';
 import { el } from './utils/dom.js';
 import { ICONS } from './utils/icons.js';
-import { EmotionBall } from './components/emotion-ball.js';
+import { mascotSrc } from './mascot.js';
 import { renderChat,       mountChat,       unmountChat       } from './views/chat.js';
+import { renderMessages,   mountMessages,   unmountMessages   } from './views/messages.js';
+import { renderMood,       mountMood,       unmountMood       } from './views/mood.js';
 import { renderStudio,     mountStudio,     unmountStudio     } from './views/studio.js';
 import { renderAnalytics,  mountAnalytics,  unmountAnalytics  } from './views/analytics.js';
 import { renderSettings,   mountSettings,   unmountSettings   } from './views/settings.js';
@@ -36,14 +38,13 @@ setAppHeight();
    ═══════════════════════════════════════════════════ */
 
 const NAV_ITEMS = [
-  { route: '/chat',      iconFn: ICONS.chat,      label: 'Chat' },
+  { route: '/messages',  iconFn: ICONS.chat,      label: 'Messages' },
   { route: '/studio',    iconFn: ICONS.studio,    label: 'Persona' },
   { route: '/analytics', iconFn: ICONS.analytics, label: 'Signals' },
   { route: '/settings',  iconFn: ICONS.settings,  label: 'Settings' },
 ];
 
 let mainEl = null;
-let sidebarBrandBall = null;
 let currentRoute = '/chat';
 
 function buildShell() {
@@ -54,12 +55,15 @@ function buildShell() {
   const sidebar = el('nav', { className: 'app-sidebar', 'aria-label': 'Main navigation' });
 
   const brand = el('div', { className: 'app-sidebar-brand' });
-  const brandBall = el('canvas', { width: '36', height: '36' });
+  const brandAvatar = el('div', { className: 'avatar', style: { width: '36px', height: '36px' } });
+  const brandImg = el('img', { alt: '', src: mascotSrc('gentle') });
+  brandImg.addEventListener('error', () => { brandImg.style.visibility = 'hidden'; });
+  brandAvatar.appendChild(brandImg);
   const brandText = el('div', {}, [
     el('div', { className: 'app-sidebar-brand-text', textContent: 'Mio' }),
     el('div', { className: 'app-sidebar-brand-sub', textContent: 'Agent console' }),
   ]);
-  brand.appendChild(brandBall);
+  brand.appendChild(brandAvatar);
   brand.appendChild(brandText);
   sidebar.appendChild(brand);
 
@@ -82,15 +86,6 @@ function buildShell() {
   shell.appendChild(bottomNav);
 
   root.appendChild(shell);
-
-  /* 侧边栏情绪球 */
-  setTimeout(() => {
-    if (brandBall.isConnected) {
-      sidebarBrandBall = new EmotionBall(brandBall, { size: 36 });
-      sidebarBrandBall.setState('calm', Store.get('affection') || 0);
-      sidebarBrandBall.start();
-    }
-  }, 100);
 }
 
 function buildNavItem({ route, iconFn, label }) {
@@ -126,6 +121,8 @@ function updateNavHighlight(routeKey) {
 let currentView = null;
 const viewMap = {
   '/chat':       { render: renderChat,       mount: mountChat,       unmount: unmountChat },
+  '/messages':   { render: renderMessages,   mount: mountMessages,   unmount: unmountMessages },
+  '/mood':       { render: renderMood,       mount: mountMood,       unmount: unmountMood },
   '/studio':     { render: renderStudio,     mount: mountStudio,     unmount: unmountStudio },
   '/analytics':  { render: renderAnalytics,  mount: mountAnalytics,  unmount: unmountAnalytics },
   '/settings':   { render: renderSettings,   mount: mountSettings,   unmount: unmountSettings },
@@ -150,6 +147,8 @@ function switchView(viewName, params) {
 
 /* ─── 路由注册 ─── */
 route('/chat',       () => switchView('/chat'));
+route('/messages',   () => switchView('/messages'));
+route('/mood',       () => switchView('/mood'));
 route('/studio',     () => switchView('/studio'));
 route('/studio/:id', (p) => switchView('/studio', p));
 route('/analytics',  () => switchView('/analytics'));
@@ -171,11 +170,6 @@ async function boot() {
 
   buildShell();
   wsManager.connect();
-
-  /* 情绪状态订阅 → 侧边栏球 */
-  Store.on('affection', (v) => {
-    if (sidebarBrandBall) sidebarBrandBall.setState(sidebarBrandBall.mood, v, sidebarBrandBall.stage);
-  });
 
   /* 检查是否需要新手引导 */
   try {

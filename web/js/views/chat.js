@@ -3,8 +3,7 @@ import { el } from '../utils/dom.js';
 import { Store } from '../store.js';
 import { api } from '../api.js';
 import { wsManager } from '../ws.js';
-import { EmotionBall } from '../components/emotion-ball.js';
-import { createTypingIndicator, renderMessages, appendMessage, cleanupVirtualObserver } from '../components/bubble.js';
+import { padToExpression, mascotSrc } from '../mascot.js';
 import { haptic } from '../utils/haptics.js';
 import { getMoodInfo, STAGE_LABELS } from '../utils/constants.js';
 import { ICONS } from '../utils/icons.js';
@@ -12,16 +11,17 @@ import { ICONS } from '../utils/icons.js';
 export class ChatView extends BaseView {
   constructor(params) {
     super(params);
-    this.emotionBall = null;
-    this.wEmotionBall = null;
     this.chatMessages = null;
+    this.emptyEl = null;
     this.typingEl = null;
     this.msgInput = null;
     this.sendBtn = null;
-    this.personaCb = null;
+    this.voiceBtn = null;
+    this.avatarImg = null;
+    this.nameEl = null;
     this.statusDot = null;
     this.statusText = null;
-    this.voiceBtn = null;
+    this.newMsgToast = null;
     this.recognition = null;
 
     this.streaming = false;
@@ -30,11 +30,10 @@ export class ChatView extends BaseView {
     this._isUserScrolling = false;
     this._lastScrollTop = 0;
 
-    // Bind methods to this
+    // Bind handlers
     this.handleSend = this.handleSend.bind(this);
     this.handleKey = this.handleKey.bind(this);
     this.handleInput = this.handleInput.bind(this);
-    this.handlePersonaSwitch = this.handlePersonaSwitch.bind(this);
     this.fetchStatus = this.fetchStatus.bind(this);
     this.handleScroll = this.handleScroll.bind(this);
   }
@@ -45,158 +44,129 @@ export class ChatView extends BaseView {
     /* ═══ 顶栏 ═══ */
     const header = el('header', { className: 'chat-header' });
 
-    const ballCanvas = el('canvas', { className: 'emotion-ball', width: '40', height: '40', role: 'img', 'aria-label': 'Mio emotion core' });
-    header.appendChild(ballCanvas);
+    /* 返回箭头 */
+    this.backBtn = el('button', { className: 'chat-back tap', 'aria-label': '返回' });
+    this.backBtn.appendChild(ICONS.back(22));
+    header.appendChild(this.backBtn);
 
+    /* 头像(mascot 图) */
+    const avatar = el('div', { className: 'avatar', role: 'img', 'aria-label': 'Mio' });
+    this.avatarImg = el('img', { alt: '', src: mascotSrc('gentle') });
+    this.avatarImg.addEventListener('error', () => { this.avatarImg.style.visibility = 'hidden'; });
+    avatar.appendChild(this.avatarImg);
+    header.appendChild(avatar);
+
+    /* 名字 / 状态 */
     const info = el('div', { className: 'chat-header-info' });
-    const name = el('div', { className: 'chat-header-name', textContent: '消息' });
+    this.nameEl = el('div', { className: 'chat-header-name', textContent: 'Mio' });
     const status = el('div', { className: 'chat-header-status', role: 'status' });
-    this.statusDot = el('span', { className: 'dot off' });
-    this.statusText = el('span', { textContent: 'Connecting' });
+    this.statusDot = el('span', { className: 'status-dot' });
+    this.statusText = el('span', { textContent: '连接中' });
     status.appendChild(this.statusDot);
     status.appendChild(this.statusText);
-    info.appendChild(name);
+    info.appendChild(this.nameEl);
     info.appendChild(status);
     header.appendChild(info);
 
-    /* 人格切换 */
-    const toggle = el('label', { className: 'persona-toggle', 'aria-label': 'Switch persona mode' });
-    this.personaCb = el('input', { type: 'checkbox', 'aria-label': 'Switch to boyfriend mode' });
-    const gfLabel = el('span', { className: 'pt-label', textContent: 'GF', dataset: { mod: 'girlfriend' } });
-    const bfLabel = el('span', { className: 'pt-label', textContent: 'BF', dataset: { mod: 'boyfriend' } });
-    toggle.appendChild(this.personaCb);
-    toggle.appendChild(gfLabel);
-    toggle.appendChild(bfLabel);
-    header.appendChild(toggle);
-
     this.el.appendChild(header);
 
-    /* ═══ 聊天区 ═══ */
+    /* ═══ 消息区 ═══ */
     this.chatMessages = el('div', {
       className: 'chat-messages',
       'aria-live': 'polite',
       'aria-label': 'Conversation messages',
       role: 'log',
-      style: { overflowAnchor: 'none' }
+      style: { overflowAnchor: 'none' },
     });
 
-    /* 欢迎语 */
-    const welcome = el('div', { className: 'welcome' });
-    const wMark = el('div', { className: 'w-mark' });
-    const wBall = el('canvas', { width: '72', height: '72' });
-    wMark.appendChild(wBall);
-    welcome.appendChild(el('div', { className: 'inbox-list' }, [
-      el('div', { className: 'inbox-row' }, [
-        el('div', { className: 'inbox-sticker sticker-sprout', 'aria-hidden': 'true' }, [
-          el('span', { textContent: '♡' }),
-        ]),
-        el('div', { className: 'inbox-copy' }, [
-          el('div', { className: 'inbox-title', textContent: '聊天请求' }),
-          el('div', { className: 'inbox-subtitle', textContent: '静待一份真诚的互动' }),
-        ]),
-      ]),
-      el('div', { className: 'inbox-row' }, [
-        el('div', { className: 'inbox-sticker sticker-heart', 'aria-hidden': 'true' }, [
-          el('span', { textContent: '♥' }),
-        ]),
-        el('div', { className: 'inbox-copy' }, [
-          el('div', { className: 'inbox-title', textContent: '点赞和回复' }),
-          el('div', { className: 'inbox-subtitle', textContent: 'Mio 收到了你的温柔回应' }),
-        ]),
-      ]),
-      el('div', { className: 'inbox-row primary' }, [
-        wMark,
-        el('div', { className: 'inbox-copy' }, [
-          el('div', { className: 'inbox-title', textContent: 'Mio 真诚喵' }),
-          el('div', { className: 'inbox-subtitle', textContent: '说点什么，开始今天的对话吧' }),
-        ]),
-        el('div', { className: 'inbox-time', textContent: '现在' }),
-      ]),
-    ]));
-    this.chatMessages.appendChild(welcome);
+    /* 空状态 */
+    this.emptyEl = this.buildEmpty();
+    this.chatMessages.appendChild(this.emptyEl);
 
     /* 打字指示器 */
-    this.typingEl = createTypingIndicator();
+    this.typingEl = this.buildTyping();
     this.chatMessages.appendChild(this.typingEl);
-
-    /* 新消息悬浮提示 */
-    this.newMsgToast = el('div', {
-      className: 'new-msg-toast',
-      textContent: 'New message',
-      role: 'button',
-      tabindex: '0',
-      'aria-label': 'Scroll to latest message',
-      style: { display: 'none' }
-    });
-    const scrollToNew = () => {
-      this._isUserScrolling = false;
-      this.scrollToBottom();
-    };
-    this.on(this.newMsgToast, 'click', scrollToNew);
-    this.on(this.newMsgToast, 'keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); scrollToNew(); }
-    });
-    this.el.appendChild(this.newMsgToast);
 
     this.el.appendChild(this.chatMessages);
 
-    /* ═══ 输入区 ═══ */
+    /* 新消息悬浮提示 */
+    this.newMsgToast = el('div', {
+      className: 'new-msg-toast tap',
+      textContent: '新消息',
+      role: 'button',
+      tabindex: '0',
+      'aria-label': 'Scroll to latest message',
+      style: { display: 'none' },
+    });
+    this.el.appendChild(this.newMsgToast);
+
+    /* ═══ 输入栏 ═══ */
     const inputArea = el('div', { className: 'chat-input-area' });
 
-    /* 语音按钮 */
-    this.voiceBtn = el('button', { className: 'voice-btn', 'aria-label': 'Voice input' });
-    this.voiceBtn.appendChild(ICONS.mic(18));
+    this.voiceBtn = el('button', { className: 'voice-btn tap', 'aria-label': 'Voice input' });
+    this.voiceBtn.appendChild(ICONS.mic(20));
     inputArea.appendChild(this.voiceBtn);
 
     const inputWrap = el('div', { className: 'chat-input-wrap' });
     this.msgInput = el('textarea', {
       rows: '1',
-      placeholder: '说点什么...',
+      placeholder: '说点什么…',
       enterkeyhint: 'send',
       'aria-label': 'Message input',
     });
     inputWrap.appendChild(this.msgInput);
     inputArea.appendChild(inputWrap);
 
-    this.sendBtn = el('button', { className: 'send-btn', disabled: 'disabled', 'aria-label': 'Send message' });
+    this.sendBtn = el('button', { className: 'send-btn tap', disabled: 'disabled', 'aria-label': 'Send message' });
     this.sendBtn.appendChild(ICONS.send(18));
-    this.sendBtn.style.padding = '0';
     inputArea.appendChild(this.sendBtn);
 
     this.el.appendChild(inputArea);
 
-    /* ═══ 底部导航 ═══ */
     return this.el;
   }
 
+  buildEmpty() {
+    const wrap = el('div', { className: 'chat-empty' });
+    const avatar = el('div', { className: 'avatar', 'aria-hidden': 'true' });
+    const img = el('img', { alt: '', src: mascotSrc('gentle') });
+    img.addEventListener('error', () => { img.style.visibility = 'hidden'; });
+    avatar.appendChild(img);
+    wrap.appendChild(avatar);
+    wrap.appendChild(el('div', { className: 'chat-empty-title', textContent: '和 Mio 开始对话' }));
+    wrap.appendChild(el('div', { className: 'chat-empty-sub', textContent: '说点什么吧，今天过得怎么样？' }));
+    return wrap;
+  }
+
+  buildTyping() {
+    const typing = el('div', { className: 'typing', 'aria-hidden': 'true' });
+    for (let i = 0; i < 3; i++) typing.appendChild(el('div', { className: 'typing-dot' }));
+    return typing;
+  }
+
+  /** 单条消息 → 气泡 DOM(新设计系统 class) */
+  makeBubble(msg) {
+    const isUser = msg.role === 'user';
+    const isProactive = !isUser && (msg.proactive === true || msg.kind === 'proactive' || msg.role === 'proactive');
+    const variant = isUser ? 'bubble--me' : isProactive ? 'bubble--proactive' : 'bubble--them';
+    const node = el('div', { className: `bubble ${variant}${msg.isError ? ' error' : ''}` });
+    node.textContent = msg.text;
+    return node;
+  }
+
   mount() {
-    /* Canvas 情绪球 */
-    const ballCanvas = this.el.querySelector('.chat-header .emotion-ball');
-    if (ballCanvas) {
-      this.emotionBall = new EmotionBall(ballCanvas, { size: 40 });
-      this.emotionBall.start();
-
-      /* 初始状态 */
-      const mood = Store.get('emotion')?.myMood || 'calm';
-      const affection = Store.get('affection') || 0;
-      const stage = Store.get('stage') || 'acquaintance';
-      this.emotionBall.setState(mood, affection, stage);
-    }
-
-    /* 欢迎页的绪球 */
-    const wBall = this.el.querySelector('.welcome .w-mark canvas');
-    if (wBall) {
-      this.wEmotionBall = new EmotionBall(wBall, { size: 72 });
-      const mood = Store.get('emotion')?.myMood || 'calm';
-      this.wEmotionBall.setState(mood, Store.get('affection') || 0);
-      this.wEmotionBall.start();
-    }
-
-    /* ─── 事件绑定 ─── */
+    /* 事件绑定 */
     this.on(this.sendBtn, 'click', this.handleSend);
     this.on(this.msgInput, 'keydown', this.handleKey);
     this.on(this.msgInput, 'input', this.handleInput);
     this.on(this.chatMessages, 'scroll', this.handleScroll, { passive: true });
+    this.on(this.backBtn, 'click', () => { haptic('light'); window.history.back(); });
+
+    const scrollToNew = () => { this._isUserScrolling = false; this.scrollToBottom(); };
+    this.on(this.newMsgToast, 'click', scrollToNew);
+    this.on(this.newMsgToast, 'keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); scrollToNew(); }
+    });
 
     /* 语音按钮 */
     if (this.voiceBtn && window.webkitSpeechRecognition) {
@@ -218,81 +188,86 @@ export class ChatView extends BaseView {
         this.recognition.start();
       });
       this.on(this.voiceBtn, 'pointerup', () => {
-        if (this.recognition) {
-          this.recognition.stop();
-          this.recognition = null;
-        }
+        if (this.recognition) { this.recognition.stop(); this.recognition = null; }
       });
     } else if (this.voiceBtn) {
       this.voiceBtn.style.display = 'none';
     }
 
-    this.on(this.personaCb, 'change', this.handlePersonaSwitch);
-
-    /* ─── Store 订阅 ─── */
-    // Store 使用 on(key, fn) 模式，BaseView.subscribe 期望 subscribe(fn) 模式，此处直接用 on + _unsubscribes
-
+    /* Store 订阅 */
     const unsubConnected = Store.on('connected', (v) => {
-      this.toggleClassSafe(this.statusDot, 'offline', !v);
-      this.toggleClassSafe(this.statusDot, 'online', v);
-      if (v) this.statusText.textContent = '在线';
+      this.toggleClassSafe(this.statusDot, 'online', !!v);
+      if (v) { if (this.statusText.textContent === '连接中' || this.statusText.textContent === '离线') this.statusText.textContent = '在线'; }
       else this.statusText.textContent = '离线';
     });
     this._unsubscribes.push(unsubConnected);
 
-    const unsubAffection = Store.on('affection', (v) => {
-      if (this.emotionBall) this.emotionBall.setState(this.emotionBall.mood, v, this.emotionBall.stage);
-    });
-    this._unsubscribes.push(unsubAffection);
+    /* avatar 状态推送(WS) → mascot 表情(best-effort) */
+    const unsubAvatar = Store.on('avatar', (state) => this.applyAvatarState(state));
+    this._unsubscribes.push(unsubAvatar);
 
-    const unsubPersonaMode = Store.on('personaMode', (v) => {
-      this.toggleClassSafe(this.statusDot, 'deep', v === 'deep');
-    });
-    this._unsubscribes.push(unsubPersonaMode);
-
-    /* 初始加载状态 */
+    /* 初始:状态 + 头像表情 */
     this.fetchStatus();
+    this.updateAvatar();
 
-    // Load existing messages
+    /* 载入已有消息 */
     const messages = Store.get('messages') || [];
     if (messages.length > 0) {
-      const welcome = this.chatMessages.querySelector('.welcome');
-      if (welcome) welcome.remove();
-      renderMessages(this.chatMessages, messages);
+      this.removeEmpty();
+      const frag = document.createDocumentFragment();
+      for (const m of messages) frag.appendChild(this.makeBubble(m));
+      this.chatMessages.insertBefore(frag, this.typingEl);
+      this.scrollToBottom();
     }
   }
 
   unmount() {
     super.unmount();
-    if (this.emotionBall) {
-      this.emotionBall.destroy();
-      this.emotionBall = null;
-    }
-    if (this.wEmotionBall) {
-      this.wEmotionBall.destroy();
-      this.wEmotionBall = null;
-    }
-    if (this.recognition) {
-      this.recognition.stop();
-      this.recognition = null;
-    }
-    cleanupVirtualObserver();
+    if (this.recognition) { this.recognition.stop(); this.recognition = null; }
   }
 
-  /* ─── Handlers ─── */
+  /* ─── 头像表情(mascot) ─── */
+
+  /** pad → 表情(取不到 pad 默认 gentle);best-effort,失败不崩 */
+  async updateAvatar() {
+    try {
+      const state = await api.get('/avatar/state');
+      this.applyAvatarState(state);
+    } catch {
+      this.setAvatarExpr('gentle');
+    }
+  }
+
+  applyAvatarState(state) {
+    let expr = 'gentle';
+    try {
+      const pad = state?.pad;
+      if (pad && (pad.pleasure !== undefined || pad.arousal !== undefined)) {
+        expr = padToExpression(pad);
+      }
+    } catch { expr = 'gentle'; }
+    this.setAvatarExpr(expr);
+  }
+
+  setAvatarExpr(expr) {
+    if (!this.avatarImg) return;
+    const src = mascotSrc(expr);
+    if (this.avatarImg.getAttribute('src') !== src) {
+      this.avatarImg.style.visibility = '';
+      this.avatarImg.src = src;
+    }
+  }
+
+  /* ─── 滚动 ─── */
 
   handleScroll() {
-    const currentScrollTop = this.chatMessages.scrollTop;
-    // 如果用户向上滚动超过 20px，认为用户正在翻阅历史
-    if (this._lastScrollTop - currentScrollTop > 20) {
-      this._isUserScrolling = true;
-    }
-    // 如果滚动到底部（误差内），取消正在滚动状态，隐藏悬浮提示
-    if (this.chatMessages.scrollHeight - currentScrollTop - this.chatMessages.clientHeight < 30) {
+    const top = this.chatMessages.scrollTop;
+    if (this._lastScrollTop - top > 20) this._isUserScrolling = true;
+    if (this.chatMessages.scrollHeight - top - this.chatMessages.clientHeight < 30) {
       this._isUserScrolling = false;
       this.newMsgToast.style.display = 'none';
     }
-    this._lastScrollTop = currentScrollTop;
+    this._lastScrollTop = top;
   }
 
   scrollToBottom() {
@@ -301,6 +276,13 @@ export class ChatView extends BaseView {
       this.newMsgToast.style.display = 'none';
     });
   }
+
+  removeEmpty() {
+    if (this.emptyEl && this.emptyEl.parentNode) this.emptyEl.remove();
+    this.emptyEl = null;
+  }
+
+  /* ─── 发送 / 流式 ─── */
 
   async handleSend() {
     if (this.streaming) return;
@@ -313,16 +295,13 @@ export class ChatView extends BaseView {
     this.newMsgToast.style.display = 'none';
     this.disableInput();
 
-    // 移除欢迎语
-    const welcome = this.chatMessages.querySelector('.welcome');
-    if (welcome) welcome.remove();
+    this.removeEmpty();
 
-    // 添加用户消息到 Store + DOM
+    /* 用户消息 → DOM + Store */
     const timestamp = new Date().toISOString();
     const userMsg = { role: 'user', text, timestamp };
     const msgs = Store.get('messages') || [];
-    const prevMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
-    appendMessage(this.chatMessages, userMsg, prevMsg);
+    this.chatMessages.insertBefore(this.makeBubble(userMsg), this.typingEl);
     Store.set('messages', [...msgs, userMsg]);
 
     this.msgInput.value = '';
@@ -330,7 +309,6 @@ export class ChatView extends BaseView {
     this.typingEl.classList.add('show');
     this.scrollToBottom();
 
-    // 初始化流式缓冲区
     this.streamBuffer = '';
     this.streamMsgEl = null;
 
@@ -338,7 +316,7 @@ export class ChatView extends BaseView {
     await wsManager.sendChat(text, { onToken, onDone, onError });
   }
 
-  /** 构建流式渲染的三个回调：onToken, onDone, onError */
+  /** 流式三回调:onToken / onDone / onError */
   _buildStreamCallbacks(timestamp) {
     let rafId = null;
 
@@ -347,9 +325,9 @@ export class ChatView extends BaseView {
       if (!this.streamMsgEl) {
         this.typingEl.classList.remove('show');
         this.streamMsgEl = this.createStreamBubble();
-        this.chatMessages.appendChild(this.streamMsgEl);
+        this.chatMessages.insertBefore(this.streamMsgEl, this.typingEl);
       }
-      this.streamMsgEl.querySelector('.msg-bubble').textContent = this.streamBuffer;
+      this.streamMsgEl.textContent = this.streamBuffer;
 
       if (!rafId) {
         rafId = this.requestAnimationFrame(() => {
@@ -367,11 +345,12 @@ export class ChatView extends BaseView {
       this.finalizeStream(timestamp);
       haptic('medium');
       this.fetchStatus();
+      this.updateAvatar();
     };
 
     const onError = (err) => {
       if (this.streamMsgEl) {
-        this.streamMsgEl.querySelector('.msg-bubble').textContent = err || 'Something went wrong. Please try again.';
+        this.streamMsgEl.textContent = err || '出了点问题，请再试一次。';
         this.streamMsgEl.classList.add('error');
       }
       this.finalizeStream(timestamp);
@@ -380,35 +359,26 @@ export class ChatView extends BaseView {
     return { onToken, onDone, onError };
   }
 
+  /** 流式气泡:them 气泡 + 打字光标 */
   createStreamBubble() {
-    const div = el('div', { className: 'msg mio', style: { overflowAnchor: 'none' } });
-    const bubble = el('div', { className: 'msg-bubble' });
-    div.appendChild(bubble);
-    return div;
+    return el('div', { className: 'bubble bubble--them is-streaming', style: { overflowAnchor: 'none' } });
   }
 
-  finalizeStream(userTimestamp) {
+  finalizeStream() {
     if (this.streamMsgEl) {
-      const time = el('div', { className: 'msg-time', textContent: new Date().toTimeString().slice(0, 5) });
-      this.streamMsgEl.appendChild(time);
-
+      this.streamMsgEl.classList.remove('is-streaming');
       const text = this.streamBuffer;
       const msgs = Store.get('messages') || [];
-      Store.set('messages', [...msgs, {
-        role: 'mio',
-        text,
-        timestamp: new Date().toISOString(),
-      }]);
+      Store.set('messages', [...msgs, { role: 'mio', text, timestamp: new Date().toISOString() }]);
     }
-
     this.streamMsgEl = null;
     this.streamBuffer = '';
     this.streaming = false;
     this.enableInput();
-    if (!this._isUserScrolling) {
-      this.scrollToBottom();
-    }
+    if (!this._isUserScrolling) this.scrollToBottom();
   }
+
+  /* ─── 输入框 ─── */
 
   handleKey(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -434,19 +404,7 @@ export class ChatView extends BaseView {
     this.msgInput.focus();
   }
 
-  async handlePersonaSwitch() {
-    const mod = this.personaCb.checked ? 'boyfriend' : 'girlfriend';
-    const prevChecked = this.personaCb.checked;
-    try {
-      await api.post('/mod', { name: mod });
-      wsManager.switchMod(mod);
-      this.fetchStatus();
-    } catch {
-      // 回滚 checkbox 状态
-      this.personaCb.checked = !prevChecked;
-      this.statusText.textContent = 'Switch failed';
-    }
-  }
+  /* ─── 状态 ─── */
 
   async fetchStatus() {
     try {
@@ -454,13 +412,11 @@ export class ChatView extends BaseView {
       if (!data) return;
 
       const { config, emotion, relationship } = data;
-      const nameEl = this.el.querySelector('.chat-header-name');
-      if (nameEl) nameEl.textContent = '消息';
 
       const mood = emotion?.myMood || 'calm';
       const info = getMoodInfo(mood);
       const stage = STAGE_LABELS[relationship?.stage] || '';
-      this.statusText.textContent = stage ? `${stage} / ${info.label}` : info.label;
+      this.statusText.textContent = stage ? `${stage} · ${info.label}` : info.label;
 
       Store.patch({
         activeMod: config?.activeMod || 'girlfriend',
@@ -470,26 +426,19 @@ export class ChatView extends BaseView {
         stage: relationship?.stage || 'acquaintance',
       });
 
-      if (this.emotionBall) {
-        this.emotionBall.setState(mood, emotion?.affection || 0, relationship?.stage || 'acquaintance');
-      }
-
-      this.personaCb.checked = (config?.gender || config?.activeMod) === 'boyfriend';
-      this.toggleClassSafe(this.statusDot, 'off', false);
       this.toggleClassSafe(this.statusDot, 'online', true);
     } catch {
-      this.toggleClassSafe(this.statusDot, 'off', true);
       this.toggleClassSafe(this.statusDot, 'online', false);
-      this.statusText.textContent = 'Offline';
+      this.statusText.textContent = '离线';
     }
   }
 
-  toggleClassSafe(el, cls, force) {
-    if (el) el.classList.toggle(cls, force);
+  toggleClassSafe(node, cls, force) {
+    if (node) node.classList.toggle(cls, force);
   }
 }
 
-// 导出为了兼容 app.js 中原来的接口，实际上应该修改 app.js 中的引入方式
+/* 兼容 app.js 的 render/mount/unmount 接口 */
 let chatViewInstance = null;
 
 export function renderChat(params) {
