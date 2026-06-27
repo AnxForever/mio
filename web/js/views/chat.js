@@ -252,10 +252,16 @@ export class ChatView extends BaseView {
   setAvatarExpr(expr) {
     if (!this.avatarImg) return;
     const src = mascotSrc(expr);
-    if (this.avatarImg.getAttribute('src') !== src) {
-      this.avatarImg.style.visibility = '';
-      this.avatarImg.src = src;
-    }
+    if (this.avatarImg.getAttribute('src') === src) return;
+    /* 表情切换柔和 cross-fade(非硬切):淡出→换图→淡入。
+       复用 components.css 的 `.avatar img { transition: opacity }`。 */
+    const img = this.avatarImg;
+    img.style.visibility = '';
+    img.style.opacity = '0';
+    img.addEventListener('load', () => { img.style.opacity = '1'; }, { once: true });
+    img.src = src;
+    /* 缓存命中时 load 可能不触发 → 下一帧兜底淡入 */
+    this.requestAnimationFrame(() => { if (img.complete && img.naturalWidth) img.style.opacity = '1'; });
   }
 
   /* ─── 滚动 ─── */
