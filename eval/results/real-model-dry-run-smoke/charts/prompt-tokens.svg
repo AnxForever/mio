@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="420" viewBox="0 0 980 420">
+  <rect width="980" height="420" fill="#ffffff"/>
+  <text x="70" y="30" font-size="20" font-weight="700" fill="#111827">Prompt tokens by provider / variant</text>
+  <line x1="70" y1="310" x2="952" y2="310" stroke="#d1d5db"/>
+  <line x1="70" y1="52" x2="70" y2="310" stroke="#d1d5db"/>
+  
+      <rect x="105.3" y="249.2" width="149.9" height="60.8" fill="#4f7cff" rx="3" />
+      <text x="180.3" y="241.2" text-anchor="middle" font-size="12" fill="#1f2937">327</text>
+      <text transform="translate(180.3,374) rotate(-35)" text-anchor="end" font-size="12" fill="#374151">mock/no_memory</text>
+
+      <rect x="325.8" y="71.5" width="149.9" height="238.5" fill="#4f7cff" rx="3" />
+      <text x="400.8" y="63.5" text-anchor="middle" font-size="12" fill="#1f2937">1283</text>
+      <text transform="translate(400.8,374) rotate(-35)" text-anchor="end" font-size="12" fill="#374151">mock/full</text>
+
+      <rect x="546.3" y="248.8" width="149.9" height="61.2" fill="#4f7cff" rx="3" />
+      <text x="621.3" y="240.8" text-anchor="middle" font-size="12" fill="#1f2937">329</text>
+      <text transform="translate(621.3,374) rotate(-35)" text-anchor="end" font-size="12" fill="#374151">minimax/no_memory</text>
+
+      <rect x="766.8" y="52.0" width="149.9" height="258.0" fill="#4f7cff" rx="3" />
+      <text x="841.8" y="44.0" text-anchor="middle" font-size="12" fill="#1f2937">1388</text>
+      <text transform="translate(841.8,374) rotate(-35)" text-anchor="end" font-size="12" fill="#374151">minimax/full</text>
+</svg>

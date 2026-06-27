@@ -1,0 +1,3 @@
+provider,model,dry_run,variant,category,scenarios,composite_score,memory_score,support_score,prompt_tokens
+openai,gpt-4o,0,no_memory,long_memory,1,0.083,0,0,375
+openai,gpt-4o,0,full,long_memory,1,0.083,0,0,1232

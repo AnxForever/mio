@@ -1,0 +1,7 @@
+provider,model,dry_run,variant,category,scenarios,composite_score,memory_score,support_score,prompt_tokens
+mock,mock,0,window_same_session,long_memory,1,0.352,1,0.333,462
+mock,mock,0,window_same_session,temporal_conflict,1,0.5,1,,345
+mock,mock,0,window_cross_session,long_memory,1,0.13,0,0.333,456
+mock,mock,0,window_cross_session,temporal_conflict,1,0.125,0,,354
+mock,mock,0,full,long_memory,1,0.5,1,1,1437
+mock,mock,0,full,temporal_conflict,1,0.5,1,,1384

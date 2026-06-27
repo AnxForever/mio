@@ -5,11 +5,11 @@ Mio — emotional companion agent v0.6.0. Switchable boyfriend/girlfriend person
 ## Common Commands
 
 ```bash
-npm run build       # tsc → dist/
-npm run typecheck   # tsc --noEmit
+npm run build       # tsc + workspace packages → dist/
+npm run typecheck   # root + workspace typecheck
 npm run dev         # tsx src/index.ts (REPL)
 npm start           # node dist/index.js
-npm test            # build + 51 unit + 41 emotion + 12 smoke (104 tests)
+npm test            # build + 184 checks (core + web view-models)
 npm run test:e2e    # Playwright E2E tests (needs npx playwright install)
 ```
 

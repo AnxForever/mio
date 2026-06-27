@@ -1,0 +1,5 @@
+provider,model,dry_run,variant,category,scenarios,composite_score,memory_score,support_score,prompt_tokens
+minimax,MiniMax-M3,1,no_memory,long_memory,1,0.444,0,0.333,377
+minimax,MiniMax-M3,1,no_memory,temporal_conflict,1,0.5,0,,281
+minimax,MiniMax-M3,1,full,long_memory,1,0.833,0.5,1,1414
+minimax,MiniMax-M3,1,full,temporal_conflict,1,1,1,,1361
