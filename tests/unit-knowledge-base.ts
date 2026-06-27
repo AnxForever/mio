@@ -16,6 +16,7 @@ mkdirSync(join(dir, 'memory-bank'), { recursive: true });
 const { chunkText } = await import('../dist/memory/knowledge-base/chunking.js');
 const { ingestDocument, searchKnowledge, knowledgeStats, deleteDocument } = await import('../dist/memory/knowledge-base/kb.js');
 const { indexEntry } = await import('../dist/memory/vector.js');
+const { registerKnowledgeTools } = await import('../dist/tools/knowledge.js');
 // === END IMPORTS ===
 
 const results: { ok: boolean; msg: string }[] = [];
@@ -62,6 +63,20 @@ console.log('\n\x1b[1mMio — knowledge base tests\x1b[0m\n');
 
   const del = deleteDocument('diary-2026');
   ok(del === n && knowledgeStats().chunks === 0, 'deleteDocument removes all chunks');
+}
+
+// --- recall_knowledge tool ---
+{
+  const tools = new Map<string, { h: (a: unknown) => Promise<string> }>();
+  registerKnowledgeTools({ register: (def, h) => tools.set(def.name, { h: h as (a: unknown) => Promise<string> }) });
+  ok(tools.has('recall_knowledge') && tools.has('knowledge_stats'), 'registers recall_knowledge + knowledge_stats');
+
+  await ingestDocument('topic-q', '量子计算利用量子叠加和纠缠来并行处理信息。');
+  const out = await tools.get('recall_knowledge')!.h({ query: '量子计算' });
+  ok(typeof out === 'string' && out.includes('量子'), 'recall_knowledge tool returns relevant text');
+
+  const empty = await tools.get('recall_knowledge')!.h({ query: '' });
+  ok(empty.includes('required'), 'recall_knowledge requires a query');
 }
 
 // === APPEND KB TESTS ABOVE THIS LINE ===
