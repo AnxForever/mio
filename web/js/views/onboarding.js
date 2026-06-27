@@ -4,6 +4,7 @@ import { Store } from '../store.js';
 import { api } from '../api.js';
 import { navigate } from '../router.js';
 import { EmotionBall } from '../components/emotion-ball.js';
+import { renderGenderPicker } from './gender.js';
 
 export class OnboardingView extends BaseView {
   constructor(params) {
@@ -114,36 +115,28 @@ export class OnboardingView extends BaseView {
   }
 
   renderStep3(content) {
-    /* "你想让我做你的什么？" */
+    /* 选择 Mio 的性别 —— 只选"她 / 他",不预设任何恋爱标签 */
     if (this.ball) this.ball.setState('shy', 15, 'acquaintance');
 
     content.appendChild(el('h2', {
       className: 'onboarding-question',
-      textContent: '你想让我\n做你的什么？',
+      textContent: 'Mio 会是\n她，还是他？',
     }));
 
-    const choices = el('div', { className: 'onboarding-choices' });
-    ['女友', '男友'].forEach(label => {
-      const gender = label === '男友' ? 'boyfriend' : 'girlfriend';
-      choices.appendChild(el('button', {
-        className: 'onboarding-choice',
-        textContent: `${label === '女友' ? '🤍' : '💙'} ${label}`,
-        onClick: (e) => {
-          choices.querySelectorAll('.onboarding-choice').forEach(c => c.classList.remove('selected'));
-          e.target.classList.add('selected');
-          this.answers.gender = gender;
-          nextBtn.disabled = false;
-        },
-      }));
-    });
-    content.appendChild(choices);
+    content.appendChild(renderGenderPicker({
+      value: this.answers.gender,
+      onSelect: (mod) => {
+        this.answers.gender = mod;
+        nextBtn.disabled = false;
+      },
+    }));
 
     const nextBtn = el('button', {
       className: 'onboarding-next',
       textContent: '→',
-      disabled: 'disabled',
+      disabled: this.answers.gender ? undefined : 'disabled',
       onClick: () => {
-        this.submitOnboarding(this.step, this.answers.gender);
+        this.applyGender(this.answers.gender);
         this.step = 4;
         this.renderStep(4);
       },
@@ -212,6 +205,16 @@ export class OnboardingView extends BaseView {
     } catch (err) {
       // 引导流程容忍网络错误，但不静默 — 开发时可在 console 看到
       if (import.meta.env.DEV) console.warn('[onboarding] submit failed:', err.message);
+    }
+  }
+
+  /** 设置 Mio 性别 = 切换内部 mod(她→girlfriend / 他→boyfriend)。best-effort。 */
+  async applyGender(mod) {
+    if (mod !== 'girlfriend' && mod !== 'boyfriend') return;
+    try {
+      await api.post('/mod', { name: mod });
+    } catch (err) {
+      if (import.meta.env.DEV) console.warn('[onboarding] set gender failed:', err.message);
     }
   }
 }
