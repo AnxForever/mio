@@ -17,7 +17,6 @@ export class ChatView extends BaseView {
     this.msgInput = null;
     this.sendBtn = null;
     this.voiceBtn = null;
-    this.personaCb = null;
     this.avatarImg = null;
     this.nameEl = null;
     this.statusDot = null;
@@ -35,7 +34,6 @@ export class ChatView extends BaseView {
     this.handleSend = this.handleSend.bind(this);
     this.handleKey = this.handleKey.bind(this);
     this.handleInput = this.handleInput.bind(this);
-    this.handlePersonaSwitch = this.handlePersonaSwitch.bind(this);
     this.fetchStatus = this.fetchStatus.bind(this);
     this.handleScroll = this.handleScroll.bind(this);
   }
@@ -69,14 +67,6 @@ export class ChatView extends BaseView {
     info.appendChild(this.nameEl);
     info.appendChild(status);
     header.appendChild(info);
-
-    /* 人格切换(保留功能) */
-    const toggle = el('label', { className: 'persona-toggle', 'aria-label': 'Switch persona mode' });
-    this.personaCb = el('input', { type: 'checkbox', 'aria-label': 'Switch to boyfriend mode' });
-    toggle.appendChild(this.personaCb);
-    toggle.appendChild(el('span', { className: 'pt-label', textContent: 'GF', dataset: { mod: 'girlfriend' } }));
-    toggle.appendChild(el('span', { className: 'pt-label', textContent: 'BF', dataset: { mod: 'boyfriend' } }));
-    header.appendChild(toggle);
 
     this.el.appendChild(header);
 
@@ -203,8 +193,6 @@ export class ChatView extends BaseView {
     } else if (this.voiceBtn) {
       this.voiceBtn.style.display = 'none';
     }
-
-    this.on(this.personaCb, 'change', this.handlePersonaSwitch);
 
     /* Store 订阅 */
     const unsubConnected = Store.on('connected', (v) => {
@@ -416,21 +404,6 @@ export class ChatView extends BaseView {
     this.msgInput.focus();
   }
 
-  /* ─── 人格切换 ─── */
-
-  async handlePersonaSwitch() {
-    const mod = this.personaCb.checked ? 'boyfriend' : 'girlfriend';
-    const prevChecked = this.personaCb.checked;
-    try {
-      await api.post('/mod', { name: mod });
-      wsManager.switchMod(mod);
-      this.fetchStatus();
-    } catch {
-      this.personaCb.checked = !prevChecked;
-      this.statusText.textContent = '切换失败';
-    }
-  }
-
   /* ─── 状态 ─── */
 
   async fetchStatus() {
@@ -453,7 +426,6 @@ export class ChatView extends BaseView {
         stage: relationship?.stage || 'acquaintance',
       });
 
-      this.personaCb.checked = (config?.gender || config?.activeMod) === 'boyfriend';
       this.toggleClassSafe(this.statusDot, 'online', true);
     } catch {
       this.toggleClassSafe(this.statusDot, 'online', false);

@@ -30,7 +30,7 @@ function match(rt, hash) {
 }
 
 function resolve(hash) {
-  const path = hash || '/chat';
+  const path = hash || '/messages';
   for (const [rt, handler] of routes) {
     const params = match(rt, path);
     if (params !== null) {
@@ -39,9 +39,9 @@ function resolve(hash) {
     }
   }
 
-  /* fallback — 如果所有路由都没匹配, 去聊天页 */
-  const chatHandler = routes.get('/chat');
-  if (chatHandler) chatHandler({});
+  /* fallback — 如果所有路由都没匹配, 去首屏消息列表 */
+  const homeHandler = routes.get('/messages');
+  if (homeHandler) homeHandler({});
 }
 
 export function navigate(hash) {
@@ -50,12 +50,12 @@ export function navigate(hash) {
 
 export function initRouter() {
   window.addEventListener('hashchange', () => {
-    Store.set('route', window.location.hash.slice(1) || '/chat');
+    Store.set('route', window.location.hash.slice(1) || '/messages');
     resolve(Store.get('route'));
   });
 
   /* 首次加载 */
-  const initial = window.location.hash.slice(1) || '/chat';
+  const initial = window.location.hash.slice(1) || '/messages';
   Store.set('route', initial);
   resolve(initial);
 }

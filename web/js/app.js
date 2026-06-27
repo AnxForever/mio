@@ -38,7 +38,7 @@ setAppHeight();
    ═══════════════════════════════════════════════════ */
 
 const NAV_ITEMS = [
-  { route: '/chat',      iconFn: ICONS.chat,      label: 'Chat' },
+  { route: '/messages',  iconFn: ICONS.chat,      label: 'Messages' },
   { route: '/studio',    iconFn: ICONS.studio,    label: 'Persona' },
   { route: '/analytics', iconFn: ICONS.analytics, label: 'Signals' },
   { route: '/settings',  iconFn: ICONS.settings,  label: 'Settings' },
