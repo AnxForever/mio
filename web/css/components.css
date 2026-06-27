@@ -1,0 +1,27 @@
+/* 气泡 */
+.bubble { max-width: 76%; padding: 10px 14px; font-size: 15px; line-height: 1.5;
+  animation: bubble-in var(--t-enter) var(--spring) both; }
+.bubble--them { align-self: flex-start; background: var(--bubble-them); color: var(--text);
+  border-radius: var(--r-bubble) var(--r-bubble) var(--r-bubble) 5px; }
+.bubble--me { align-self: flex-end; background: var(--bubble-me); color: #fff;
+  border-radius: var(--r-bubble) var(--r-bubble) 5px var(--r-bubble); }
+.bubble--proactive { align-self: flex-start; border: 1.5px solid var(--accent); background: #fff; color: var(--text);
+  border-radius: var(--r-bubble) var(--r-bubble) var(--r-bubble) 5px; }
+@keyframes bubble-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+
+/* 头像 */
+.avatar { border-radius: 50%; background: var(--surface); overflow: hidden; display: grid; place-items: center; flex-shrink: 0; }
+.avatar img { width: 140%; height: 140%; object-fit: contain; transition: opacity var(--t) var(--ease); }
+
+/* list item / cell */
+.cell { display: flex; align-items: center; gap: var(--s3); padding: 11px var(--s5); }
+.cell + .cell { border-top: .5px solid var(--hairline); }
+
+/* 可点反馈 */
+.tap { transition: transform var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease); }
+.tap:active { transform: scale(.96); opacity: .7; }
+
+/* 关系阶段进度条 */
+.progress { height: 4px; background: var(--hairline); border-radius: 2px; overflow: hidden; }
+.progress > i { display: block; height: 100%; background: var(--accent); border-radius: 2px;
+  transition: width var(--t-enter) var(--ease); }
