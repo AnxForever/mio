@@ -135,6 +135,20 @@ async function main(): Promise<void> {
       markReplied();
     });
 
+    await test('ghost: never ghosts IM bridge sessions', () => {
+      resetGhostState();
+      markReplied();
+      writeRelationshipState({ interactionCount: 15 });
+      writeAffinityState({ ...defaultAffinityState(), warmth: 40, patience: 80, tension: 10 });
+      const ctx: any = {
+        sessionId: 'openai-bridge',
+        emotionState: { lastInteraction: new Date(Date.now() - 60_000).toISOString(), myMood: '开心', userMood: '未知', affection: 50, energy: 'mid', unresolvedThread: null, recentTopics: [] },
+        relationship: { stage: 'familiar' as const, interactionCount: 15 },
+      };
+      const result = shouldGhost('哦', ctx);
+      assert(result === false, 'bridge sessions should never receive empty ghost replies');
+    });
+
     await test('ghost: isEndingConversation detects "睡了"', () => {
       assert(isEndingConversation('我先睡了'), '睡了');
     });

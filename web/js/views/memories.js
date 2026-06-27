@@ -32,6 +32,29 @@ function formatSource(source) {
   return cleaned || '无来源';
 }
 
+export function memoryStatusLabel(status) {
+  if (status === 'confirmed') return '已确认';
+  if (status === 'ignored') return '已忽略';
+  return '待确认';
+}
+
+export function memoryCardClass(item) {
+  return ['memory-card', item.status === 'ignored' ? 'memory-card--ignored' : '']
+    .filter(Boolean)
+    .join(' ');
+}
+
+export function memoryReviewActions(item) {
+  const actions = [];
+  if (item.status !== 'confirmed') {
+    actions.push({ kind: 'confirm', label: '确认', patch: { reviewStatus: 'confirmed' } });
+  }
+  if (item.status !== 'ignored') {
+    actions.push({ kind: 'ignore', label: '忽略', patch: { reviewStatus: 'ignored' } });
+  }
+  return actions;
+}
+
 export class MemoriesView extends BaseView {
   constructor(params) {
     super(params);
@@ -154,17 +177,25 @@ export class MemoriesView extends BaseView {
   }
 
   memoryCard(item) {
-    const card = el('article', { className: 'memory-card', dataset: { id: item.id } });
+    const card = el('article', { className: memoryCardClass(item), dataset: { id: item.id } });
     const meta = el('div', { className: 'memory-meta' }, [
       el('span', { className: 'memory-type', textContent: TYPE_LABELS[item.type] || item.type }),
-      el('span', { className: 'memory-status', textContent: item.status === 'confirmed' ? '已确认' : '待确认' }),
+      el('span', { className: `memory-status memory-status--${item.status || 'inferred'}`, textContent: memoryStatusLabel(item.status) }),
       item.topic ? el('span', { className: 'memory-topic', textContent: item.topic }) : null,
     ]);
 
     const content = el('div', { className: 'memory-content', textContent: item.content });
     const details = el('div', { className: 'memory-details', textContent: `${formatDate(item.lastSeen)} · 置信度 ${Math.round(item.confidence * 100)}% · ${formatSource(item.source)}` });
 
+    const reviewButtons = memoryReviewActions(item).map((action) => el('button', {
+      type: 'button',
+      className: `memory-action memory-action--${action.kind} tap`,
+      textContent: action.label,
+      onClick: () => this.reviewItem(item.id, action.patch),
+    }));
+
     const actions = el('div', { className: 'memory-actions' }, [
+      ...reviewButtons,
       el('button', { type: 'button', className: 'memory-action tap', textContent: '编辑', onClick: () => this.startEdit(card, item) }),
       el('button', { type: 'button', className: 'memory-action memory-action--danger tap', textContent: '删除', onClick: () => this.deleteItem(item.id) }),
     ]);
@@ -218,6 +249,16 @@ export class MemoriesView extends BaseView {
       await this.load(this.searchInput.value.trim());
     } catch {
       toast('保存失败', 'error');
+    }
+  }
+
+  async reviewItem(id, patch) {
+    try {
+      await api.patch(`/memories/${id}`, patch);
+      toast(patch.reviewStatus === 'ignored' ? '记忆已忽略' : '记忆已确认', 'success');
+      await this.load(this.searchInput.value.trim());
+    } catch {
+      toast('操作失败', 'error');
     }
   }
 

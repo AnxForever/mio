@@ -101,6 +101,13 @@ export function shouldGhost(
   userMessage: string,
   ctx: SessionContext,
 ): boolean {
+  // IM bridges feel broken when the bot sends an empty reply. Keep ghosting
+  // available for first-party/web sessions, but never silently drop WeChat/QQ
+  // bridge turns where the user expects contact-like messaging.
+  if (isImBridgeSession(ctx.sessionId)) {
+    return false;
+  }
+
   // ─── Guard: never ghost twice in a row ───
   if (lastTurnGhosted) {
     return false;
@@ -163,6 +170,13 @@ export function shouldGhost(
   }
 
   return false;
+}
+
+function isImBridgeSession(sessionId: string | undefined): boolean {
+  return Boolean(
+    sessionId?.startsWith('openai-') ||
+    sessionId?.startsWith('onebot-'),
+  );
 }
 
 /**

@@ -256,6 +256,48 @@ export function readIndex(): MaterializedEntry[] {
   return store.readAll().map(toMaterialized);
 }
 
+function textMatches(haystack: string, needle: string): boolean {
+  const n = needle.trim();
+  return n.length > 0 && haystack.includes(n);
+}
+
+/** Delete entries whose text contains the provided content. */
+export function deleteEntriesMatchingText(content: string): number {
+  ensureMigrated();
+  let deleted = 0;
+  for (const entry of store.readAll()) {
+    if (textMatches(entry.text, content) && store.deleteById(entry.id)) {
+      deleted++;
+    }
+  }
+  return deleted;
+}
+
+/**
+ * Replace matching text in vector entries and re-embed changed rows.
+ * Returns the number of updated entries.
+ */
+export async function updateEntriesMatchingText(oldContent: string, newContent: string): Promise<number> {
+  ensureMigrated();
+  const oldText = oldContent.trim();
+  const nextText = newContent.trim();
+  if (!oldText || !nextText || oldText === nextText) return 0;
+
+  const provider = getEmbeddingProvider();
+  let updated = 0;
+  for (const entry of store.readAll()) {
+    if (!textMatches(entry.text, oldText)) continue;
+    await indexEntryWithProvider({
+      id: entry.id,
+      text: entry.text.split(oldText).join(nextText),
+      source: entry.source as VectorIndexEntry['source'],
+      timestamp: entry.timestamp,
+    }, provider);
+    updated++;
+  }
+  return updated;
+}
+
 /**
  * Search the index for entries similar to a query string.
  *

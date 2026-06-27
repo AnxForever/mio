@@ -11,12 +11,15 @@
 # REPL mode (interactive terminal):
 #   docker compose run --rm mio-repl
 
-version: "3.9"
-
 services:
   # ─── Production: HTTP + WebSocket server ───
   mio:
-    build: .
+    build:
+      context: .
+      network: host
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-}
+        NPM_CI_MODE: ${NPM_CI_MODE:---prefer-offline}
     container_name: mio-server
     restart: unless-stopped
     ports:
@@ -26,6 +29,7 @@ services:
     environment:
       - NODE_ENV=production
       - MIO_HTTP_PORT=${MIO_HTTP_PORT:-3000}
+      - MIO_HTTP_HOST=${MIO_HTTP_HOST:-0.0.0.0}
       # Provider selection — set ONE of these:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
@@ -41,8 +45,18 @@ services:
       - COLA_MODEL=${COLA_MODEL:-}
       # Auth (set to enable bearer token requirement):
       - MIO_AUTH_TOKEN=${MIO_AUTH_TOKEN:-}
-      # Voice (optional):
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Browser/custom-client access:
+      - MIO_CORS_ORIGIN=${MIO_CORS_ORIGIN:-}
+      # Logging:
+      - MIO_LOG_LEVEL=${MIO_LOG_LEVEL:-info}
+      - MIO_LOG_FORMAT=${MIO_LOG_FORMAT:-text}
+      - MIO_LOG_FILE=${MIO_LOG_FILE:-}
+      # OneBot / QQ bridge:
+      - MIO_ONEBOT_API_BASE=${MIO_ONEBOT_API_BASE:-}
+      - MIO_ONEBOT_ACCESS_TOKEN=${MIO_ONEBOT_ACCESS_TOKEN:-}
+      - MIO_ONEBOT_REPLY_MODE=${MIO_ONEBOT_REPLY_MODE:-}
+      - MIO_ONEBOT_GROUP_MODE=${MIO_ONEBOT_GROUP_MODE:-mention}
+      - MIO_ONEBOT_TIMEOUT_MS=${MIO_ONEBOT_TIMEOUT_MS:-10000}
       # Nightly:
       - MIO_NIGHTLY_CRON=${MIO_NIGHTLY_CRON:-30 21 * * *}
       - MIO_NIGHTLY_ENABLED=${MIO_NIGHTLY_ENABLED:-true}
@@ -55,7 +69,12 @@ services:
 
   # ─── Dev: interactive REPL ───
   mio-repl:
-    build: .
+    build:
+      context: .
+      network: host
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-}
+        NPM_CI_MODE: ${NPM_CI_MODE:---prefer-offline}
     container_name: mio-repl
     profiles: ["dev"]
     stdin_open: true
@@ -74,6 +93,8 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - MIO_PROVIDER=${MIO_PROVIDER:-auto}
       - COLA_MODEL=${COLA_MODEL:-}
+      - MIO_AUTH_TOKEN=${MIO_AUTH_TOKEN:-}
+      - MIO_CORS_ORIGIN=${MIO_CORS_ORIGIN:-}
     command: ["node", "dist/index.js"]
 
 volumes:

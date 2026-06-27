@@ -22,6 +22,7 @@ import { decideProactiveMessage, recordProactiveMessage } from './smart-proactiv
 import { sendToAllChannels, isNotifyEnabled } from '../server/notify.js';
 import { appendBookmark } from '../memory/bank.js';
 import type { StreamingProvider, SessionContext, EmotionState, RelationshipState, RelationshipStage } from '../types.js';
+import { assessProactiveMessage } from './proactive-quality.js';
 
 /** 主动消息类型 */
 export type ProactiveMessageType = 'morning' | 'evening' | 'random_checkin' | 'emotional_support';
@@ -205,6 +206,13 @@ export class ProactiveScheduler {
       return null;
     }
 
+    const quality = assessProactiveMessage(trimmed, type, relationshipState.stage);
+    if (!quality.ok) {
+      logger.info(`[proactive] quality gate rejected message: ${quality.reasons.join(', ')}`);
+      recordProactiveMessage(false);
+      return null;
+    }
+
     // 6. 记录发送给 smart scheduler
     recordProactiveMessage(true);
 
@@ -333,7 +341,9 @@ ${relationshipState.sharedMemories.length > 0
 ## Instructions
 - Write a single natural message as Mio (the companion).
 - Match the relationship stage's tone and allowed behaviors strictly.
+- Respect relationship boundaries: no love-talk, possessiveness, or intimate nicknames before the relationship stage explicitly allows it.
 - Keep it short (1-3 sentences).
+- Ask at most one question and never pressure the user to reply.
 - If this moment doesn't call for a message (e.g., too soon since last interaction, or context doesn't fit), respond with exactly: [NO_MSG]
 - Write in the user's primary language (Chinese if unsure).
 - Do not include any meta-text, just the message or [NO_MSG].`;

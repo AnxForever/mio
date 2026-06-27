@@ -31,6 +31,8 @@ export interface MemoryEntity {
   lastSeen: string;       // ISO timestamp
   occurrences: number;    // how many times confirmed
   source: string;         // which bookmark/transcript line
+  reviewStatus?: 'inferred' | 'confirmed' | 'ignored';
+  reviewedAt?: string;
 }
 
 export interface TopicSegment {
@@ -244,6 +246,10 @@ function entitiesSimilar(a: string, b: string): boolean {
   return aNorm.includes(bNorm) || bNorm.includes(aNorm);
 }
 
+function activeEntities(entities: MemoryEntity[]): MemoryEntity[] {
+  return entities.filter((entity) => entity.reviewStatus !== 'ignored');
+}
+
 // ─── Main API ───
 
 /**
@@ -318,9 +324,10 @@ function assembleMemory(
   // Decay confidence for old unconfirmed entities
   merged = decayOldEntities(merged, now);
 
-  // Cluster by topic
+  // Cluster active entities by topic. Ignored entities stay in `entities` for
+  // user review/audit, but are excluded from prompt-facing derived state.
   const topicMap = new Map<string, MemoryEntity[]>();
-  for (const entity of merged) {
+  for (const entity of activeEntities(merged)) {
     const topic = classifyTopic(entity.content);
     const existing = topicMap.get(topic) ?? [];
     existing.push(entity);
@@ -348,8 +355,9 @@ function assembleMemory(
   topics.sort((a, b) => b.entities.length - a.entities.length);
 
   // Filter durable facts: high confidence, multiple occurrences
-  const durableFacts = merged.filter(
-    (e) => e.confidence >= 0.8 && e.occurrences >= 3,
+  const durableFacts = activeEntities(merged).filter(
+    (e) => e.reviewStatus === 'confirmed'
+      || (e.reviewStatus !== 'inferred' && e.confidence >= 0.8 && e.occurrences >= 3),
   );
 
   return {
@@ -600,6 +608,10 @@ function decayOldEntities(entities: MemoryEntity[], now: string): MemoryEntity[]
   const thirtyDays = 30 * 86400000;
 
   return entities.filter((e) => {
+    if (e.reviewStatus === 'confirmed' || e.reviewStatus === 'ignored') {
+      return true;
+    }
+
     const lastSeenTime = new Date(e.lastSeen).getTime();
     const age = nowTime - lastSeenTime;
 
@@ -655,17 +667,22 @@ function summarizeTopic(topic: string, entities: MemoryEntity[]): string {
  */
 export function memoryToContext(structured: StructuredMemory): string {
   const parts: string[] = [];
+  const durableFacts = activeEntities(structured.durableFacts);
+  const entities = activeEntities(structured.entities);
+  const topics = structured.topics
+    .map((topic) => ({ ...topic, entities: activeEntities(topic.entities) }))
+    .filter((topic) => topic.entities.length > 0);
 
   // Durable facts first (most important)
-  if (structured.durableFacts.length > 0) {
-    const factLines = structured.durableFacts
+  if (durableFacts.length > 0) {
+    const factLines = durableFacts
       .map((f) => f.content)
       .slice(0, 10);
     parts.push(`## 关于用户(结构化记忆)\n${factLines.map((f) => `- ${f}`).join('\n')}`);
   }
 
   // Recent topics (top 3)
-  const activeTopics = structured.topics
+  const activeTopics = topics
     .filter((t) => t.entities.length >= 1)
     .slice(0, 3);
 
@@ -686,7 +703,7 @@ export function memoryToContext(structured: StructuredMemory): string {
   }
 
   // Recent emotions (top 5 high confidence)
-  const recentEmotions = structured.entities
+  const recentEmotions = entities
     .filter((e) => e.type === 'emotion' && e.confidence >= 0.6)
     .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime())
     .slice(0, 5);
@@ -724,9 +741,9 @@ export function mergeMemories(
 ): StructuredMemory {
   const mergedEntities = mergeEntities(existing.entities, newEntries.entities);
 
-  // Re-cluster topics
+  // Re-cluster active topics.
   const topicMap = new Map<string, MemoryEntity[]>();
-  for (const entity of mergedEntities) {
+  for (const entity of activeEntities(mergedEntities)) {
     const topic = classifyTopic(entity.content);
     const existingTopicEntities = topicMap.get(topic) ?? [];
     existingTopicEntities.push(entity);
@@ -752,8 +769,9 @@ export function mergeMemories(
   }
   topics.sort((a, b) => b.entities.length - a.entities.length);
 
-  const durableFacts = mergedEntities.filter(
-    (e) => e.confidence >= 0.8 && e.occurrences >= 3,
+  const durableFacts = activeEntities(mergedEntities).filter(
+    (e) => e.reviewStatus === 'confirmed'
+      || (e.reviewStatus !== 'inferred' && e.confidence >= 0.8 && e.occurrences >= 3),
   );
 
   return {

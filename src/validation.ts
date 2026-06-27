@@ -17,6 +17,66 @@ export const chatBody = z.object({
 
 export type ChatBody = z.infer<typeof chatBody>;
 
+const openAIContentPart = z.object({
+  type: z.string().trim().min(1).max(64).optional(),
+  text: z.string().max(8000).optional(),
+  input_text: z.string().max(8000).optional(),
+}).passthrough();
+
+export const openAIChatMessage = z.object({
+  role: z.enum(['system', 'developer', 'user', 'assistant', 'tool']),
+  content: z.union([
+    z.string().max(8000),
+    z.array(openAIContentPart).max(32),
+    z.null(),
+  ]).optional(),
+  name: z.string().trim().max(128).optional(),
+  tool_call_id: z.string().trim().max(256).optional(),
+}).passthrough();
+
+export const openAIChatCompletionsBody = z.object({
+  model: z.string().trim().min(1).max(200).optional().default('mio'),
+  messages: z.array(openAIChatMessage).min(1).max(100),
+  stream: z.boolean().optional().default(false),
+  user: z.string().trim().max(256).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  max_tokens: z.number().int().min(1).max(8192).optional(),
+}).passthrough();
+
+export type OpenAIChatMessage = z.infer<typeof openAIChatMessage>;
+export type OpenAIChatCompletionsBody = z.infer<typeof openAIChatCompletionsBody>;
+
+const oneBotId = z.union([
+  z.string().trim().min(1).max(64),
+  z.number().int().nonnegative(),
+]);
+
+export const oneBotMessageSegment = z.object({
+  type: z.string().trim().min(1).max(64),
+  data: z.record(z.string(), z.unknown()).optional(),
+}).passthrough();
+
+export const oneBotEventBody = z.object({
+  post_type: z.string().trim().min(1).max(64),
+  message_type: z.enum(['private', 'group']).optional(),
+  sub_type: z.string().trim().max(64).optional(),
+  user_id: oneBotId.optional(),
+  group_id: oneBotId.optional(),
+  self_id: oneBotId.optional(),
+  message_id: oneBotId.optional(),
+  message: z.union([
+    z.string().max(8000),
+    z.array(oneBotMessageSegment).max(128),
+  ]).optional(),
+  raw_message: z.string().max(8000).optional(),
+  sender: z.record(z.string(), z.unknown()).optional(),
+  time: z.number().optional(),
+}).passthrough();
+
+export type OneBotMessageSegment = z.infer<typeof oneBotMessageSegment>;
+export type OneBotEventBody = z.infer<typeof oneBotEventBody>;
+
 export const voiceSynthesizeBody = z.object({
   text: z.string().trim().min(1).max(2000),
 });
@@ -72,6 +132,7 @@ export const memoryPatchBody = z.object({
   type: z.enum(['fact', 'preference', 'event', 'decision', 'intention', 'emotion']).optional(),
   content: z.string().trim().min(1).max(500).optional(),
   confidence: z.number().min(0).max(1).optional(),
+  reviewStatus: z.enum(['inferred', 'confirmed', 'ignored']).optional(),
 }).refine((body) => Object.keys(body).length > 0, {
   message: 'At least one field is required',
 });

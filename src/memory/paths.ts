@@ -118,15 +118,24 @@ export function structuredMemoryPath(): string {
   return join(memoryBankDir(), 'structured-memory.json');
 }
 
+/** Per-user state root. */
+export function usersDir(): string {
+  return join(colaDir(), 'users');
+}
+
+/** Sanitize external session/contact ids before using them in paths. */
+export function userDir(userId = 'default'): string {
+  return join(usersDir(), safeUserId(userId));
+}
+
 /** L2 per-user 人格覆盖文件 */
-export function personaDeltaPath(_userId = 'default'): string {
-  // 多用户(P1)时改为 join(colaDir(), 'users', _userId, 'persona-delta.json')
-  return join(memoryBankDir(), 'persona-delta.json');
+export function personaDeltaPath(userId = 'default'): string {
+  return join(userDir(userId), 'persona-delta.json');
 }
 
 /** L3 per-user 偏好文件 */
-export function preferencesPath(_userId = 'default'): string {
-  return join(memoryBankDir(), 'preferences.json');
+export function preferencesPath(userId = 'default'): string {
+  return join(userDir(userId), 'preferences.json');
 }
 
 /** mid-term memory 目录 (MTM: topic-segmented summaries) */
@@ -176,6 +185,17 @@ export function transcriptsDir(): string {
 /** 单个会话 transcript 文件 */
 export function transcriptPath(sessionId: string): string {
   return join(transcriptsDir(), `${sessionId}.jsonl`);
+}
+
+function safeUserId(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return 'default';
+  const safe = trimmed
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80);
+  return safe || 'default';
 }
 
 /** 仪式状态文件 (Ritual Engine) */

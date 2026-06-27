@@ -817,8 +817,8 @@ function resolveSessionContext(input: TurnInput, sessionId: string): {
     connectedChannels: [],
     allowColaLinkSend: false,
     initialTask: input.text,
-    personaDelta: readPersonaDelta() ?? undefined,
-    preferences: readPreferences() ?? undefined,
+    personaDelta: readPersonaDelta(sessionId) ?? undefined,
+    preferences: readPreferences(sessionId) ?? undefined,
   };
 
   return { ctx, promptCtx, recovery };
@@ -834,6 +834,7 @@ interface PostTurnSideEffectsInput {
   config: ReturnType<typeof getConfig>;
   budget?: PromptBudget;
   isNewSession: boolean;
+  capturedDirectiveCount: number;
 }
 
 async function applyPostTurnSideEffects({
@@ -846,6 +847,7 @@ async function applyPostTurnSideEffects({
   config,
   budget,
   isNewSession,
+  capturedDirectiveCount,
 }: PostTurnSideEffectsInput): Promise<void> {
   const assistantMsg: Message = {
     role: 'assistant',
@@ -857,7 +859,9 @@ async function applyPostTurnSideEffects({
 
   scheduleLearningSideEffects(input, text, config);
   updateRelationalSideEffects(input, text, intent, crisisResult, config);
-  captureExplicitDirectives(input.text);  // L2/L3/L4：对话内显式捏人，白天即时落库
+  if (capturedDirectiveCount === 0) {
+    captureExplicitDirectives(input.text, sessionId);  // L2/L3/L4：对话内显式捏人，白天即时落库
+  }
   await updatePersonalitySideEffects(input, text, sessionCtx);
   persistTurnMemorySideEffects(input, text, sessionId, crisisResult, isNewSession);
 
@@ -1269,6 +1273,11 @@ export async function runTurn(
 
   // 1. Resolve session + context
   const sessionId = input.sessionId ?? randomUUID().slice(0, 12);
+
+  // User shaping should affect the same turn that contains it. Capturing here
+  // lets explicit preferences enter this user's prompt context before inference.
+  const capturedDirectives = captureExplicitDirectives(input.text, sessionId);
+
   const { ctx: sessionCtx, promptCtx, recovery } = resolveSessionContext(input, sessionId);
 
   // 2. Build the user message (text + optional image content blocks)
@@ -1350,6 +1359,7 @@ export async function runTurn(
     config,
     budget,
     isNewSession: !input.sessionId,
+    capturedDirectiveCount: capturedDirectives.length,
   });
 
   return {

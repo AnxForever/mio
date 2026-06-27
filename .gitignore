@@ -21,8 +21,10 @@ backups/
 # Test / coverage
 coverage/
 test-results/
+tests/e2e/test-results.json
 playwright-report/
 playwright/.cache/
+eval/results/
 
 # OS / Editor
 .DS_Store

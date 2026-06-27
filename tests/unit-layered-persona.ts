@@ -42,6 +42,9 @@ console.log('\n\x1b[1mMio — layered persona tests\x1b[0m\n');
   ok((readPreferences()?.explicit.length ?? 0) === 1, 'preference upsert persists');
   upsertPreference('皮一点别老哄我', 'unit');
   ok((readPreferences()?.explicit.length ?? 0) === 1, 'preference upsert dedupes identical rule');
+  upsertPreference('主动找我聊天', 'unit', 'user-a');
+  ok(readPreferences('user-a')?.explicit.some((p) => p.rule === '主动找我聊天') === true, 'per-user preference persists for owner');
+  ok(readPreferences('user-b') === null, 'per-user preference does not leak to another user');
 }
 
 // --- Task 2: L0 Kernel + 不可裁 ---
@@ -87,6 +90,7 @@ console.log('\n\x1b[1mMio — layered persona tests\x1b[0m\n');
   ok(detectDirectives('以后叫我阿哲吧').some((d) => d.kind === 'nickname' && d.value === '阿哲'), 'detect nickname');
   ok(detectDirectives('你其实是开酒吧的，别当插画师了').some((d) => d.kind === 'persona'), 'detect persona override');
   ok(detectDirectives('你能不能皮一点').some((d) => d.kind === 'preference'), 'detect preference');
+  ok(detectDirectives('可是我想你主动找我聊天').some((d) => d.kind === 'preference' && d.value.includes('主动找我聊天')), 'detect proactive chat preference');
   ok(detectDirectives('今天天气不错').length === 0, 'no false positive on plain chat');
 
   captureExplicitDirectives('以后叫我阿哲吧');

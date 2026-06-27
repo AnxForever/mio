@@ -1,0 +1,18 @@
+# Mio reverse proxy example for Caddy.
+#
+# Place this in /etc/caddy/Caddyfile, change the hostname, then:
+#   caddy validate && systemctl reload caddy
+#
+# Mio itself should run on 127.0.0.1:3000 with MIO_AUTH_TOKEN set.
+
+mio.example.com {
+  encode zstd gzip
+
+  reverse_proxy 127.0.0.1:3000 {
+    # Keep long-running SSE streams alive.
+    transport http {
+      read_timeout 1h
+      write_timeout 1h
+    }
+  }
+}

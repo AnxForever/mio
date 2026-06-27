@@ -121,6 +121,8 @@ export function getLorebook(): Lorebook {
         parsed.entries.push({ ...seed, lastTriggered: -1 });
       }
     }
+    _lorebookCache = parsed;
+    _lorebookCacheTime = Date.now();
     return parsed;
   } catch {
     return defaultLorebook();
@@ -128,6 +130,8 @@ export function getLorebook(): Lorebook {
 }
 
 function persistLorebook(lb: Lorebook): void {
+  _lorebookCache = lb;
+  _lorebookCacheTime = Date.now();
   writeFileSyncSafe(lorebookPath(), JSON.stringify(lb, null, 2));
 }
 
@@ -176,6 +180,39 @@ export function updateLoreEntry(
   Object.assign(entry, patch);
   persistLorebook(lb);
   return true;
+}
+
+function normalizedContent(value: string): string {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+/** Remove derived lore entries whose content matches the given memory text. */
+export function removeLoreEntriesByContent(content: string): number {
+  const target = normalizedContent(content);
+  if (!target) return 0;
+  const lb = getLorebook();
+  const before = lb.entries.length;
+  lb.entries = lb.entries.filter((entry) => normalizedContent(entry.content) !== target);
+  const removed = before - lb.entries.length;
+  if (removed > 0) persistLorebook(lb);
+  return removed;
+}
+
+/** Update derived lore entries whose content matches the old memory text. */
+export function updateLoreEntriesByContent(oldContent: string, newContent: string): number {
+  const oldTarget = normalizedContent(oldContent);
+  const next = newContent.trim();
+  if (!oldTarget || !next) return 0;
+  const lb = getLorebook();
+  let changed = 0;
+  for (const entry of lb.entries) {
+    if (normalizedContent(entry.content) !== oldTarget) continue;
+    entry.content = next;
+    entry.triggers = extractKeywords(next);
+    changed++;
+  }
+  if (changed > 0) persistLorebook(lb);
+  return changed;
 }
 
 // ─── Trigger evaluation ───

@@ -8,6 +8,32 @@ Run:
 npm run eval:paper
 ```
 
+For product regression, run the faster companion quality gate:
+
+```bash
+npm run eval:quality
+```
+
+`eval:quality` is a deterministic local gate for day-to-day development. It
+checks memory use, emotional support, persona consistency, relationship-stage
+boundaries, and proactive-message quality, then writes:
+
+- `eval/results/quality-gate/quality-report.md`
+- `eval/results/quality-gate/quality-summary.json`
+- `eval/results/quality-gate/quality-details.csv`
+
+Real-provider comparison can be run with:
+
+```bash
+node --experimental-strip-types eval/quality-gate.ts \
+  --providers=mock,minimax,deepseek,qwen \
+  --result-dir=eval/results/quality-gate-providers
+```
+
+The script loads `.env` automatically. Providers without API keys are marked as
+`skipped` in the report. By default, only the mock gate is a hard failure; add
+`--enforce-real` when you want real-provider failures to fail the command too.
+
 The default command builds `dist/`, runs with `MIO_PROVIDER=mock`, disables MiniMax embeddings, and evaluates the deterministic companion provider against synthetic multi-turn scenarios.
 
 Real-provider replication uses the same 60 scenarios x 7 ablation variants, but writes provider-grouped outputs to a separate result directory:

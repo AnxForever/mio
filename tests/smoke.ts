@@ -12,8 +12,9 @@
  *   3. /mod (switch to male, back to female)
  *   4. /chat (non-streaming)
  *   5. /chat/stream (SSE — checks for at least one token event)
- *   6. Crisis detection on /chat
- *   7. WebSocket /ws (hello + chat + switch_mod + ping/pong)
+ *   6. /v1 OpenAI-compatible chat bridge
+ *   7. Crisis detection on /chat
+ *   8. WebSocket /ws (hello + chat + switch_mod + ping/pong)
  *
  * MockProvider is the default when ANTHROPIC_API_KEY is missing — the tests
  * run offline without an API key.
@@ -26,6 +27,12 @@ interface TestResult {
   name: string;
   passed: boolean;
   detail?: string;
+}
+
+interface OneBotApiCall {
+  path: string;
+  body: Record<string, unknown>;
+  authorization?: string;
 }
 
 const results: TestResult[] = [];
@@ -49,6 +56,44 @@ async function getFreePort(): Promise<number> {
       }
     });
   });
+}
+
+async function startFakeOneBotApi(): Promise<{
+  url: string;
+  calls: OneBotApiCall[];
+  close: () => Promise<void>;
+}> {
+  const port = await getFreePort();
+  const calls: OneBotApiCall[] = [];
+  const server = createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    req.on('end', () => {
+      let body: Record<string, unknown> = {};
+      try {
+        body = JSON.parse(Buffer.concat(chunks).toString('utf-8')) as Record<string, unknown>;
+      } catch {
+        body = {};
+      }
+      calls.push({
+        path: req.url ?? '',
+        body,
+        authorization: req.headers.authorization,
+      });
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ status: 'ok', retcode: 0, data: { message_id: 123 } }));
+    });
+  });
+
+  await new Promise<void>((resolve) => {
+    server.listen(port, '127.0.0.1', () => resolve());
+  });
+
+  return {
+    url: `http://127.0.0.1:${port}`,
+    calls,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
 }
 
 async function main(): Promise<void> {
@@ -131,6 +176,161 @@ async function main(): Promise<void> {
         'POST /chat/stream SSE',
         r.status === 200 && ctype.includes('text/event-stream') && tokenEvents.length > 0 && hasDone,
         `tokens=${tokenEvents.length} done=${hasDone}`,
+      );
+    }
+
+    // ─── 5.5. OpenAI-compatible bridge ───
+    {
+      const r = await fetch(`${base}/v1/models`);
+      const j = (await r.json()) as { object: string; data: Array<{ id: string }> };
+      record(
+        'GET /v1/models',
+        r.status === 200 && j.object === 'list' && j.data.some((m) => m.id === 'mio'),
+      );
+    }
+    {
+      const r = await fetch(`${base}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Mio-Session-Id': 'wechat-smoke-user',
+        },
+        body: JSON.stringify({
+          model: 'mio',
+          user: 'wechat-user-1',
+          messages: [
+            { role: 'system', content: 'gateway context that Mio should not need' },
+            { role: 'user', content: 'openai bridge test' },
+          ],
+        }),
+      });
+      const j = (await r.json()) as {
+        object: string;
+        choices: Array<{ message: { role: string; content: string }; finish_reason: string }>;
+      };
+      const sessionHeader = r.headers.get('x-mio-session-id') ?? '';
+      record(
+        'POST /v1/chat/completions',
+        r.status === 200 &&
+          j.object === 'chat.completion' &&
+          j.choices[0]?.message.role === 'assistant' &&
+          j.choices[0]?.message.content.length > 0 &&
+          j.choices[0]?.finish_reason === 'stop' &&
+          sessionHeader.length > 0,
+        `session=${sessionHeader}`,
+      );
+    }
+    {
+      const r = await fetch(`${base}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'mio',
+          stream: true,
+          metadata: { sessionId: 'wechat-smoke-stream' },
+          messages: [
+            {
+              role: 'user',
+              content: [{ type: 'text', text: 'openai stream bridge test' }],
+            },
+          ],
+        }),
+      });
+      const ctype = r.headers.get('content-type') ?? '';
+      const text = await r.text();
+      const chunkEvents = text.split('\n\n').filter((b) => b.includes('"object":"chat.completion.chunk"'));
+      const hasDone = text.includes('data: [DONE]');
+      record(
+        'POST /v1/chat/completions stream',
+        r.status === 200 && ctype.includes('text/event-stream') && chunkEvents.length > 0 && hasDone,
+        `chunks=${chunkEvents.length} done=${hasDone}`,
+      );
+    }
+
+    // ─── 5.6. OneBot v11 bridge ───
+    {
+      const r = await fetch(`${base}/onebot/v11/status`);
+      const j = (await r.json()) as {
+        enabled: boolean;
+        apiBaseConfigured: boolean;
+        groupMode: string;
+        replyMode: string;
+      };
+      record(
+        'GET /onebot/v11/status',
+        r.status === 200 && j.enabled === true && ['mention', 'all', 'off'].includes(j.groupMode),
+        `apiBase=${j.apiBaseConfigured} mode=${j.replyMode}`,
+      );
+    }
+    {
+      const fakeOneBot = await startFakeOneBotApi();
+      const previousApiBase = process.env.MIO_ONEBOT_API_BASE;
+      const previousReplyMode = process.env.MIO_ONEBOT_REPLY_MODE;
+      process.env.MIO_ONEBOT_API_BASE = fakeOneBot.url;
+      delete process.env.MIO_ONEBOT_REPLY_MODE;
+      try {
+        const r = await fetch(`${base}/onebot/v11/events`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            post_type: 'message',
+            message_type: 'private',
+            user_id: 10001,
+            self_id: 20002,
+            message_id: 30003,
+            raw_message: 'onebot private bridge test',
+            message: 'onebot private bridge test',
+          }),
+        });
+        const j = (await r.json()) as {
+          ok: boolean;
+          processed: boolean;
+          replyMode: string;
+          sent: boolean;
+          sessionId: string;
+        };
+        const call = fakeOneBot.calls[0];
+        record(
+          'POST /onebot/v11/events private -> send_private_msg',
+          r.status === 200 &&
+            j.ok === true &&
+            j.processed === true &&
+            j.replyMode === 'api' &&
+            j.sent === true &&
+            j.sessionId.startsWith('onebot-private-') &&
+            call?.path === '/send_private_msg' &&
+            call.body.user_id === 10001 &&
+            typeof call.body.message === 'string' &&
+            call.body.message.length > 0,
+          `session=${j.sessionId} calls=${fakeOneBot.calls.length}`,
+        );
+      } finally {
+        if (previousApiBase === undefined) delete process.env.MIO_ONEBOT_API_BASE;
+        else process.env.MIO_ONEBOT_API_BASE = previousApiBase;
+        if (previousReplyMode === undefined) delete process.env.MIO_ONEBOT_REPLY_MODE;
+        else process.env.MIO_ONEBOT_REPLY_MODE = previousReplyMode;
+        await fakeOneBot.close();
+      }
+    }
+    {
+      const r = await fetch(`${base}/onebot/v11/events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          post_type: 'message',
+          message_type: 'group',
+          user_id: 10001,
+          group_id: 40004,
+          self_id: 20002,
+          raw_message: 'group message without mention',
+          message: 'group message without mention',
+        }),
+      });
+      const j = (await r.json()) as { ok: boolean; skipped: boolean; reason: string };
+      record(
+        'POST /onebot/v11/events group skips unmentioned messages',
+        r.status === 200 && j.ok === true && j.skipped === true && j.reason === 'group_message_not_mentioned',
+        `reason=${j.reason}`,
       );
     }
 
@@ -321,6 +521,121 @@ async function main(): Promise<void> {
     }
   } finally {
     if (server) await server.close();
+  }
+
+  // ─── 8. OpenAI-compatible auth/client smoke ───
+  {
+    const authPort = await getFreePort();
+    const authBase = `http://127.0.0.1:${authPort}`;
+    const oldToken = process.env.MIO_AUTH_TOKEN;
+    process.env.MIO_AUTH_TOKEN = 'openai-smoke-token';
+
+    let authServer: RunningServer | undefined;
+    try {
+      authServer = await startServer({ port: authPort, host: '127.0.0.1' });
+
+      const unauth = await fetch(`${authBase}/v1/models`);
+      const unauthJson = (await unauth.json()) as { error?: { type?: string; code?: string } };
+      record(
+        'GET /v1/models requires OpenAI bearer auth',
+        unauth.status === 401 &&
+          unauthJson.error?.type === 'authentication_error' &&
+          unauthJson.error?.code === 'missing_authorization',
+        `status=${unauth.status}`,
+      );
+
+      const wrongAuth = await fetch(`${authBase}/v1/models`, {
+        headers: { Authorization: 'Bearer wrong-token' },
+      });
+      const wrongAuthJson = (await wrongAuth.json()) as { error?: { code?: string } };
+      record(
+        'GET /v1/models rejects invalid API key',
+        wrongAuth.status === 401 && wrongAuthJson.error?.code === 'invalid_api_key',
+        `status=${wrongAuth.status}`,
+      );
+
+      const models = await fetch(`${authBase}/v1/models`, {
+        headers: { Authorization: 'Bearer openai-smoke-token' },
+      });
+      const modelsJson = (await models.json()) as { object: string; data: Array<{ id: string }> };
+      record(
+        'GET /v1/models accepts valid API key',
+        models.status === 200 && modelsJson.object === 'list' && modelsJson.data.some((m) => m.id === 'mio'),
+      );
+
+      const badBody = await fetch(`${authBase}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer openai-smoke-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ model: 'mio', messages: [] }),
+      });
+      const badBodyJson = (await badBody.json()) as { error?: { type?: string; code?: string; message?: string } };
+      record(
+        'POST /v1/chat/completions returns OpenAI validation error',
+        badBody.status === 400 &&
+          badBodyJson.error?.type === 'invalid_request_error' &&
+          badBodyJson.error?.code === 'invalid_request' &&
+          typeof badBodyJson.error?.message === 'string',
+        `status=${badBody.status}`,
+      );
+
+      const chat = await fetch(`${authBase}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer openai-smoke-token',
+          'Content-Type': 'application/json',
+          'X-OpenClaw-User-Id': 'wechat-openclaw-user',
+        },
+        body: JSON.stringify({
+          model: 'mio',
+          messages: [{ role: 'user', content: 'authenticated openai bridge test' }],
+        }),
+      });
+      const chatJson = (await chat.json()) as {
+        object: string;
+        choices: Array<{ message: { content: string } }>;
+      };
+      const chatSession = chat.headers.get('x-mio-session-id') ?? '';
+      record(
+        'POST /v1/chat/completions preserves authenticated gateway session',
+        chat.status === 200 &&
+          chatJson.object === 'chat.completion' &&
+          chatJson.choices[0]?.message.content.length > 0 &&
+          chatSession.startsWith('openai-wechat-openclaw-user-'),
+        `session=${chatSession}`,
+      );
+
+      const stream = await fetch(`${authBase}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer openai-smoke-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'mio',
+          stream: true,
+          metadata: { conversation: { id: 'wechat-room-1' } },
+          messages: [{ role: 'user', content: 'authenticated stream bridge test' }],
+        }),
+      });
+      const streamText = await stream.text();
+      const streamSession = stream.headers.get('x-mio-session-id') ?? '';
+      record(
+        'POST /v1/chat/completions streams with authenticated metadata session',
+        stream.status === 200 &&
+          (stream.headers.get('content-type') ?? '').includes('text/event-stream') &&
+          streamText.includes('"object":"chat.completion.chunk"') &&
+          streamText.includes('data: [DONE]') &&
+          streamSession.startsWith('openai-wechat-room-1-'),
+        `session=${streamSession}`,
+      );
+    } finally {
+      if (authServer) await authServer.close();
+      if (oldToken === undefined) delete process.env.MIO_AUTH_TOKEN;
+      else process.env.MIO_AUTH_TOKEN = oldToken;
+    }
   }
 
   // ─── Summary ───

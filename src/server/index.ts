@@ -30,8 +30,27 @@ import { detectVoiceCapabilities, synthesizeToBuffer } from '../voice/voice-pipe
 import { describeProvider } from '../memory/embedding.js';
 import { indexStats } from '../memory/vector.js';
 import { getProviderInfo, listAvailableProviders } from '../providers/index.js';
-import { requireAuth, optionalAuth, validateWsAuth, isAuthEnabled } from './auth.js';
+import { requireAuth, requireOpenAIAuth, optionalAuth, validateWsAuth, isAuthEnabled } from './auth.js';
 import { createRateLimiter } from './rate-limit.js';
+import {
+  OpenAICompatError,
+  buildOpenAICompletionResponse,
+  buildOpenAIErrorResponse,
+  buildOpenAIModelsResponse,
+  createOpenAIStreamContext,
+  extractOpenAIUserText,
+  resolveOpenAISessionId,
+  writeOpenAIStreamDone,
+  writeOpenAIStreamError,
+  writeOpenAIStreamStart,
+  writeOpenAIStreamToken,
+} from './openai-compat.js';
+import {
+  OneBotConfigError,
+  dispatchOneBotReply,
+  extractOneBotIncomingMessage,
+  getOneBotBridgeStatus,
+} from './onebot.js';
 import { createBackup, exportMemory, listBackups, pruneBackups } from '../utils/backup.js';
 import { sendToAllChannels, isNotifyEnabled, getNotifyChannels, sendTelegramMessage, sendWebhookMessage, sendWhatsAppMessage, sendDiscordMessage, sendSlackMessage } from './notify.js';
 import { logger } from '../utils/logger.js';
@@ -52,6 +71,8 @@ import {
   characterConfigSchema,
   personaBody,
   personaModeBody,
+  openAIChatCompletionsBody,
+  oneBotEventBody,
   voiceSynthesizeBody,
   characterNameParam,
   wsClientMessageSchema,
@@ -89,6 +110,7 @@ import type { Gender } from '../types.js';
 import { generatePersona } from '../persona/generator.js';
 import { getCurrentMode } from '../persona/dual-mode.js';
 import type { PersonaRequest } from '../types.js';
+import type { OneBotEventBody, OpenAIChatCompletionsBody } from '../validation.js';
 import { modSoulPath } from '../memory/paths.js';
 import { writeFileSyncSafe } from '../memory/bank.js';
 import { fileURLToPath } from 'node:url';
@@ -135,6 +157,40 @@ export interface RunningServer {
   close: () => Promise<void>;
 }
 
+function applyCors(req: Request, res: Response, next: NextFunction): void {
+  const origin = req.headers.origin;
+  const allowedOrigin = resolveAllowedOrigin(origin);
+
+  if (allowedOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Authorization,Content-Type,X-Mio-Session-Id,X-OpenAI-Session-Id,X-OpenClaw-Session-Id,X-OpenClaw-User-Id,X-WeChat-User-Id,X-OneBot-User-Id',
+    );
+    res.setHeader('Access-Control-Expose-Headers', 'X-Mio-Session-Id');
+    res.setHeader('Access-Control-Max-Age', '86400');
+  }
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+
+  next();
+}
+
+function resolveAllowedOrigin(origin: string | undefined): string | null {
+  if (!origin) return null;
+  const raw = process.env.MIO_CORS_ORIGIN?.trim();
+  if (!raw) return null;
+  if (raw === '*') return '*';
+
+  const allowed = raw.split(',').map((item) => item.trim()).filter(Boolean);
+  return allowed.includes(origin) ? origin : null;
+}
+
 /**
  * Start the HTTP + WebSocket server. Resolves once the server is listening.
  *
@@ -143,6 +199,7 @@ export interface RunningServer {
  */
 export async function startServer(opts: ServerOptions = {}): Promise<RunningServer> {
   const app = express();
+  app.use(applyCors);
   app.use(express.json({ limit: '5mb' })); // vision base64 can be large
 
   // ─── Static files ───
@@ -305,6 +362,102 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: msg });
+    }
+  });
+
+  // ─── OpenAI-compatible bridge ───
+  // Lets IM gateways such as OpenClaw/ClawBot call Mio as a custom
+  // OpenAI-compatible chat model while preserving Mio's own memory pipeline.
+  app.get('/v1/models', requireOpenAIAuth, (_req, res) => {
+    res.json(buildOpenAIModelsResponse());
+  });
+
+  app.post('/v1/chat/completions', requireOpenAIAuth, async (req, res) => {
+    const parsed = openAIChatCompletionsBody.safeParse(req.body);
+    if (!parsed.success) {
+      const detail = parsed.error.issues.map((issue) => `${issue.path.join('.') || 'body'}: ${issue.message}`).join('; ');
+      res.status(400).json(buildOpenAIErrorResponse(`Invalid request body: ${detail}`, 'invalid_request_error', 'invalid_request'));
+      return;
+    }
+
+    const body = parsed.data as OpenAIChatCompletionsBody;
+
+    let text: string;
+    let sessionId: string;
+    try {
+      text = extractOpenAIUserText(body);
+      sessionId = resolveOpenAISessionId(body, req);
+    } catch (err) {
+      const status = err instanceof OpenAICompatError ? err.status : 400;
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(status).json(buildOpenAIErrorResponse(
+        message,
+        status === 413 ? 'input_too_long' : 'invalid_request_error',
+        status === 413 ? 'input_too_long' : 'invalid_request',
+      ));
+      return;
+    }
+
+    if (body.stream) {
+      const streamCtx = createOpenAIStreamContext(body);
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+      res.setHeader('X-Mio-Session-Id', sessionId);
+      res.flushHeaders?.();
+      writeOpenAIStreamStart(res, streamCtx);
+
+      try {
+        await runTurn(
+          { text, sessionId },
+          {
+            onToken: (chunk) => writeOpenAIStreamToken(res, streamCtx, chunk),
+          },
+        );
+        writeOpenAIStreamDone(res, streamCtx);
+        res.end();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        writeOpenAIStreamError(res, msg);
+        res.end();
+      }
+      return;
+    }
+
+    try {
+      const result = await runTurn({ text, sessionId });
+      res.setHeader('X-Mio-Session-Id', result.sessionId);
+      res.json(buildOpenAICompletionResponse(body, result));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json(buildOpenAIErrorResponse(msg, 'server_error'));
+    }
+  });
+
+  // ─── OneBot v11 bridge ───
+  // NapCatQQ/Lagrange can POST message events here. Mio replies either through
+  // OneBot quick operation response or an outbound OneBot HTTP API call.
+  app.get('/onebot/v11/status', requireAuth, (_req, res) => {
+    res.json(getOneBotBridgeStatus());
+  });
+
+  app.post('/onebot/v11/events', requireAuth, validate(oneBotEventBody), async (req, res) => {
+    const event = req.body as OneBotEventBody;
+    const incoming = extractOneBotIncomingMessage(event);
+    if ('skipped' in incoming) {
+      res.json(incoming);
+      return;
+    }
+
+    try {
+      const result = await runTurn({ text: incoming.text, sessionId: incoming.sessionId });
+      const responseBody = await dispatchOneBotReply(incoming, result);
+      res.json(responseBody);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const status = err instanceof OneBotConfigError ? err.status : msg.startsWith('OneBot send failed') ? 502 : 500;
+      res.status(status).json({ ok: false, error: msg });
     }
   });
 
@@ -549,9 +702,9 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     res.json({ items, searchResults });
   });
 
-  app.patch('/memories/:id', requireAuth, validateParams(memoryIdParam), validate(memoryPatchBody), (req, res) => {
+  app.patch('/memories/:id', requireAuth, validateParams(memoryIdParam), validate(memoryPatchBody), async (req, res) => {
     const { id } = req.params as { id: string };
-    const item = updateMemoryReviewItem(id, req.body);
+    const item = await updateMemoryReviewItem(id, req.body);
     if (!item) {
       res.status(404).json({ error: 'Memory not found' });
       return;
@@ -725,7 +878,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   // ─── HTTP + WebSocket server ───
 
   const port = opts.port ?? getConfig().httpPort ?? 0;
-  const host = opts.host ?? '127.0.0.1';
+  const host = opts.host ?? process.env.MIO_HTTP_HOST ?? '127.0.0.1';
 
   const server = createServer(app);
   const wss = new WebSocketServer({ noServer: true });
@@ -893,6 +1046,10 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       logger.info(`[mio]   auth: ${isAuthEnabled() ? 'enabled (Bearer token required)' : 'disabled (no auth)'}`);
       logger.info(`[mio]   GET  /health`);
       logger.info(`[mio]   GET  /status`);
+      logger.info(`[mio]   GET  /v1/models       OpenAI-compatible model list`);
+      logger.info(`[mio]   POST /v1/chat/completions OpenAI-compatible chat`);
+      logger.info(`[mio]   GET  /onebot/v11/status OneBot bridge status`);
+      logger.info(`[mio]   POST /onebot/v11/events OneBot event webhook`);
       logger.info(`[mio]   POST /chat         { text, sessionId? }`);
       logger.info(`[mio]   POST /chat/stream  (SSE)`);
       logger.info(`[mio]   POST /mod          { name: "male" | "female" }`);
