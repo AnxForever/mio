@@ -17,7 +17,7 @@
 
 import type { EmotionState } from '../types.js';
 import { readEmotionState, updateEmotionState, syncPADToEmotionState } from './state.js';
-import { recordInteraction } from '../relationship/progression.js';
+import { recordInteraction, recordEmotionalDepth } from '../relationship/progression.js';
 import { classifyIntent, intentLabel, type IntentResult } from './classifier.js';
 import {
   isPADEnabled,
@@ -89,6 +89,13 @@ export function trackEmotion(userMessage: string, agentReply: string, sessionId?
 
   // Cap affection at 100
   const newAffection = Math.min(100, state.affection + affectionDelta);
+
+  // Relationship depth grows with meaningful exchanges — this is what drives
+  // stage progression. Previously never recorded, so emotionalDepth stayed 0
+  // forever and the relationship was frozen at "acquaintance".
+  if (isMeaningful) {
+    recordEmotionalDepth(intent.tone === 'positive' ? 2 : intent.tone === 'negative' ? 1.5 : 1);
+  }
 
   // 6. PAD: classify and update
   if (isPADEnabled()) {
