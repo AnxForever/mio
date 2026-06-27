@@ -17,6 +17,9 @@
 .cell { display: flex; align-items: center; gap: var(--s3); padding: 11px var(--s5); }
 .cell + .cell { border-top: .5px solid var(--hairline); }
 
+/* 卡片(微底 + 圆角 + 留白,主界面无阴影) */
+.card { background: var(--surface); border-radius: var(--r-card); padding: var(--s4); }
+
 /* 可点反馈 */
 .tap { transition: transform var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease); }
 .tap:active { transform: scale(.96); opacity: .7; }

@@ -12,6 +12,8 @@ import { el } from './utils/dom.js';
 import { ICONS } from './utils/icons.js';
 import { EmotionBall } from './components/emotion-ball.js';
 import { renderChat,       mountChat,       unmountChat       } from './views/chat.js';
+import { renderMessages,   mountMessages,   unmountMessages   } from './views/messages.js';
+import { renderMood,       mountMood,       unmountMood       } from './views/mood.js';
 import { renderStudio,     mountStudio,     unmountStudio     } from './views/studio.js';
 import { renderAnalytics,  mountAnalytics,  unmountAnalytics  } from './views/analytics.js';
 import { renderSettings,   mountSettings,   unmountSettings   } from './views/settings.js';
@@ -126,6 +128,8 @@ function updateNavHighlight(routeKey) {
 let currentView = null;
 const viewMap = {
   '/chat':       { render: renderChat,       mount: mountChat,       unmount: unmountChat },
+  '/messages':   { render: renderMessages,   mount: mountMessages,   unmount: unmountMessages },
+  '/mood':       { render: renderMood,       mount: mountMood,       unmount: unmountMood },
   '/studio':     { render: renderStudio,     mount: mountStudio,     unmount: unmountStudio },
   '/analytics':  { render: renderAnalytics,  mount: mountAnalytics,  unmount: unmountAnalytics },
   '/settings':   { render: renderSettings,   mount: mountSettings,   unmount: unmountSettings },
@@ -150,6 +154,8 @@ function switchView(viewName, params) {
 
 /* ─── 路由注册 ─── */
 route('/chat',       () => switchView('/chat'));
+route('/messages',   () => switchView('/messages'));
+route('/mood',       () => switchView('/mood'));
 route('/studio',     () => switchView('/studio'));
 route('/studio/:id', (p) => switchView('/studio', p));
 route('/analytics',  () => switchView('/analytics'));
