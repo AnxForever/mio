@@ -9,11 +9,22 @@ import { mascotSrc } from '../mascot.js';
 import { toast } from '../components/toast.js';
 import { ICONS } from '../utils/icons.js';
 
-const VALID_MODS = ['girlfriend', 'boyfriend'];
+const BUILTIN_MODS = ['female', 'male'];
+const UI_TO_BACKEND_GENDER = { girlfriend: 'female', boyfriend: 'male', female: 'female', male: 'male' };
+const BACKEND_TO_UI_GENDER = { female: 'girlfriend', male: 'boyfriend', girlfriend: 'girlfriend', boyfriend: 'boyfriend' };
 
 /* 内部 mod 名 → 用户可见称呼(UI 永不显示 girlfriend/boyfriend) */
-const PRONOUN = { girlfriend: '她', boyfriend: '他' };
+const PRONOUN = { female: '她', male: '他', girlfriend: '她', boyfriend: '他' };
 const displayName = (name) => PRONOUN[name] || name;
+const toBackendGender = (gender) => UI_TO_BACKEND_GENDER[gender] || gender;
+const toUiGender = (gender) => BACKEND_TO_UI_GENDER[gender] || gender;
+
+function formatCharacterTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
 
 /* 圆形头像 — 复用 components.css 的 .avatar + 线条猫立绘。
    资源缺失时隐藏 img,露出 .avatar 的 --surface 圆底兜底(best-effort 降级)。 */
@@ -78,11 +89,14 @@ export class StudioView extends BaseView {
     container.appendChild(this.skeletonModList());
 
     try {
-      const data = await api.get('/status');
+      const [data, characterData] = await Promise.all([
+        api.get('/status'),
+        api.get('/characters').catch(() => null),
+      ]);
       const mods = this.buildModList(data);
 
       container.innerHTML = '';
-      container.appendChild(this.renderModGallery(mods, data));
+      container.appendChild(this.renderModGallery(mods, data, characterData?.data || []));
     } catch {
       container.innerHTML = '';
       container.appendChild(el('div', { className: 'studio-state' }, [
@@ -94,8 +108,8 @@ export class StudioView extends BaseView {
   buildModList(statusData) {
     const mods = [];
 
-    /* 内置 boyfriend/girlfriend */
-    for (const name of VALID_MODS) {
+    /* 内置 male/female */
+    for (const name of BUILTIN_MODS) {
       mods.push({
         name,
         gender: name,
@@ -107,7 +121,7 @@ export class StudioView extends BaseView {
     /* 自定义 Mod (从后端获取) */
     if (statusData?.mods) {
       for (const m of statusData.mods) {
-        if (!VALID_MODS.includes(m.name)) {
+        if (!BUILTIN_MODS.includes(m.name)) {
           mods.push({ ...m, active: statusData.config?.activeMod === m.name });
         }
       }
@@ -118,13 +132,13 @@ export class StudioView extends BaseView {
 
   getStyleForMod(name, data) {
     /* 尝试从 soul 内容推断风格 */
-    if (name === 'boyfriend') return '默认 · 他';
-    if (name === 'girlfriend') return '默认 · 她';
+    if (name === 'male') return '默认 · 他';
+    if (name === 'female') return '默认 · 她';
     return '自定义';
   }
 
   /* ─── Mod 画廊渲染 ─── */
-  renderModGallery(mods, statusData) {
+  renderModGallery(mods, statusData, characters = []) {
     const frag = document.createDocumentFragment();
 
     /* 当前活跃 */
@@ -153,6 +167,8 @@ export class StudioView extends BaseView {
         el('div', { className: 'mod-cards' }, [this.renderNewCard()]),
       ]));
     }
+
+    frag.appendChild(this.renderCharacterSection(characters, statusData));
 
     return frag;
   }
@@ -229,8 +245,8 @@ export class StudioView extends BaseView {
       onClick: async () => {
         if (isActive) return;
         try {
-          await api.post('/mod', { name: mod.gender || mod.name });
-          wsManager.switchMod(mod.gender || mod.name);
+          await api.post('/mod', { name: mod.name });
+          wsManager.switchMod(mod.name);
           toast('已切换人格', 'success');
           Store.set('activeMod', mod.name);
           const container = this.el.querySelector('#studio-content');
@@ -258,12 +274,140 @@ export class StudioView extends BaseView {
     ]);
   }
 
+  renderCharacterSection(characters, statusData) {
+    const activeMod = statusData?.config?.activeMod;
+    const section = el('div', { className: 'mod-section character-section' }, [
+      el('div', { className: 'mod-section-title label', textContent: '角色生命' }),
+    ]);
+
+    if (!characters.length) {
+      section.appendChild(el('div', { className: 'studio-state studio-state--compact' }, [
+        el('p', { className: 'studio-state-text', textContent: '还没有可管理的角色。' }),
+      ]));
+      return section;
+    }
+
+    const list = el('div', { className: 'character-list' });
+    characters.forEach((character) => {
+      list.appendChild(this.renderCharacterCard(character, activeMod));
+    });
+    section.appendChild(list);
+    return section;
+  }
+
+  renderCharacterCard(character, activeMod) {
+    const cfg = character.config || {};
+    const active = character.id === activeMod || character.active;
+    const body = el('div', { className: `character-card${active ? ' active' : ''}` });
+
+    body.appendChild(el('div', { className: 'character-card-main' }, [
+      modAvatar('character-avatar', active ? 'happy' : 'gentle'),
+      el('div', { className: 'character-info' }, [
+        el('div', { className: 'character-name', textContent: cfg.name || displayName(character.id) }),
+        el('div', { className: 'character-meta', textContent: [displayName(cfg.gender || character.id), cfg.occupation, cfg.style].filter(Boolean).join(' · ') }),
+      ]),
+      active ? el('span', { className: 'character-badge', textContent: '使用中' }) : null,
+    ]));
+
+    const actions = el('div', { className: 'character-actions' }, [
+      el('button', {
+        className: 'btn-secondary',
+        type: 'button',
+        textContent: '生活',
+        onClick: () => this.toggleCharacterLife(character.id, body),
+      }),
+    ]);
+
+    if (!active) {
+      actions.appendChild(el('button', {
+        className: 'btn-primary',
+        type: 'button',
+        textContent: '激活',
+        onClick: () => this.activateCharacter(character.id),
+      }));
+    }
+
+    if (character.isCustom && !active) {
+      actions.appendChild(el('button', {
+        className: 'btn-secondary character-danger',
+        type: 'button',
+        textContent: '删除',
+        onClick: () => this.deleteCharacter(character.id),
+      }));
+    }
+
+    body.appendChild(actions);
+    return body;
+  }
+
+  async activateCharacter(id) {
+    try {
+      const result = await api.post(`/character/${encodeURIComponent(id)}/activate`);
+      const activeMod = result?.data?.activeMod || id;
+      Store.set('activeMod', activeMod);
+      wsManager.switchMod(activeMod);
+      toast('角色已激活', 'success');
+      const container = this.el.querySelector('#studio-content');
+      if (container) this.loadModList(container);
+    } catch (err) {
+      toast(err.message || '激活失败', 'error');
+    }
+  }
+
+  async deleteCharacter(id) {
+    try {
+      await api.del(`/character/${encodeURIComponent(id)}`);
+      toast('角色已删除', 'success');
+      const container = this.el.querySelector('#studio-content');
+      if (container) this.loadModList(container);
+    } catch (err) {
+      toast(err.message || '删除失败', 'error');
+    }
+  }
+
+  async toggleCharacterLife(id, card) {
+    const existing = card.querySelector('.character-life');
+    if (existing) {
+      existing.remove();
+      return;
+    }
+
+    const panel = el('div', { className: 'character-life' }, [
+      el('div', { className: 'character-life-state', textContent: '读取中…' }),
+    ]);
+    card.appendChild(panel);
+
+    try {
+      const data = await api.get(`/character/${encodeURIComponent(id)}/life`);
+      const events = data?.data?.events || [];
+      const stats = data?.data?.stats || {};
+      panel.innerHTML = '';
+      panel.appendChild(el('div', {
+        className: 'character-life-summary',
+        textContent: `事件 ${stats.total || events.length || 0} · 重要 ${stats.important || 0}`,
+      }));
+      if (!events.length) {
+        panel.appendChild(el('div', { className: 'character-life-state', textContent: '还没有生活事件。' }));
+        return;
+      }
+      events.slice(0, 5).forEach((event) => {
+        panel.appendChild(el('div', { className: 'character-life-event' }, [
+          el('div', { className: 'character-life-time', textContent: formatCharacterTime(event.timestamp) }),
+          el('div', { className: 'character-life-text', textContent: event.description || event.content || '生活事件' }),
+        ]));
+      });
+    } catch {
+      panel.innerHTML = '';
+      panel.appendChild(el('div', { className: 'character-life-state', textContent: '生活事件读取失败。' }));
+    }
+  }
+
   /* ─── 新建 Mod 向导 ─── */
   startNewMod() {
     this._wizardState = {
       step: 1,
       name: '',
-      gender: 'girlfriend',
+      gender: 'female',
       style: '',
       age: '',
       occupation: '',
@@ -319,9 +463,9 @@ export class StudioView extends BaseView {
     form.appendChild(el('div', { className: 'form-group' }, [
       el('label', { className: 'form-label', textContent: '性别' }),
       renderGenderPicker({
-        value: this._wizardState.gender,
+        value: toUiGender(this._wizardState.gender),
         onSelect: (mod) => {
-          this._wizardState.gender = mod;
+          this._wizardState.gender = toBackendGender(mod);
           this.updateWizardNext();
         },
       }),
@@ -407,7 +551,7 @@ export class StudioView extends BaseView {
     try {
       const result = await api.post('/persona/generate', {
         name: this._wizardState.name,
-        gender: this._wizardState.gender,
+        gender: toBackendGender(this._wizardState.gender),
         style: this._wizardState.style,
         age: this._wizardState.age ? parseInt(this._wizardState.age) : undefined,
         occupation: this._wizardState.occupation || undefined,
@@ -471,7 +615,7 @@ export class StudioView extends BaseView {
     try {
       await api.post('/persona/save', {
         name: this._wizardState.name,
-        gender: this._wizardState.gender,
+        gender: toBackendGender(this._wizardState.gender),
         style: this._wizardState.style,
         age: this._wizardState.age ? parseInt(this._wizardState.age) : undefined,
         occupation: this._wizardState.occupation || undefined,

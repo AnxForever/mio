@@ -147,6 +147,8 @@ export interface SessionContext {
   colaDir: string;
   outputDir: string;
   connectedChannels?: ChannelInfo[];
+  /** True for external IM bridge sessions that must not read/write shared user memory. */
+  isolatedMemory?: boolean;
 }
 
 // ─── IM Channel ───
@@ -259,11 +261,23 @@ export interface PersonaDelta {
 
 export interface PreferenceRule { rule: string; source: string; createdAt: string; }
 
+export interface UserWeClawChannel {
+  to: string;
+  enabled: boolean;
+  source: string;
+  updatedAt: string;
+}
+
+export interface UserNotificationChannels {
+  weclaw?: UserWeClawChannel;
+}
+
 /** L3：用户偏好。 */
 export interface UserPreferences {
   userId: string;
   explicit: PreferenceRule[];
   implicit?: Record<string, unknown>;
+  channels?: UserNotificationChannels;
   updatedAt: string;
 }
 
@@ -388,4 +402,6 @@ export interface PromptCtx {
   personaDelta?: PersonaDelta;
   /** L3 用户显式偏好。 */
   preferences?: UserPreferences;
+  /** True for external IM bridge sessions that must not read/write shared user memory. */
+  isolatedMemory?: boolean;
 }

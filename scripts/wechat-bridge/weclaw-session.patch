@@ -1,0 +1,27 @@
+diff --git a/agent/http_agent.go b/agent/http_agent.go
+index 6cdd694..ab10dfc 100644
+--- a/agent/http_agent.go
++++ b/agent/http_agent.go
+@@ -91,6 +91,13 @@ func (a *HTTPAgent) Chat(ctx context.Context, conversationID string, message str
+ 	reqBody := map[string]interface{}{
+ 		"model":    a.model,
+ 		"messages": messages,
++		"user":     conversationID,
++		"metadata": map[string]interface{}{
++			"conversationId": conversationID,
++			"conversation": map[string]string{
++				"id": conversationID,
++			},
++		},
+ 	}
+ 
+ 	data, err := json.Marshal(reqBody)
+@@ -109,6 +116,8 @@ func (a *HTTPAgent) Chat(ctx context.Context, conversationID string, message str
+ 	for k, v := range a.headers {
+ 		req.Header.Set(k, v)
+ 	}
++	req.Header.Set("X-Mio-Session-Id", conversationID)
++	req.Header.Set("X-OpenClaw-User-Id", conversationID)
+ 
+ 	resp, err := a.httpClient.Do(req)
+ 	if err != nil {

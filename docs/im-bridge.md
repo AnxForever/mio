@@ -85,6 +85,107 @@ Use a stable per-contact or per-group session ID in the gateway when possible.
 That is what keeps Mio's transcript and memory coherent per WeChat/QQ contact.
 Mio returns the resolved value in the `X-Mio-Session-Id` response header.
 
+For WeChat contact-like usage, run Mio in strict session mode:
+
+```bash
+MIO_OPENAI_REQUIRE_SESSION=true
+```
+
+In this mode `/v1/chat/completions` rejects requests that do not include a
+stable session hint. This is intentional. Without it, stock gateways can put
+all contacts into the fallback `openai-bridge` session, which makes preferences
+and conversation history feel cross-wired.
+
+Per-user persona preferences and persona overrides are stored under:
+
+```text
+data/users/<sessionId>/preferences.json
+data/users/<sessionId>/persona-delta.json
+```
+
+That means a preference such as "Mio should proactively chat with me" belongs to
+that contact's session only. It is not a global rule for every future user.
+
+## Local WeChat Runtime Scripts
+
+The local scripts in `scripts/wechat-bridge/` manage a long-running personal
+WeChat bridge:
+
+```bash
+scripts/wechat-bridge/prepare-weclaw-session.sh  # build patched WeClaw
+scripts/wechat-bridge/configure.mjs              # sync .env + ~/.weclaw/config.json
+scripts/wechat-bridge/start.sh                   # start Mio + WeClaw
+scripts/wechat-bridge/status.sh                  # check health/config
+scripts/wechat-bridge/stop.sh                    # stop managed processes
+```
+
+`configure.mjs` generates `MIO_AUTH_TOKEN` when missing, sets
+`MIO_OPENAI_REQUIRE_SESSION=true`, and writes the same token into the WeClaw
+HTTP agent config as `api_key`.
+
+Use the patched WeClaw binary built by `prepare-weclaw-session.sh`. The patch
+adds the WeChat `conversationID` to:
+
+```text
+X-Mio-Session-Id
+X-OpenClaw-User-Id
+user
+metadata.conversation.id
+```
+
+Stock WeClaw v0.7.1 keeps `conversationID` only in its own in-process history
+and does not send it to the OpenAI-compatible backend, so Mio cannot reliably
+separate contacts unless this patch or an equivalent upstream fix is present.
+
+### Proactive WeChat Messages
+
+Mio's proactive scheduler can send through WeClaw, but it is opt-in per target
+contact. Do not use one global WeClaw recipient for a multi-user account.
+
+```bash
+MIO_WECLAW_NOTIFY=true
+MIO_WECLAW_API_ADDR=127.0.0.1:18011
+```
+
+For WeClaw/OpenAI bridge traffic, Mio automatically stores the raw
+`@im.wechat` contact ID in that user's preferences:
+
+```json
+{
+  "userId": "openai-...",
+  "channels": {
+    "weclaw": {
+      "to": "user_id@im.wechat",
+      "enabled": true
+    }
+  }
+}
+```
+
+The proactive scheduler only sends WeClaw messages to users that both:
+
+- have an explicit proactive preference, such as "主动找我聊天"
+- have `channels.weclaw.enabled=true` and a per-user `to`
+
+Later opt-out text such as "别再主动联系我" takes that contact out of the
+eligible proactive list until they opt in again. Each contact also has its own
+smart proactive cooldown/activity file, and contact-scoped proactive messages
+are recorded in that contact's transcript rather than global `BOOKMARKS.md`.
+
+Test only the WeClaw channel:
+
+```bash
+curl -X POST http://127.0.0.1:3000/notify/test/weclaw \
+  -H "Authorization: Bearer $MIO_AUTH_TOKEN"
+```
+
+`MIO_WECLAW_TO` is retained only as a legacy/manual-test fallback. The proactive
+scheduler does not use it when a concrete `userId` is being delivered.
+
+For multiple users, keep per-user target mappings and preferences. Inbound chat
+session isolation alone is not enough to decide who should receive unsolicited
+messages.
+
 ## Client Examples
 
 ### Non-streaming request

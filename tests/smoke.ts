@@ -36,6 +36,8 @@ interface OneBotApiCall {
 }
 
 const results: TestResult[] = [];
+const ONE_BY_ONE_PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
 
 function record(name: string, passed: boolean, detail?: string): void {
   results.push({ name, passed, detail });
@@ -146,6 +148,32 @@ async function main(): Promise<void> {
       record('POST /mod invalid → 400', r3.status === 400);
     }
 
+    // ─── 3.5. Mod soul read/write ───
+    {
+      const get1 = await fetch(`${base}/mods/female/soul`);
+      const s1 = (await get1.json()) as { name: string; soul: string };
+      const original = s1.soul;
+      const edited = `${original}\n\n<!-- smoke-test soul route ${Date.now()} -->`;
+      const put = await fetch(`${base}/mods/female/soul`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ soul: edited }),
+      });
+      const putJson = (await put.json()) as { ok: boolean; bytes: number };
+      const get2 = await fetch(`${base}/mods/female/soul`);
+      const s2 = (await get2.json()) as { soul: string };
+      await fetch(`${base}/mods/female/soul`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ soul: original }),
+      });
+      record(
+        'GET/PUT /mods/:name/soul',
+        get1.status === 200 && s1.name === 'female' && put.status === 200 && putJson.ok === true && s2.soul === edited,
+        `bytes=${putJson.bytes}`,
+      );
+    }
+
     // ─── 4. /chat (non-streaming) ───
     {
       const r = await fetch(`${base}/chat`, {
@@ -158,6 +186,36 @@ async function main(): Promise<void> {
         'POST /chat',
         r.status === 200 && typeof j.text === 'string' && j.text.length > 0 && typeof j.sessionId === 'string',
         `sessionId=${j.sessionId} turns=${j.turns}`,
+      );
+    }
+
+    // ─── 4.5. Image upload + vision chat path ───
+    {
+      const upload = await fetch(`${base}/uploads/images`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: 'pixel.png',
+          mimeType: 'image/png',
+          data: ONE_BY_ONE_PNG,
+        }),
+      });
+      const uj = (await upload.json()) as { ok: boolean; imagePath: string; mimeType: string };
+      const chat = await fetch(`${base}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'image smoke test', imagePath: uj.imagePath }),
+      });
+      const cj = (await chat.json()) as { text: string; sessionId: string };
+      record(
+        'POST /uploads/images + /chat imagePath',
+        upload.status === 200 &&
+          uj.ok === true &&
+          uj.mimeType === 'image/png' &&
+          chat.status === 200 &&
+          typeof cj.text === 'string' &&
+          typeof cj.sessionId === 'string',
+        `mime=${uj.mimeType}`,
       );
     }
 

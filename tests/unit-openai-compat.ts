@@ -40,6 +40,7 @@ async function main(): Promise<void> {
   const {
     extractOpenAIUserText,
     resolveOpenAISessionId,
+    resolveOpenAISessionInfo,
     buildOpenAIErrorResponse,
   } = await import('../dist/server/openai-compat.js');
   const { checkBearerAuth } = await import('../dist/server/auth.js');
@@ -92,6 +93,46 @@ async function main(): Promise<void> {
       messages: [{ role: 'user', content: 'hi' }],
     }, req);
     assert(sessionId.startsWith('openai-group_room_123-'), `unexpected session id: ${sessionId}`);
+  });
+
+  await test('session info preserves raw WeClaw contact id for outbound binding', () => {
+    const req = { headers: { 'x-openclaw-user-id': 'wx.user-42@im.wechat' } };
+    const info = resolveOpenAISessionInfo({
+      model: 'mio',
+      messages: [{ role: 'user', content: 'hi' }],
+    }, req);
+    assert(info.sessionId.startsWith('openai-wx_user-42_im_wechat-'), `unexpected session id: ${info.sessionId}`);
+    assert(info.rawSessionId === 'wx.user-42@im.wechat', `unexpected raw id: ${info.rawSessionId}`);
+  });
+
+  await test('session info keeps raw WeClaw id when Mio session header has precedence', () => {
+    const req = {
+      headers: {
+        'x-mio-session-id': 'stable-internal-thread',
+        'x-openclaw-user-id': 'wx.raw-42@im.wechat',
+      },
+    };
+    const info = resolveOpenAISessionInfo({
+      model: 'mio',
+      messages: [{ role: 'user', content: 'hi' }],
+    }, req);
+    assert(info.sessionId.startsWith('openai-stable-internal-thread-'), `unexpected session id: ${info.sessionId}`);
+    assert(info.rawSessionId === 'wx.raw-42@im.wechat', `unexpected raw id: ${info.rawSessionId}`);
+  });
+
+  await test('session info keeps nested metadata WeClaw id when Mio session header has precedence', () => {
+    const req = {
+      headers: {
+        'x-mio-session-id': 'stable-internal-thread',
+      },
+    };
+    const info = resolveOpenAISessionInfo({
+      model: 'mio',
+      metadata: { conversation: { id: 'wx.meta-42@im.wechat' } },
+      messages: [{ role: 'user', content: 'hi' }],
+    }, req);
+    assert(info.sessionId.startsWith('openai-stable-internal-thread-'), `unexpected session id: ${info.sessionId}`);
+    assert(info.rawSessionId === 'wx.meta-42@im.wechat', `unexpected raw id: ${info.rawSessionId}`);
   });
 
   await test('session id falls back to body user', () => {

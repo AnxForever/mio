@@ -18,6 +18,8 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { URL } from 'node:url';
+import { randomUUID } from 'node:crypto';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { WebSocketServer, type WebSocket } from 'ws';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { runTurn } from '../core/agent-loop.js';
@@ -39,7 +41,7 @@ import {
   buildOpenAIModelsResponse,
   createOpenAIStreamContext,
   extractOpenAIUserText,
-  resolveOpenAISessionId,
+  resolveOpenAISessionInfo,
   writeOpenAIStreamDone,
   writeOpenAIStreamError,
   writeOpenAIStreamStart,
@@ -52,7 +54,7 @@ import {
   getOneBotBridgeStatus,
 } from './onebot.js';
 import { createBackup, exportMemory, listBackups, pruneBackups } from '../utils/backup.js';
-import { sendToAllChannels, isNotifyEnabled, getNotifyChannels, sendTelegramMessage, sendWebhookMessage, sendWhatsAppMessage, sendDiscordMessage, sendSlackMessage } from './notify.js';
+import { sendToAllChannels, getNotifyChannels, sendTelegramMessage, sendWebhookMessage, sendWhatsAppMessage, sendDiscordMessage, sendSlackMessage, sendWeClawMessage } from './notify.js';
 import { logger } from '../utils/logger.js';
 import {
   validate,
@@ -72,7 +74,10 @@ import {
   personaBody,
   personaModeBody,
   openAIChatCompletionsBody,
+  imageUploadBody,
   oneBotEventBody,
+  modNameParam,
+  soulBody,
   voiceSynthesizeBody,
   characterNameParam,
   wsClientMessageSchema,
@@ -111,10 +116,12 @@ import { generatePersona } from '../persona/generator.js';
 import { getCurrentMode } from '../persona/dual-mode.js';
 import type { PersonaRequest } from '../types.js';
 import type { OneBotEventBody, OpenAIChatCompletionsBody } from '../validation.js';
-import { modSoulPath } from '../memory/paths.js';
-import { writeFileSyncSafe } from '../memory/bank.js';
+import { imageUploadsDir, modSoulPath, uploadedImagePath } from '../memory/paths.js';
+import { readFileSyncSafe, writeFileSyncSafe } from '../memory/bank.js';
+import { upsertWeClawTarget } from '../memory/persona-delta.js';
+import { refreshPersonaGraph } from '../persona/extractor.js';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 
 // ─── WebSocket protocol ───
 
@@ -129,7 +136,7 @@ import { dirname, join } from 'node:path';
  */
 export type WsClientMessage =
   | { type: 'chat'; text: string; sessionId?: string }
-  | { type: 'switch_mod'; name: 'male' | 'female' }
+  | { type: 'switch_mod'; name: string }
   | { type: 'subscribe_avatar' }
   | { type: 'ping'; t?: number }
   | { type: 'pong'; t?: number };
@@ -164,7 +171,7 @@ function applyCors(req: Request, res: Response, next: NextFunction): void {
   if (allowedOrigin) {
     res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
     res.setHeader('Vary', 'Origin');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
     res.setHeader(
       'Access-Control-Allow-Headers',
       'Authorization,Content-Type,X-Mio-Session-Id,X-OpenAI-Session-Id,X-OpenClaw-Session-Id,X-OpenClaw-User-Id,X-WeChat-User-Id,X-OneBot-User-Id',
@@ -191,6 +198,64 @@ function resolveAllowedOrigin(origin: string | undefined): string | null {
   return allowed.includes(origin) ? origin : null;
 }
 
+const IMAGE_EXT_BY_MIME: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+};
+
+function detectImageMime(buffer: Buffer): string | null {
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return 'image/png';
+  }
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') {
+    return 'image/webp';
+  }
+  if (buffer.length >= 6) {
+    const sig = buffer.subarray(0, 6).toString('ascii');
+    if (sig === 'GIF87a' || sig === 'GIF89a') return 'image/gif';
+  }
+  return null;
+}
+
+function parseUploadedImage(body: { data: string; mimeType?: string }): { buffer: Buffer; mimeType: string; ext: string } {
+  let raw = body.data.trim();
+  let declared = body.mimeType;
+  const dataUrl = raw.match(/^data:(image\/(?:png|jpeg|webp|gif));base64,(.+)$/);
+  if (dataUrl) {
+    declared = dataUrl[1];
+    raw = dataUrl[2];
+  }
+
+  const buffer = Buffer.from(raw.replace(/\s+/g, ''), 'base64');
+  if (buffer.length === 0) throw new Error('Empty image upload');
+  if (buffer.length > 4_500_000) throw new Error('Image too large. Maximum 4.5MB.');
+
+  const detected = detectImageMime(buffer);
+  if (!detected) throw new Error('Unsupported image data');
+  if (declared && declared !== detected) throw new Error('Image MIME type does not match its content');
+
+  return {
+    buffer,
+    mimeType: detected,
+    ext: IMAGE_EXT_BY_MIME[detected] ?? 'img',
+  };
+}
+
+function isUploadedImagePath(path: string): boolean {
+  const root = resolve(imageUploadsDir());
+  const target = resolve(path);
+  return target === root || target.startsWith(root + sep);
+}
+
+function isWeClawContactId(raw: string | undefined): raw is string {
+  return typeof raw === 'string' && /@im\.wechat$/i.test(raw.trim());
+}
+
 /**
  * Start the HTTP + WebSocket server. Resolves once the server is listening.
  *
@@ -200,7 +265,7 @@ function resolveAllowedOrigin(origin: string | undefined): string | null {
 export async function startServer(opts: ServerOptions = {}): Promise<RunningServer> {
   const app = express();
   app.use(applyCors);
-  app.use(express.json({ limit: '5mb' })); // vision base64 can be large
+  app.use(express.json({ limit: '8mb' })); // uploaded vision images are base64 encoded
 
   // ─── Static files ───
   const __filename = fileURLToPath(import.meta.url);
@@ -365,6 +430,26 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     }
   });
 
+  // ─── Uploads ───
+  app.post('/uploads/images', requireAuth, validate(imageUploadBody), (req, res) => {
+    try {
+      const parsed = parseUploadedImage(req.body as { data: string; mimeType?: string });
+      mkdirSync(imageUploadsDir(), { recursive: true });
+      const fileName = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}.${parsed.ext}`;
+      const path = uploadedImagePath(fileName);
+      writeFileSync(path, parsed.buffer);
+      res.json({
+        ok: true,
+        imagePath: path,
+        mimeType: parsed.mimeType,
+        size: parsed.buffer.length,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(msg.includes('too large') ? 413 : 400).json({ error: msg });
+    }
+  });
+
   // ─── OpenAI-compatible bridge ───
   // Lets IM gateways such as OpenClaw/ClawBot call Mio as a custom
   // OpenAI-compatible chat model while preserving Mio's own memory pipeline.
@@ -386,7 +471,11 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     let sessionId: string;
     try {
       text = extractOpenAIUserText(body);
-      sessionId = resolveOpenAISessionId(body, req);
+      const session = resolveOpenAISessionInfo(body, req);
+      sessionId = session.sessionId;
+      if (isWeClawContactId(session.rawSessionId)) {
+        upsertWeClawTarget(sessionId, session.rawSessionId, 'openai-bridge');
+      }
     } catch (err) {
       const status = err instanceof OpenAICompatError ? err.status : 400;
       const message = err instanceof Error ? err.message : String(err);
@@ -475,6 +564,10 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       // Support optional image via vision/image.ts
       let imageBlocks;
       if (body.imagePath) {
+        if (!isUploadedImagePath(body.imagePath)) {
+          res.status(400).json({ error: 'Invalid imagePath' });
+          return;
+        }
         const { processImage } = await import('../vision/image.js');
         try {
           const block = await processImage(body.imagePath);
@@ -490,7 +583,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   });
 
   app.post('/chat/stream', requireAuth, validate(chatBody), async (req, res) => {
-    const body = req.body as { text?: string; sessionId?: string } | undefined;
+    const body = req.body as { text?: string; sessionId?: string; imagePath?: string } | undefined;
     if (!body || typeof body.text !== 'string') {
       res.status(400).json({ error: 'Missing "text" in body' });
       return;
@@ -508,8 +601,21 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     };
 
     try {
+      let imageBlocks;
+      if (body.imagePath) {
+        if (!isUploadedImagePath(body.imagePath)) {
+          writeEvent('error', { error: 'Invalid imagePath' });
+          res.end();
+          return;
+        }
+        const { processImage } = await import('../vision/image.js');
+        try {
+          const block = await processImage(body.imagePath);
+          imageBlocks = [block];
+        } catch { /* image processing failed, continue text-only */ }
+      }
       const result = await runTurn(
-        { text: body.text, sessionId: body.sessionId },
+        { text: body.text, sessionId: body.sessionId, imageBlocks },
         {
           onToken: (chunk) => writeEvent('token', { chunk }),
         },
@@ -531,8 +637,48 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     }
     try {
       await modManager().switchMod(name);
+      activateCharacter(name);
       updateConfig({ gender: name as Gender });
       res.json({ activeMod: modManager().activeMod });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  app.get('/mods/:name/soul', requireAuth, validateParams(modNameParam), (req, res) => {
+    const { name } = req.params as { name: string };
+    if (!modManager().isValidMod(name)) {
+      res.status(404).json({ error: 'Mod not found' });
+      return;
+    }
+    res.json({
+      name,
+      active: modManager().activeMod === name,
+      soul: readFileSyncSafe(modSoulPath(name)),
+    });
+  });
+
+  app.put('/mods/:name/soul', requireAuth, validateParams(modNameParam), validate(soulBody), async (req, res) => {
+    const { name } = req.params as { name: string };
+    const { soul } = req.body as { soul: string };
+    if (!modManager().isValidMod(name)) {
+      res.status(404).json({ error: 'Mod not found' });
+      return;
+    }
+
+    try {
+      writeFileSyncSafe(modSoulPath(name), soul);
+      if (modManager().activeMod === name) {
+        await modManager().refreshBankSoul();
+        refreshPersonaGraph();
+      }
+      res.json({
+        ok: true,
+        name,
+        active: modManager().activeMod === name,
+        bytes: Buffer.byteLength(soul, 'utf-8'),
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: msg });
@@ -572,6 +718,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       // Activate the new mod
       try {
         await modManager().switchMod(body.name);
+        activateCharacter(body.name);
         updateConfig({ gender: body.gender });
       } catch (switchErr) {
         // If switch fails, the file is still saved — just report warning
@@ -758,9 +905,10 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
 
   // GET /notify/channels — list configured notification channels (no secrets)
   app.get('/notify/channels', requireAuth, (_req, res) => {
+    const channels = getNotifyChannels();
     res.json({
-      enabled: isNotifyEnabled(),
-      channels: getNotifyChannels(),
+      enabled: channels.some((channel) => channel.enabled),
+      channels,
     });
   });
 
@@ -800,6 +948,12 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     res.status(result.success ? 200 : 502).json(result);
   });
 
+  // POST /notify/test/weclaw — test WeClaw only
+  app.post('/notify/test/weclaw', requireAuth, async (_req, res) => {
+    const result = await sendWeClawMessage('Mio WeClaw test', { allowEnvFallback: true });
+    res.status(result.success ? 200 : 502).json(result);
+  });
+
   // POST /notify/test/webhook — test Webhook only
   app.post('/notify/test/webhook', requireAuth, async (_req, res) => {
     const result = await sendWebhookMessage('Mio Webhook test');
@@ -829,12 +983,14 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   });
 
   // POST /character/:name/activate — activate a character
-  app.post('/character/:name/activate', requireAuth, validateParams(characterNameParam), (req, res) => {
+  app.post('/character/:name/activate', requireAuth, validateParams(characterNameParam), async (req, res) => {
     try {
       const name = String(req.params.name);
       const char = activateCharacter(name);
       if (!char) return res.status(404).json({ success: false, error: 'Character not found' });
-      res.json({ success: true, data: char });
+      await modManager().switchMod(name);
+      updateConfig({ gender: char.config.gender as Gender });
+      res.json({ success: true, data: { ...char, activeMod: modManager().activeMod } });
     } catch (err) {
       res.status(500).json({ success: false, error: String(err) });
     }
@@ -952,7 +1108,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
           }
           try {
             await modManager().switchMod(payload.name);
-            updateConfig({ gender: payload.name });
+            activateCharacter(payload.name);
+            updateConfig({ gender: payload.name as Gender });
             safeSend(ws, { type: 'mod_switched', activeMod: modManager().activeMod });
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -1067,6 +1224,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       logger.info(`[mio]   POST /notify/test/whatsapp  test WhatsApp channel`);
       logger.info(`[mio]   POST /notify/test/discord   test Discord channel`);
       logger.info(`[mio]   POST /notify/test/slack     test Slack channel`);
+      logger.info(`[mio]   POST /notify/test/weclaw    test WeClaw channel`);
       logger.info(`[mio]   POST /notify/test/webhook   test Webhook channel`);
       logger.info(`[mio]   Admin:`);
       logger.info(`[mio]   GET  /admin/backups       list backups`);

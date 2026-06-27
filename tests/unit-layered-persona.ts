@@ -13,7 +13,18 @@ process.env.MIO_PROVIDER = 'mock';
 mkdirSync(join(dir, 'memory-bank'), { recursive: true });
 
 // === IMPORTS (each task appends here) ===
-const { readPersonaDelta, writePersonaDelta, readPreferences, upsertPreference, patchPersonaDelta } =
+const {
+  readPersonaDelta,
+  writePersonaDelta,
+  readPreferences,
+  writePreferences,
+  upsertPreference,
+  patchPersonaDelta,
+  upsertWeClawTarget,
+  getWeClawTarget,
+  listUsersWithProactiveWeClawTargets,
+  userWantsProactiveChat,
+} =
   await import('../dist/memory/persona-delta.js');
 const { buildKernel, applyPersonaDelta, buildDeltaFragment, buildPreferencePrompt } = await import('../dist/persona/layered.js');
 const { ContextEngine } = await import('../dist/prompt/context-engine.js');
@@ -46,6 +57,60 @@ console.log('\n\x1b[1mMio — layered persona tests\x1b[0m\n');
   upsertPreference('主动找我聊天', 'unit', 'user-a');
   ok(readPreferences('user-a')?.explicit.some((p) => p.rule === '主动找我聊天') === true, 'per-user preference persists for owner');
   ok(readPreferences('user-b') === null, 'per-user preference does not leak to another user');
+  upsertWeClawTarget('user-a', 'wx-user-a@im.wechat', 'unit');
+  upsertWeClawTarget('user-b', 'wx-user-b@im.wechat', 'unit');
+  ok(getWeClawTarget('user-a') === 'wx-user-a@im.wechat', 'per-user WeClaw target persists for owner');
+  ok(getWeClawTarget('user-b') === 'wx-user-b@im.wechat', 'per-user WeClaw target stays isolated');
+  ok(userWantsProactiveChat(readPreferences('user-a')) === true, 'proactive opt-in detected from preference');
+  ok(
+    listUsersWithProactiveWeClawTargets().some((target) => target.userId === 'user-a' && target.to === 'wx-user-a@im.wechat'),
+    'eligible proactive WeClaw target includes opted-in user',
+  );
+  ok(
+    listUsersWithProactiveWeClawTargets().every((target) => target.userId !== 'user-b'),
+    'non-opted-in user is not eligible for proactive WeClaw delivery',
+  );
+  writePreferences({
+    userId: 'user-c',
+    explicit: [{ rule: '主动找我聊天', source: 'unit', createdAt: '' }],
+    channels: {
+      weclaw: {
+        to: 'wx-user-c@im.wechat',
+        enabled: false,
+        source: 'unit',
+        updatedAt: '',
+      },
+    },
+    updatedAt: '',
+  });
+  ok(getWeClawTarget('user-c') === null, 'disabled per-user WeClaw target is not returned');
+  ok(
+    listUsersWithProactiveWeClawTargets().every((target) => target.userId !== 'user-c'),
+    'disabled per-user WeClaw target is not eligible for proactive delivery',
+  );
+  upsertPreference('别再主动联系我了', 'unit', 'user-d');
+  upsertWeClawTarget('user-d', 'wx-user-d@im.wechat', 'unit');
+  ok(userWantsProactiveChat(readPreferences('user-d')) === false, 'proactive opt-out is not treated as opt-in');
+  ok(
+    listUsersWithProactiveWeClawTargets().every((target) => target.userId !== 'user-d'),
+    'opted-out user is not eligible for proactive delivery',
+  );
+  upsertPreference('还是主动找我聊天吧', 'unit', 'user-d');
+  ok(userWantsProactiveChat(readPreferences('user-d')) === true, 'later proactive opt-in can re-enable outreach');
+  upsertPreference('这个用户希望 Mio 主动找他聊天；不要总用“想聊了随时找我”把话题推回给用户。', 'unit', 'user-e');
+  upsertWeClawTarget('user-e', 'wx-user-e@im.wechat', 'unit');
+  ok(userWantsProactiveChat(readPreferences('user-e')) === true, 'proactive opt-in with unrelated negative wording stays enabled');
+  for (const [idx, phrase] of ['不要主动联系我', '不用主动找我聊天', '停止主动联系我', '取消主动找我聊天'].entries()) {
+    const userId = `user-optout-${idx}`;
+    upsertPreference('主动找我聊天', 'unit', userId);
+    upsertWeClawTarget(userId, `wx-user-optout-${idx}@im.wechat`, 'unit');
+    captureExplicitDirectives(phrase, userId);
+    ok(userWantsProactiveChat(readPreferences(userId)) === false, `${phrase} disables proactive outreach`);
+    ok(
+      listUsersWithProactiveWeClawTargets().every((target) => target.userId !== userId),
+      `${phrase} removes user from proactive WeClaw targets`,
+    );
+  }
 }
 
 // --- Task 2: L0 Kernel + 不可裁 ---
@@ -92,6 +157,7 @@ console.log('\n\x1b[1mMio — layered persona tests\x1b[0m\n');
   ok(detectDirectives('你其实是开酒吧的，别当插画师了').some((d) => d.kind === 'persona'), 'detect persona override');
   ok(detectDirectives('你能不能皮一点').some((d) => d.kind === 'preference'), 'detect preference');
   ok(detectDirectives('可是我想你主动找我聊天').some((d) => d.kind === 'preference' && d.value.includes('主动找我聊天')), 'detect proactive chat preference');
+  ok(detectDirectives('不要主动联系我').some((d) => d.kind === 'preference' && d.value.includes('不要主动联系我')), 'detect proactive opt-out preference');
   ok(detectDirectives('今天天气不错').length === 0, 'no false positive on plain chat');
 
   captureExplicitDirectives('以后叫我阿哲吧');

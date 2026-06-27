@@ -118,9 +118,24 @@ export class MemoriesView extends BaseView {
     this.renderLoading();
     try {
       const suffix = query ? `?q=${encodeURIComponent(query)}&limit=50` : '?limit=100';
-      const data = await api.get('/memories' + suffix);
+      const [data, transcriptData] = await Promise.all([
+        api.get('/memories' + suffix),
+        query
+          ? api.get(`/search?q=${encodeURIComponent(query)}&limit=20`).catch(() => null)
+          : Promise.resolve(null),
+      ]);
       this.items = data?.items || [];
-      this.searchResults = data?.searchResults || [];
+      const memoryResults = (data?.searchResults || []).map((item) => ({
+        ...item,
+        resultKind: 'memory',
+      }));
+      const transcriptResults = (transcriptData?.results || []).map((item) => ({
+        title: item.sessionId ? `旧对话 · ${formatDate(item.timestamp) || item.sessionId}` : '旧对话',
+        snippet: item.snippet || item.content || '',
+        source: item.sessionId,
+        resultKind: 'transcript',
+      }));
+      this.searchResults = [...memoryResults, ...transcriptResults];
       this.renderSearchResults(query);
       this.renderItems();
     } catch {
@@ -153,9 +168,9 @@ export class MemoriesView extends BaseView {
     }
 
     const group = el('div', { className: 'memories-result-card' });
-    this.searchResults.slice(0, 5).forEach((result) => {
+    this.searchResults.slice(0, 10).forEach((result) => {
       group.appendChild(el('div', { className: 'memory-result' }, [
-        el('div', { className: 'memory-result-title', textContent: result.title || result.source || '旧内容' }),
+        el('div', { className: 'memory-result-title', textContent: result.title || result.source || (result.resultKind === 'transcript' ? '旧对话' : '旧内容') }),
         el('div', { className: 'memory-result-snippet', textContent: result.snippet || result.text || result.content || '' }),
       ]));
     });

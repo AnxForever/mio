@@ -14,6 +14,10 @@ const SESSION_HEADER_NAMES = [
   'x-wechat-user-id',
   'x-onebot-user-id',
 ];
+const WECLAW_CONTACT_HEADER_NAMES = [
+  'x-openclaw-user-id',
+  'x-wechat-user-id',
+];
 const METADATA_SESSION_KEYS = [
   'sessionId',
   'session_id',
@@ -46,6 +50,11 @@ export interface OpenAIStreamContext {
   id: string;
   created: number;
   model: string;
+}
+
+export interface OpenAISessionInfo {
+  sessionId: string;
+  rawSessionId?: string;
 }
 
 export function buildOpenAIModelsResponse(): Record<string, unknown> {
@@ -100,8 +109,17 @@ export function extractOpenAIUserText(body: OpenAIChatCompletionsBody): string {
 }
 
 export function resolveOpenAISessionId(body: OpenAIChatCompletionsBody, req: Request): string {
+  return resolveOpenAISessionInfo(body, req).sessionId;
+}
+
+export function resolveOpenAISessionInfo(body: OpenAIChatCompletionsBody, req: Request): OpenAISessionInfo {
   const explicit = findOpenAISessionHint(body, req);
-  if (explicit) return normalizeSessionId(explicit);
+  if (explicit) {
+    return {
+      sessionId: normalizeSessionId(explicit),
+      rawSessionId: findWeClawContactHint(body, req) ?? explicit.trim(),
+    };
+  }
 
   if (isStrictSessionRequired()) {
     throw new OpenAICompatError(
@@ -109,7 +127,28 @@ export function resolveOpenAISessionId(body: OpenAIChatCompletionsBody, req: Req
     );
   }
 
-  return FALLBACK_SESSION_ID;
+  return { sessionId: FALLBACK_SESSION_ID };
+}
+
+function findWeClawContactHint(body: OpenAIChatCompletionsBody, req: Request): string | null {
+  for (const name of WECLAW_CONTACT_HEADER_NAMES) {
+    const header = firstHeaderValue(req.headers[name]);
+    if (isWeClawContactHint(header)) return header.trim();
+  }
+
+  for (const key of ['fromUserName', 'from_user_name', 'senderId', 'sender_id', 'conversationId', 'conversation_id', 'conversation.id']) {
+    const value = readMetadataValue(body.metadata, key);
+    if (typeof value === 'string' && isWeClawContactHint(value)) {
+      return value.trim();
+    }
+  }
+
+  if (isWeClawContactHint(body.user)) return body.user.trim();
+  return null;
+}
+
+function isWeClawContactHint(value: string | null | undefined): value is string {
+  return typeof value === 'string' && /@im\.wechat$/i.test(value.trim());
 }
 
 function findOpenAISessionHint(body: OpenAIChatCompletionsBody, req: Request): string | null {

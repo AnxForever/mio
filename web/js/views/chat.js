@@ -17,6 +17,10 @@ export class ChatView extends BaseView {
     this.msgInput = null;
     this.sendBtn = null;
     this.voiceBtn = null;
+    this.attachBtn = null;
+    this.ttsBtn = null;
+    this.fileInput = null;
+    this.attachmentPreview = null;
     this.avatarImg = null;
     this.nameEl = null;
     this.statusDot = null;
@@ -27,6 +31,10 @@ export class ChatView extends BaseView {
     this.streaming = false;
     this.streamBuffer = '';
     this.streamMsgEl = null;
+    this.pendingImage = null;
+    this.ttsEnabled = localStorage.getItem('mio_tts_enabled') === '1';
+    this.ttsAvailable = true;
+    this.currentAudio = null;
     this._isUserScrolling = false;
     this._lastScrollTop = 0;
 
@@ -36,6 +44,9 @@ export class ChatView extends BaseView {
     this.handleInput = this.handleInput.bind(this);
     this.fetchStatus = this.fetchStatus.bind(this);
     this.handleScroll = this.handleScroll.bind(this);
+    this.handleAttach = this.handleAttach.bind(this);
+    this.handleFileSelected = this.handleFileSelected.bind(this);
+    this.toggleTts = this.toggleTts.bind(this);
   }
 
   render() {
@@ -100,8 +111,15 @@ export class ChatView extends BaseView {
     });
     this.el.appendChild(this.newMsgToast);
 
+    this.attachmentPreview = el('div', { className: 'attachment-preview', style: { display: 'none' } });
+    this.el.appendChild(this.attachmentPreview);
+
     /* ═══ 输入栏 ═══ */
     const inputArea = el('div', { className: 'chat-input-area' });
+
+    this.attachBtn = el('button', { className: 'attach-btn tap', 'aria-label': 'Attach image' });
+    this.attachBtn.appendChild(ICONS.image(20));
+    inputArea.appendChild(this.attachBtn);
 
     this.voiceBtn = el('button', { className: 'voice-btn tap', 'aria-label': 'Voice input' });
     this.voiceBtn.appendChild(ICONS.mic(20));
@@ -120,6 +138,21 @@ export class ChatView extends BaseView {
     this.sendBtn = el('button', { className: 'send-btn tap', disabled: 'disabled', 'aria-label': 'Send message' });
     this.sendBtn.appendChild(ICONS.send(18));
     inputArea.appendChild(this.sendBtn);
+
+    this.ttsBtn = el('button', {
+      className: `tts-btn tap${this.ttsEnabled ? ' active' : ''}`,
+      'aria-label': 'Read replies aloud',
+      'aria-pressed': this.ttsEnabled ? 'true' : 'false',
+    });
+    this.ttsBtn.appendChild(ICONS.volume(20));
+    inputArea.appendChild(this.ttsBtn);
+
+    this.fileInput = el('input', {
+      type: 'file',
+      accept: 'image/png,image/jpeg,image/webp,image/gif',
+      style: { display: 'none' },
+    });
+    this.el.appendChild(this.fileInput);
 
     this.el.appendChild(inputArea);
 
@@ -150,7 +183,7 @@ export class ChatView extends BaseView {
     const isProactive = !isUser && (msg.proactive === true || msg.kind === 'proactive' || msg.role === 'proactive');
     const variant = isUser ? 'bubble--me' : isProactive ? 'bubble--proactive' : 'bubble--them';
     const node = el('div', { className: `bubble ${variant}${msg.isError ? ' error' : ''}` });
-    node.textContent = msg.text;
+    node.textContent = msg.imageName ? `${msg.text}\n[图片: ${msg.imageName}]` : msg.text;
     return node;
   }
 
@@ -161,6 +194,9 @@ export class ChatView extends BaseView {
     this.on(this.msgInput, 'input', this.handleInput);
     this.on(this.chatMessages, 'scroll', this.handleScroll, { passive: true });
     this.on(this.backBtn, 'click', () => { haptic('light'); window.history.back(); });
+    this.on(this.attachBtn, 'click', this.handleAttach);
+    this.on(this.fileInput, 'change', this.handleFileSelected);
+    this.on(this.ttsBtn, 'click', this.toggleTts);
 
     const scrollToNew = () => { this._isUserScrolling = false; this.scrollToBottom(); };
     this.on(this.newMsgToast, 'click', scrollToNew);
@@ -209,6 +245,7 @@ export class ChatView extends BaseView {
     /* 初始:状态 + 头像表情 */
     this.fetchStatus();
     this.updateAvatar();
+    this.checkVoiceCapabilities();
 
     /* 载入已有消息 */
     const messages = Store.get('messages') || [];
@@ -224,6 +261,10 @@ export class ChatView extends BaseView {
   unmount() {
     super.unmount();
     if (this.recognition) { this.recognition.stop(); this.recognition = null; }
+    if (this.currentAudio) {
+      this.currentAudio.pause();
+      this.currentAudio = null;
+    }
   }
 
   /* ─── 头像表情(mascot) ─── */
@@ -292,8 +333,9 @@ export class ChatView extends BaseView {
 
   async handleSend() {
     if (this.streaming) return;
-    const text = this.msgInput.value.trim();
+    const text = this.msgInput.value.trim() || (this.pendingImage ? '看看这张图片' : '');
     if (!text) return;
+    const image = this.pendingImage;
 
     haptic('light');
     this.streaming = true;
@@ -305,12 +347,14 @@ export class ChatView extends BaseView {
 
     /* 用户消息 → DOM + Store */
     const timestamp = new Date().toISOString();
-    const userMsg = { role: 'user', text, timestamp };
+    const userMsg = { role: 'user', text, timestamp, imageName: image?.name };
     const msgs = Store.get('messages') || [];
     this.chatMessages.insertBefore(this.makeBubble(userMsg), this.typingEl);
     Store.set('messages', [...msgs, userMsg]);
 
     this.msgInput.value = '';
+    this.pendingImage = null;
+    this.renderAttachmentPreview();
     this.msgInput.style.height = 'auto';
     this.typingEl.classList.add('show');
     this.scrollToBottom();
@@ -319,7 +363,7 @@ export class ChatView extends BaseView {
     this.streamMsgEl = null;
 
     const { onToken, onDone, onError } = this._buildStreamCallbacks(timestamp);
-    await wsManager.sendChat(text, { onToken, onDone, onError });
+    await wsManager.sendChat(text, { imagePath: image?.imagePath, onToken, onDone, onError });
   }
 
   /** 流式三回调:onToken / onDone / onError */
@@ -376,6 +420,7 @@ export class ChatView extends BaseView {
       const text = this.streamBuffer;
       const msgs = Store.get('messages') || [];
       Store.set('messages', [...msgs, { role: 'mio', text, timestamp: new Date().toISOString() }]);
+      if (text && this.ttsEnabled) this.speak(text);
     }
     this.streamMsgEl = null;
     this.streamBuffer = '';
@@ -396,18 +441,138 @@ export class ChatView extends BaseView {
   handleInput() {
     this.msgInput.style.height = 'auto';
     this.msgInput.style.height = Math.min(this.msgInput.scrollHeight, 120) + 'px';
-    this.sendBtn.disabled = this.streaming || !this.msgInput.value.trim();
+    this.sendBtn.disabled = this.streaming || (!this.msgInput.value.trim() && !this.pendingImage);
   }
 
   disableInput() {
     this.msgInput.disabled = true;
     this.sendBtn.disabled = true;
+    if (this.attachBtn) this.attachBtn.disabled = true;
   }
 
   enableInput() {
     this.msgInput.disabled = false;
-    this.sendBtn.disabled = !this.msgInput.value.trim();
+    this.sendBtn.disabled = !this.msgInput.value.trim() && !this.pendingImage;
+    if (this.attachBtn) this.attachBtn.disabled = false;
     this.msgInput.focus();
+  }
+
+  handleAttach() {
+    if (this.streaming || !this.fileInput) return;
+    this.fileInput.value = '';
+    this.fileInput.click();
+  }
+
+  async handleFileSelected(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) {
+      this.statusText.textContent = '不支持的图片格式';
+      return;
+    }
+    if (file.size > 4_500_000) {
+      this.statusText.textContent = '图片不能超过 4.5MB';
+      return;
+    }
+
+    try {
+      this.attachBtn.disabled = true;
+      const data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error || new Error('read failed'));
+        reader.readAsDataURL(file);
+      });
+      const uploaded = await api.post('/uploads/images', {
+        filename: file.name,
+        mimeType: file.type,
+        data,
+      });
+      this.pendingImage = { imagePath: uploaded.imagePath, name: file.name };
+      this.renderAttachmentPreview();
+      this.handleInput();
+      haptic('light');
+    } catch (err) {
+      this.statusText.textContent = err.message || '图片上传失败';
+    } finally {
+      this.attachBtn.disabled = false;
+    }
+  }
+
+  renderAttachmentPreview() {
+    if (!this.attachmentPreview) return;
+    this.attachmentPreview.innerHTML = '';
+    if (!this.pendingImage) {
+      this.attachmentPreview.style.display = 'none';
+      return;
+    }
+    this.attachmentPreview.style.display = '';
+    const label = el('span', { className: 'attachment-preview-name', textContent: this.pendingImage.name });
+    const clear = el('button', {
+      className: 'attachment-preview-clear tap',
+      'aria-label': 'Remove image',
+      onClick: () => {
+        this.pendingImage = null;
+        this.renderAttachmentPreview();
+        this.handleInput();
+      },
+    }, '×');
+    this.attachmentPreview.appendChild(label);
+    this.attachmentPreview.appendChild(clear);
+  }
+
+  toggleTts() {
+    if (!this.ttsAvailable) {
+      this.ttsEnabled = false;
+      localStorage.setItem('mio_tts_enabled', '0');
+      if (this.statusText) this.statusText.textContent = '当前环境未启用语音合成';
+      return;
+    }
+    this.ttsEnabled = !this.ttsEnabled;
+    localStorage.setItem('mio_tts_enabled', this.ttsEnabled ? '1' : '0');
+    this.ttsBtn.classList.toggle('active', this.ttsEnabled);
+    this.ttsBtn.setAttribute('aria-pressed', this.ttsEnabled ? 'true' : 'false');
+    haptic('light');
+  }
+
+  async speak(text) {
+    if (!this.ttsAvailable) return;
+    try {
+      const res = await api.post('/voice/synthesize', { text }, { raw: true, timeout: 60000 });
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      if (this.currentAudio) this.currentAudio.pause();
+      this.currentAudio = new Audio(url);
+      this.currentAudio.onended = () => URL.revokeObjectURL(url);
+      await this.currentAudio.play();
+    } catch {
+      this.ttsEnabled = false;
+      localStorage.setItem('mio_tts_enabled', '0');
+      this.ttsBtn.classList.remove('active');
+      this.ttsBtn.setAttribute('aria-pressed', 'false');
+    }
+  }
+
+  async checkVoiceCapabilities() {
+    if (!this.ttsBtn) return;
+    try {
+      const cap = await api.get('/voice/capabilities');
+      this.ttsAvailable = !!cap?.tts;
+    } catch {
+      this.ttsAvailable = false;
+    }
+
+    if (!this.ttsAvailable) {
+      this.ttsEnabled = false;
+      localStorage.setItem('mio_tts_enabled', '0');
+      this.ttsBtn.classList.remove('active');
+      this.ttsBtn.setAttribute('aria-pressed', 'false');
+      this.ttsBtn.disabled = true;
+      this.ttsBtn.title = '当前环境未启用语音合成';
+    } else {
+      this.ttsBtn.disabled = false;
+      this.ttsBtn.title = '朗读回复';
+    }
   }
 
   /* ─── 状态 ─── */

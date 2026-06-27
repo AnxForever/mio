@@ -83,6 +83,14 @@ export const voiceSynthesizeBody = z.object({
 
 export type VoiceSynthesizeBody = z.infer<typeof voiceSynthesizeBody>;
 
+export const imageUploadBody = z.object({
+  filename: z.string().trim().min(1).max(180).optional(),
+  mimeType: z.enum(['image/png', 'image/jpeg', 'image/webp', 'image/gif']).optional(),
+  data: z.string().min(1).max(7_000_000),
+});
+
+export type ImageUploadBody = z.infer<typeof imageUploadBody>;
+
 // ─── Mod switch ───
 
 export const modBody = z.object({
@@ -90,6 +98,18 @@ export const modBody = z.object({
 });
 
 export type ModBody = z.infer<typeof modBody>;
+
+export const modNameParam = z.object({
+  name: z.string().trim().min(1).max(80).regex(/^[\p{L}\p{N}_-]+$/u, 'Invalid mod name'),
+});
+
+export type ModNameParam = z.infer<typeof modNameParam>;
+
+export const soulBody = z.object({
+  soul: z.string().min(1).max(80_000),
+});
+
+export type SoulBody = z.infer<typeof soulBody>;
 
 // ─── Persona generation ───
 
@@ -196,7 +216,7 @@ export const wsClientMessageSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('switch_mod'),
-    name: z.enum(['male', 'female']),
+    name: z.string().min(1).max(80).regex(/^[\p{L}\p{N}_-]+$/u, 'Invalid mod name'),
   }),
   z.object({ type: z.literal('subscribe_avatar') }),
   z.object({

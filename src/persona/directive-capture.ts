@@ -18,6 +18,7 @@ const PERSONA_RE: RegExp[] = [
   /(?:把你|你)?设定成(.{1,40}?)(?:。|，|,|$)/,
 ];
 const PREFERENCE_RE: RegExp[] = [
+  /((?:别|不要|不用|不想|不需要|取消|停止|先别)(?:再|老|总)?[^，,。！!？?]{0,20}?(?:主动找我聊天|主动联系我|多找我聊天|多主动一点))(?:了|吧|好不好|吗|嘛|，|,|。|！|!|$)/,
   /(?:我想|我希望|我需要|想让|希望)(?:让)?你([^，,。！!？?]{0,20}?(?:主动找我聊天|主动联系我|多找我聊天|多主动一点))(?:吗|嘛|，|,|。|！|!|$)/,
   /(?:你能不能|能不能|可不可以|希望你|你可以)([^，,。！!？?]{1,20}?(?:一点|一些|点儿))(?:吗|嘛|，|,|。|$)/,
   /(别(?:再|老|总)(?!难过|伤心|生气|哭|emo|担心)[^，,。！!？?]{2,20}?)(?:了|好不好|，|,|。|$)/,
@@ -44,21 +45,43 @@ export function detectDirectives(userInput: string): DetectedDirective[] {
   return found;
 }
 
-/** 检测并落库。返回命中的指令（供调用方让 Mio 口头确认）。 */
-export function captureExplicitDirectives(userInput: string | undefined, userId = 'default'): DetectedDirective[] {
+/**
+ * 检测并落库。返回命中的指令（供调用方让 Mio 口头确认）。
+ *
+ * `allowGlobalRelationship`：单用户/global session 为 true，nickname/共同记忆写
+ * 全局 relationship-state（原行为）。isolated（per-user IM）session 必须传 false
+ * —— 此时 nickname/共同记忆降级为 per-user preference，**绝不写全局**，避免跨用户
+ * 串户（codex 会话隔离审查发现的真实漏洞）。
+ */
+export function captureExplicitDirectives(
+  userInput: string | undefined,
+  userId = 'default',
+  allowGlobalRelationship = true,
+): DetectedDirective[] {
   if (!userInput) return [];
   const directives = detectDirectives(userInput);
   for (const d of directives) {
     try {
       switch (d.kind) {
         case 'nickname': {
-          const cur = readRelationshipState();
-          setNicknames(cur.nicknames.userCallsAgent, d.value);  // 保留另一边
+          if (allowGlobalRelationship) {
+            const cur = readRelationshipState();
+            setNicknames(cur.nicknames.userCallsAgent, d.value);  // 保留另一边
+          } else {
+            upsertPreference(`称呼用户为「${d.value}」`, 'directive', userId);  // per-user，不写全局
+          }
           break;
         }
         case 'persona': patchPersonaDelta({ personaOverride: d.value }, 'directive', userId); break;
         case 'preference': upsertPreference(d.value, 'directive', userId); break;
-        case 'shared-memory': recordSharedMemory(d.value); break;
+        case 'shared-memory': {
+          if (allowGlobalRelationship) {
+            recordSharedMemory(d.value);
+          } else {
+            upsertPreference(`记住：${d.value}`, 'directive', userId);  // per-user，不写全局
+          }
+          break;
+        }
       }
     } catch (err) { logger.warn('directive capture failed', { kind: d.kind, error: String(err) }); }
   }

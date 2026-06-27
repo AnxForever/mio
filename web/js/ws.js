@@ -169,8 +169,8 @@ export const wsManager = {
    * WS 路径通过注册回调到模块全局变量 _streamCallbacks,
    * onMessage 收到 token/done/error 时自动调用并清理。
    */
-  async sendChat(text, { onToken, onDone, onError } = {}) {
-    if (this.isOpen()) {
+  async sendChat(text, { imagePath, onToken, onDone, onError } = {}) {
+    if (this.isOpen() && !imagePath) {
       /* 注册流式回调 → onMessage 会调用它们 */
       _streamCallbacks = { onToken, onDone, onError };
       send({ type: 'chat', text, sessionId: Store.get('sessionId') || undefined });
@@ -182,6 +182,7 @@ export const wsManager = {
       await api.stream('/chat/stream', {
         text,
         sessionId: Store.get('sessionId') || undefined,
+        imagePath,
       }, onToken, onDone, onError);
     } catch {
       /* HTTP POST fallback */
@@ -189,6 +190,7 @@ export const wsManager = {
         const data = await api.post('/chat', {
           text,
           sessionId: Store.get('sessionId') || undefined,
+          imagePath,
         });
         if (data && data.text) {
           onToken?.(data.text);
