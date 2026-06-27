@@ -169,7 +169,7 @@ export class NightlyScheduler {
       // 3-phase consolidation: LIGHT → DEEP → REM
       logger.info('[nightly] using 3-phase consolidation');
       const { runFullConsolidation } = await import('../memory/consolidation-phases.js');
-      const report = runFullConsolidation();
+      const report = await runFullConsolidation();
       logger.info(`[nightly] 3-phase done: P1(${report.phase1.selectedCount}/${report.phase1.totalBookmarks}) P2(${report.phase2.changes.length} changes) P3(${report.phase3.rulesGenerated} rules)`);
 
       // Log top changes

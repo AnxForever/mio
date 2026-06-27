@@ -9,8 +9,7 @@
  * All persistence to `data/user-activity.json`.
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
 import { colaDir } from '../memory/paths.js';
 import { readFileSyncSafe, writeFileSyncSafe } from '../memory/bank.js';
 import { isPersonalityDriverEnabled, getPersonalityState } from '../persona/driver.js';
@@ -139,15 +138,13 @@ function readActivityFile(): { activity: UserActivityPattern; outcomes: Proactiv
 function persistActivity(): void {
   if (!cachedActivity) return;
   const path = activityPath();
-  const dir = dirname(path);
   try {
-    mkdirSync(dir, { recursive: true });
     const data = {
       ...cachedActivity,
       outcomes: outcomeHistory.slice(-500),   // keep last 500 outcomes
       records: activityRecords.slice(-1000),    // keep last 1000 records
     };
-    writeFileSync(path, JSON.stringify(data, null, 2), 'utf-8');
+    writeFileSyncSafe(path, JSON.stringify(data, null, 2));
   } catch {
     // best-effort
   }
@@ -166,10 +163,8 @@ function readSmartConfigFile(): SmartProactiveConfig {
 
 function persistSmartConfig(): void {
   const path = colaDir() + '/smart-proactive-config.json';
-  const dir = dirname(path);
   try {
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(path, JSON.stringify(cachedSmartConfig, null, 2), 'utf-8');
+    writeFileSyncSafe(path, JSON.stringify(cachedSmartConfig, null, 2));
   } catch {
     // best-effort
   }

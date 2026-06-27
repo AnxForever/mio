@@ -13,11 +13,11 @@
  * Persisted to data/fewshot-bank.json
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { getDataDir } from '../config.js';
 import { readTranscript } from '../memory/transcript.js';
 import type { FeedbackState } from './feedback.js';
+import { writeFileSyncSafe } from '../memory/bank.js';
 
 // ─── Types ───
 
@@ -75,8 +75,7 @@ function readBank(): FewShotBank {
 
 function writeBank(bank: FewShotBank): void {
   const p = bankPath();
-  mkdirSync(dirname(p), { recursive: true });
-  writeFileSync(p, JSON.stringify(bank, null, 2), 'utf-8');
+  writeFileSyncSafe(p, JSON.stringify(bank, null, 2));
 }
 
 // ─── Helpers ───

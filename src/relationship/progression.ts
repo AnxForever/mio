@@ -3,11 +3,11 @@
  * 读写 relationship-state.json，管理阶段晋升阈值
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
 import { logger } from '../utils/logger.js';
 import type { RelationshipState, RelationshipStage } from '../types.js';
 import { relationshipStatePath } from '../memory/paths.js';
+import { writeFileSyncSafe } from '../memory/bank.js';
 
 /**
  * 阶段晋升阈值。
@@ -73,8 +73,7 @@ export function readRelationshipState(): RelationshipState {
  */
 export function writeRelationshipState(state: RelationshipState): void {
   const path = relationshipStatePath();
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(state, null, 2), 'utf-8');
+  writeFileSyncSafe(path, JSON.stringify(state, null, 2));
 }
 
 /**

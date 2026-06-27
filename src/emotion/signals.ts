@@ -13,10 +13,11 @@
  * Zero new dependencies — uses only node:fs and existing types.
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { getDataDir } from '../config.js';
 import { readTranscript, listTranscripts, getLatestSessionId } from '../memory/transcript.js';
+import { writeFileSyncSafe } from '../memory/bank.js';
 
 // ─── Types ───
 
@@ -65,12 +66,11 @@ function readSignalHistory(): SignalHistoryEntry[] {
 
 function appendSignalHistory(entry: SignalHistoryEntry): void {
   const path = signalHistoryPath();
-  mkdirSync(dirname(path), { recursive: true });
   const history = readSignalHistory();
   history.push(entry);
   // Keep last 500 entries to prevent unbounded growth
   const trimmed = history.slice(-500);
-  writeFileSync(path, JSON.stringify(trimmed, null, 2), 'utf-8');
+  writeFileSyncSafe(path, JSON.stringify(trimmed, null, 2));
 }
 
 // ─── Moving average (EMA) ───

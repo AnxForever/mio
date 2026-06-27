@@ -1,10 +1,11 @@
 // tools/cron.ts — cron/mutter/current_time 工具（适配自 cola-companion，使用 Mio 的 CronTask 类型）
 
 import { randomUUID } from 'node:crypto';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import type { ToolDef, ToolHandler, CronTask } from '../types.js';
 import { colaDir } from '../memory/paths.js';
+import { writeFileSyncSafe } from '../memory/bank.js';
 
 function cronStorePath(): string { return join(colaDir(), 'cron', 'tasks.json'); }
 
@@ -19,8 +20,7 @@ function loadCrons(): Record<string, CronTask> {
 
 function saveCrons(tasks: Record<string, CronTask>): void {
   const p = cronStorePath();
-  mkdirSync(dirname(p), { recursive: true });
-  writeFileSync(p, JSON.stringify(tasks, null, 2), 'utf-8');
+  writeFileSyncSafe(p, JSON.stringify(tasks, null, 2));
 }
 
 const CRON_DEF: ToolDef = {

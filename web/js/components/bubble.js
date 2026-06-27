@@ -3,6 +3,7 @@
  *
  * 处理单条消息的渲染: 气泡、时间戳、日期分隔。
  * 遵循 iMessage 连续消息规则: 同一方连续发送时圆角收窄, 间距缩短。
+ * 实现了基于 IntersectionObserver 的虚拟列表 DOM 回收。
  */
 
 import { el } from '../utils/dom.js';
@@ -10,6 +11,51 @@ import { fmtTime, fmtDate } from '../utils/time.js';
 
 const MINUTE = 60;
 const TIME_GAP_MS = 30 * MINUTE * 1000;
+
+// 全局的虚拟列表观察器
+let virtualObserver = null;
+
+function getObserver() {
+  if (!virtualObserver) {
+    virtualObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        const msgEl = entry.target;
+        if (!entry.isIntersecting) {
+          // 离开视口，保存高度并清空内容（但保留节点自身作为占位符）
+          if (!msgEl.dataset.height) {
+            msgEl.dataset.height = msgEl.getBoundingClientRect().height;
+          }
+          msgEl.style.height = `${msgEl.dataset.height}px`;
+          if (!msgEl.classList.contains('virtual-hidden')) {
+            msgEl._cachedContent = Array.from(msgEl.childNodes);
+            while (msgEl.firstChild) msgEl.removeChild(msgEl.firstChild);
+            msgEl.classList.add('virtual-hidden');
+          }
+        } else {
+          // 进入视口，恢复内容
+          if (msgEl.classList.contains('virtual-hidden')) {
+            msgEl.classList.remove('virtual-hidden');
+            msgEl.style.height = ''; // 移除固定高度
+            if (msgEl._cachedContent) {
+              msgEl._cachedContent.forEach(node => msgEl.appendChild(node));
+              msgEl._cachedContent = null;
+            }
+          }
+        }
+      });
+    }, {
+      rootMargin: '200% 0px 200% 0px', // 提前两个屏幕高度开始渲染
+    });
+  }
+  return virtualObserver;
+}
+
+export function cleanupVirtualObserver() {
+  if (virtualObserver) {
+    virtualObserver.disconnect();
+    virtualObserver = null;
+  }
+}
 
 /**
  * 渲染一组消息到容器。
@@ -19,21 +65,33 @@ export function renderMessages(container, messages) {
   /* 清空, 但保留 typing 和 welcome */
   const typing = container.querySelector('.typing');
   const welcome = container.querySelector('.welcome');
+
+  // 清除旧的观察目标
+  const observer = getObserver();
+  container.querySelectorAll('.msg, .date-sep').forEach(el => observer.unobserve(el));
+
   container.innerHTML = '';
   if (welcome) container.appendChild(welcome);
 
+  const frag = document.createDocumentFragment();
   let prevMsg = null;
 
   for (const msg of messages) {
     /* 日期分隔 */
     if (shouldShowDateSep(prevMsg, msg)) {
-      container.appendChild(dateSep(msg.timestamp));
+      const sep = dateSep(msg.timestamp);
+      frag.appendChild(sep);
+      observer.observe(sep);
     }
 
-    container.appendChild(bubble(msg, prevMsg));
+    const bEl = bubble(msg, prevMsg);
+    frag.appendChild(bEl);
+    observer.observe(bEl);
+
     prevMsg = msg;
   }
 
+  container.appendChild(frag);
   if (typing) container.appendChild(typing);
 
   /* 滚动到底部 */
@@ -49,11 +107,26 @@ export function appendMessage(container, msg, prevMsg) {
   const welcome = container.querySelector('.welcome');
   if (welcome) welcome.remove();
 
+  const observer = getObserver();
+  const frag = document.createDocumentFragment();
+
   if (shouldShowDateSep(prevMsg, msg)) {
-    container.appendChild(dateSep(msg.timestamp));
+    const sep = dateSep(msg.timestamp);
+    frag.appendChild(sep);
+    observer.observe(sep);
   }
 
-  container.appendChild(bubble(msg, prevMsg));
+  const bEl = bubble(msg, prevMsg);
+  frag.appendChild(bEl);
+  observer.observe(bEl);
+
+  // 插入到 typing 之前，如果没有 typing 则直接追加
+  const typing = container.querySelector('.typing');
+  if (typing) {
+    container.insertBefore(frag, typing);
+  } else {
+    container.appendChild(frag);
+  }
 
   requestAnimationFrame(() => {
     container.scrollTop = container.scrollHeight;
@@ -63,7 +136,7 @@ export function appendMessage(container, msg, prevMsg) {
 /**
  * 创建单条消息气泡的 DOM
  */
-function bubble(msg, prevMsg) {
+export function bubble(msg, prevMsg) {
   const isUser = msg.role === 'user';
   const isContinuous = prevMsg && prevMsg.role === msg.role;
 

@@ -6,10 +6,10 @@
  * PAD 是默认情感引擎，同时保持对旧 emotion-state.json 的后向兼容。
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
 import type { EmotionState } from '../types.js';
 import { emotionStatePath } from '../memory/paths.js';
+import { writeFileSyncSafe } from '../memory/bank.js';
 import {
   isPADEnabled,
   getPADState,
@@ -57,8 +57,7 @@ export function readEmotionState(): EmotionState {
  */
 export function writeEmotionState(state: EmotionState): void {
   const path = emotionStatePath();
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(state, null, 2), 'utf-8');
+  writeFileSyncSafe(path, JSON.stringify(state, null, 2));
 }
 
 /**

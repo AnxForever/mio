@@ -1,7 +1,7 @@
 // tools/work.ts — work 管理工具（适配自 cola-companion：work_create/list/update/complete/delete）
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { ToolDef, ToolHandler, WorkItem } from '../types.js';
 import { colaDir, taskPath } from '../memory/paths.js';
@@ -20,8 +20,7 @@ function loadStore(): Record<string, WorkItem> {
 
 function saveStore(items: Record<string, WorkItem>): void {
   const p = workStorePath();
-  mkdirSync(dirname(p), { recursive: true });
-  writeFileSync(p, JSON.stringify(items, null, 2), 'utf-8');
+  writeFileSyncSafe(p, JSON.stringify(items, null, 2));
 }
 
 const CREATE_DEF: ToolDef = {

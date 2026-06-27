@@ -13,9 +13,9 @@
  * Both are LLM-free — pure pattern matching and heuristic scoring.
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
 import { ritualStatePath, cardboardStatePath } from '../memory/paths.js';
+import { writeFileSyncSafe } from '../memory/bank.js';
 
 // ──────────────────────────────────────────────
 // Part 1: Ritual Engine
@@ -112,8 +112,7 @@ export function readRitualState(): RitualState {
 
 export function writeRitualState(state: RitualState): void {
   const path = ritualStatePath();
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(state, null, 2), 'utf-8');
+  writeFileSyncSafe(path, JSON.stringify(state, null, 2));
 }
 
 /**
@@ -632,8 +631,7 @@ export function readCardboardState(): CardboardState {
 
 export function writeCardboardState(state: CardboardState): void {
   const path = cardboardStatePath();
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(state, null, 2), 'utf-8');
+  writeFileSyncSafe(path, JSON.stringify(state, null, 2));
 }
 
 /**

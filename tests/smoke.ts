@@ -209,7 +209,56 @@ async function main(): Promise<void> {
       );
     }
 
+    // ─── 6.6. Character route validation ───
+    {
+      const r = await fetch(`${base}/character/bad_name/life`);
+      const j = (await r.json()) as { success?: boolean; error?: string };
+      record(
+        'GET /character/:name/life rejects invalid name',
+        r.status === 400 && j.error === 'Invalid path parameters',
+        `status=${r.status}`,
+      );
+    }
+
     // ─── 7. WebSocket /ws ───
+    {
+      const { WebSocket } = await import('ws');
+      const ws = new WebSocket(wsBase);
+      let invalidMessageRejected = false;
+
+      const wsInvalidResult = await new Promise<boolean>((resolve) => {
+        const timeout = setTimeout(() => {
+          try { ws.close(); } catch { /* ignore */ }
+          resolve(false);
+        }, 5000);
+
+        ws.on('message', (raw: Buffer) => {
+          const msg = JSON.parse(raw.toString()) as { type: string; error?: string };
+          if (msg.type === 'hello') {
+            ws.send(JSON.stringify({ type: 'chat', text: '' }));
+          }
+          if (msg.type === 'error' && msg.error === 'Invalid message') {
+            invalidMessageRejected = true;
+            clearTimeout(timeout);
+            ws.close();
+            resolve(true);
+          }
+        });
+
+        ws.on('error', () => {
+          clearTimeout(timeout);
+          try { ws.close(); } catch { /* ignore */ }
+          resolve(false);
+        });
+      });
+
+      record(
+        'WS /ws rejects invalid chat payload',
+        wsInvalidResult && invalidMessageRejected,
+        `invalidRejected=${invalidMessageRejected}`,
+      );
+    }
+
     {
       const { WebSocket } = await import('ws');
       const ws = new WebSocket(wsBase);

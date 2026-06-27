@@ -16,11 +16,12 @@
  *   - Minimum 3 turns in DEEP before switching back (hysteresis)
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { getDataDir } from '../config.js';
 import type { PersonaMode, DualModeState } from '../types.js';
 import type { IntentResult } from '../emotion/classifier.js';
+import { writeFileSyncSafe } from '../memory/bank.js';
 
 // ─── Constants ───
 
@@ -59,8 +60,7 @@ function readState(): DualModeState {
 function writeState(state: DualModeState): void {
   try {
     const path = statePath();
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify(state, null, 2), 'utf-8');
+    writeFileSyncSafe(path, JSON.stringify(state, null, 2));
   } catch {
     // best-effort persistence; don't break the turn
   }

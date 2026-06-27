@@ -17,7 +17,7 @@ import { logger } from '../utils/logger.js';
 import { readMemoryIndex, readBookmarks, listBankFiles, readStructuredMemoryFile, writeMidTermTopicFile } from '../memory/bank.js';
 import { colaDir } from '../memory/paths.js';
 import { modManager } from '../mod/mod-manager.js';
-import { extractStructuredMemory, writeStructuredMemoryToDisk, cleanExpiredMidTermTopics, readStructuredMemoryFromDisk, deserializeMemory } from '../memory/structured-memory.js';
+import { extractStructuredMemoryLLM, writeStructuredMemoryToDisk, cleanExpiredMidTermTopics, readStructuredMemoryFromDisk, deserializeMemory } from '../memory/structured-memory.js';
 import { runReflectionCycle } from '../memory/reflector.js';
 import { getConfig } from '../config.js';
 import type { AIProvider, SessionContext } from '../types.js';
@@ -169,8 +169,8 @@ async function runStructuredExtraction(_colaDirPath: string): Promise<void> {
     // No existing memory — start fresh
   }
 
-  // Extract structured memory from bookmarks
-  let structured = extractStructuredMemory(bookmarks, existingMemory);
+  // Extract structured memory from bookmarks (LLM-based with regex fallback, U5)
+  let structured = await extractStructuredMemoryLLM(bookmarks, existingMemory);
 
   // ACE Reflection Cycle: quality check pass
   if (aceEnabled) {

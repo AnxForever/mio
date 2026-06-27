@@ -256,6 +256,44 @@ async function main(): Promise<void> {
     });
   }
 
+  // ─── Persistence helpers ───
+  {
+    const { writeFileSyncSafe, readFileSyncSafe } = await import('../dist/memory/bank.js');
+
+    await test('bank: writeFileSyncSafe writes nested files atomically', () => {
+      const p = join(dataDir, 'nested', 'state.json');
+      writeFileSyncSafe(p, JSON.stringify({ value: 1 }));
+      assertEq(readFileSyncSafe(p), '{"value":1}', 'first write');
+      writeFileSyncSafe(p, JSON.stringify({ value: 2 }));
+      assertEq(readFileSyncSafe(p), '{"value":2}', 'second write');
+    });
+  }
+
+  // ─── Validation schemas ───
+  {
+    const { personaBody, searchQuery, characterNameParam, wsClientMessageSchema } = await import('../dist/validation.js');
+
+    await test('validation: persona rejects path-like names', () => {
+      const result = personaBody.safeParse({ name: '../evil', gender: 'female', style: '温柔' });
+      assert(!result.success, 'path-like name rejected');
+    });
+
+    await test('validation: search role accepts assistant but rejects system', () => {
+      assert(searchQuery.safeParse({ q: 'hello', role: 'assistant' }).success, 'assistant accepted');
+      assert(!searchQuery.safeParse({ q: 'hello', role: 'system' }).success, 'system rejected');
+    });
+
+    await test('validation: character params reject traversal names', () => {
+      assert(characterNameParam.safeParse({ name: 'mio-角色1' }).success, 'slug-like character name accepted');
+      assert(!characterNameParam.safeParse({ name: '../memory-bank' }).success, 'path traversal rejected');
+    });
+
+    await test('validation: websocket chat enforces non-empty text', () => {
+      assert(wsClientMessageSchema.safeParse({ type: 'chat', text: 'hi' }).success, 'valid chat accepted');
+      assert(!wsClientMessageSchema.safeParse({ type: 'chat', text: '' }).success, 'empty chat rejected');
+    });
+  }
+
   // ─── Vector memory ───
   {
     const { tokenize, embed, cosine, search, reindexBookmarks, indexStats, indexEntry } = await import('../dist/memory/vector.js');

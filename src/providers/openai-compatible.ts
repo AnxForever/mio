@@ -25,6 +25,7 @@
  */
 
 import { TextDecoder } from 'node:util';
+import { fetchWithRetry } from './http.js';
 import type {
   StreamingProvider,
   Message,
@@ -508,7 +509,7 @@ export class OpenAICompatibleProvider implements StreamingProvider {
     const body = this.buildBody(messages, systemPrompt, tools, opts, false);
 
     const endpoint = `${this.baseUrl}/chat/completions`;
-    const res = await fetch(endpoint, {
+    const res = await fetchWithRetry(endpoint, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify(body),
@@ -542,7 +543,7 @@ export class OpenAICompatibleProvider implements StreamingProvider {
     };
 
     const endpoint = `${this.baseUrl}/chat/completions`;
-    const res = await fetch(endpoint, {
+    const res = await fetchWithRetry(endpoint, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),

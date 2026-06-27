@@ -42,7 +42,7 @@ import {
   parseBookmarks,
   getProceduralContext,
 } from './procedural-memory.js';
-import { extractStructuredMemory, readStructuredMemoryFromDisk, writeStructuredMemoryToDisk, createEmptyMemory } from './structured-memory.js';
+import { extractStructuredMemoryLLM, readStructuredMemoryFromDisk, writeStructuredMemoryToDisk, createEmptyMemory } from './structured-memory.js';
 import { reflectOnMemory, curateMemory, runReflectionCycle } from './reflector.js';
 import { getFeedbackState } from '../learning/feedback.js';
 import type { ProceduralRule } from './procedural-memory.js';
@@ -223,7 +223,7 @@ export function runPhase1_Light(): PrioritizedBookmark[] {
  * @param bookmarks  Prioritized bookmarks from Phase 1.
  * @returns          Array of ChangeLog entries.
  */
-export function runPhase2_Deep(bookmarks: PrioritizedBookmark[]): ChangeLog[] {
+export async function runPhase2_Deep(bookmarks: PrioritizedBookmark[]): Promise<ChangeLog[]> {
   if (bookmarks.length === 0) {
     logger.info('[consolidation] Phase 2: no bookmarks to process');
     return [];
@@ -238,7 +238,7 @@ export function runPhase2_Deep(bookmarks: PrioritizedBookmark[]): ChangeLog[] {
     .join('\n');
 
   const existingMemory = readStructuredMemoryFromDisk() ?? createEmptyMemory();
-  const newMemory = extractStructuredMemory(bookmarksText, existingMemory);
+  const newMemory = await extractStructuredMemoryLLM(bookmarksText, existingMemory);
 
   // 2. Run ACE reflector if feature is enabled
   let aceQualityScore: number | null = null;
@@ -529,7 +529,7 @@ function extractEmotions(entry: { what: string; evidence: string }): string[] {
  *
  * @returns Detailed consolidation report.
  */
-export function runFullConsolidation(): ConsolidationReport {
+export async function runFullConsolidation(): Promise<ConsolidationReport> {
   const startTime = Date.now();
   logger.info('[consolidation] Starting 3-phase consolidation');
 
@@ -553,7 +553,7 @@ export function runFullConsolidation(): ConsolidationReport {
 
   // ─── Phase 2 ───
   const phase2Start = Date.now();
-  const changes = runPhase2_Deep(prioritized);
+  const changes = await runPhase2_Deep(prioritized);
   const phase2Duration = Date.now() - phase2Start;
 
   let aceQualityScore: number | null = null;

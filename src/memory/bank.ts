@@ -1,7 +1,7 @@
 // memory/bank.ts — memory-bank 读写操作（适配自 cola-companion，使用 Mio 类型）
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, copyFileSync, rmSync, appendFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, copyFileSync, rmSync, appendFileSync, renameSync } from 'node:fs';
+import { join, dirname, basename } from 'node:path';
 import {
   memoryBankDir, memoryIndexPath, bookmarksPath, selfRefDir, bankSoulPath,
   userProfilePath, relationshipPath, diariesDir, notesDir, tasksDir,
@@ -25,7 +25,16 @@ export function readFileSyncSafe(path: string, fallback: string = ''): string {
 /** 安全写入文件（自动建目录） */
 export function writeFileSyncSafe(path: string, content: string): void {
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, content, 'utf-8');
+  writeFileAtomicSync(path, content);
+}
+
+/** 原子写入文件：先写同目录临时文件，再 rename 覆盖目标。 */
+export function writeFileAtomicSync(path: string, content: string): void {
+  const dir = dirname(path);
+  mkdirSync(dir, { recursive: true });
+  const tmp = join(dir, `.${basename(path)}.${process.pid}.${Date.now()}.tmp`);
+  writeFileSync(tmp, content, 'utf-8');
+  renameSync(tmp, path);
 }
 
 /** 追加内容到文件（自动建目录） */

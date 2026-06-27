@@ -1,14 +1,25 @@
 /**
- * Mio — Entity-Relation Lightweight Graph
+ * Mio — Temporal Entity-Relation Lightweight Graph
  *
  * Lightweight entity-relation tracking using JSON persistence (no Neo4j).
  *
  * Extracts subject-relation-object triples from structured memory durable facts
  * and provides query/context formatting for system prompt injection.
  *
+ * Temporal model (inspired by Zep): each relation carries `validFrom` (when it
+ * was extracted) and `active` (whether it reflects the CURRENT state). When a
+ * *functional* relation changes value (e.g. the user moves "住在·北京" → "住在·上海"),
+ * the old object is marked `active=false` and tombstoned with `supersededBy`,
+ * instead of both coexisting and contradicting each other.
+ *
  * Format persisted to data/entity-graph.json:
  *   [
- *     { subject: "Darling", relation: "likes", object: "拿铁咖啡", confidence: 0.9, evidence: "...", since: "2025-01-01" },
+ *     {
+ *       subject: "用户", relation: "lives_in", object: "上海",
+ *       confidence: 0.9, evidence: "...", since: "2025-01-01",
+ *       validFrom: "2025-01-01T08:00:00.000Z", active: true,
+ *       lastSeen: "2025-01-01T08:00:00.000Z"
+ *     },
  *     ...
  *   ]
  */
@@ -22,12 +33,16 @@ import type { StructuredMemory } from './structured-memory.js';
 // ─── Types ───
 
 export interface EntityRelation {
-  subject: string;       // "Darling"
-  relation: string;      // "likes"
-  object: string;        // "拿铁咖啡"
+  subject: string;       // "用户"
+  relation: string;      // "lives_in"
+  object: string;        // "上海"
   confidence: number;    // 0-1
   evidence: string;      // source text
-  since: string;         // ISO date or YYYY-MM-DD
+  since: string;         // ISO date or YYYY-MM-DD — first observed (legacy anchor)
+  validFrom: string;     // ISO timestamp — when this relation was extracted / became the active state
+  active: boolean;       // whether this relation reflects the CURRENT state (legacy data defaults to true)
+  supersededBy?: string; // "subject|relation|object" key of the relation that replaced this one
+  lastSeen?: string;     // ISO timestamp — most recent time this exact fact was re-observed
 }
 
 // ─── Path ───
@@ -74,6 +89,51 @@ function normalizeRelation(relation: string): string {
     '养了': 'has_pet',
   };
   return map[relation] ?? relation;
+}
+
+// ─── Temporal helpers ───
+
+/**
+ * Functional (single-valued) relations: a person has exactly ONE current value,
+ * so a new object supersedes the previous one (a state change like moving city
+ * or changing job). Multi-valued relations (likes/dislikes/has_pet/…) instead
+ * accumulate — liking a new thing doesn't unlike the old one.
+ *
+ * Membership is tested after normalizeRelation(), so Chinese aliases such as
+ * "住在" / "在...工作" resolve to their canonical English label first.
+ */
+const FUNCTIONAL_RELATIONS = new Set<string>(['lives_in', 'works_at', 'studies_at']);
+
+function isFunctionalRelation(relation: string): boolean {
+  return FUNCTIONAL_RELATIONS.has(normalizeRelation(relation));
+}
+
+/** Stable identity key for a relation triple. */
+function relationKey(r: Pick<EntityRelation, 'subject' | 'relation' | 'object'>): string {
+  return `${r.subject}|${r.relation}|${r.object}`;
+}
+
+/**
+ * Fill temporal defaults on a possibly-legacy / partial relation record.
+ *
+ * Backward compatibility: records persisted before the temporal upgrade have no
+ * `active` field — they default to `active: true`. Missing `validFrom` falls
+ * back to `since` (or the current time), and `lastSeen` defaults to `validFrom`.
+ */
+function normalizeRelationRecord(r: Partial<EntityRelation>): EntityRelation {
+  const validFrom = r.validFrom ?? r.since ?? new Date().toISOString();
+  return {
+    subject: r.subject ?? '',
+    relation: r.relation ?? '',
+    object: r.object ?? '',
+    confidence: typeof r.confidence === 'number' ? r.confidence : 0.5,
+    evidence: r.evidence ?? '',
+    since: r.since ?? validFrom.slice(0, 10),
+    validFrom,
+    active: r.active ?? true,
+    supersededBy: r.supersededBy,
+    lastSeen: r.lastSeen ?? validFrom,
+  };
 }
 
 const EXTRACTION_RULES: ExtractionRule[] = [
@@ -150,14 +210,18 @@ export function extractRelations(structured: StructuredMemory): EntityRelation[]
           const key = `${subject}|${relation}|${object}`;
           if (!seen.has(key)) {
             seen.add(key);
-            relations.push({
-              subject,
-              relation,
-              object,
-              confidence: fact.confidence,
-              evidence: fact.content.slice(0, 120),
-              since: fact.firstSeen.slice(0, 10),
-            });
+            relations.push(
+              normalizeRelationRecord({
+                subject,
+                relation,
+                object,
+                confidence: fact.confidence,
+                evidence: fact.content.slice(0, 120),
+                since: fact.firstSeen.slice(0, 10),
+                validFrom: new Date().toISOString(),
+                active: true,
+              }),
+            );
           }
         }
       }
@@ -188,33 +252,52 @@ export function queryRelations(subject?: string, relation?: string): EntityRelat
 /**
  * Format entity relation context for system prompt injection.
  *
- * Example output:
- *   "关于Darling: 喜欢·拿铁咖啡, 科幻电影 | 讨厌·社交场合 | 工作·程序员"
+ * Only ACTIVE (current-state) relations are rendered, so a superseded fact (the
+ * user's old city after they moved) never leaks into the live context. When
+ * `includeHistory` is true, a compact "（曾经: …）" trailer lists superseded
+ * facts — current state always comes first.
  *
- * @param userId  The user identifier used as subject (default "用户")
- * @returns       Formatted context string, or empty string if no relations
+ * Example output:
+ *   "关于用户: 喜欢·拿铁咖啡, 科幻电影 | 讨厌·社交场合 | lives_in·上海"
+ *   with history → "… | lives_in·上海 （曾经: lives_in·北京）"
+ *
+ * @param userId          The user identifier used as subject (default "用户")
+ * @param includeHistory  Append a "（曾经: …）" trailer of superseded facts (default false)
+ * @returns               Formatted context string, or empty string if no relations
  */
-export function getRelationContext(userId: string = '用户'): string {
+export function getRelationContext(userId: string = '用户', includeHistory: boolean = false): string {
   const graph = readEntityGraph();
   const userRelations = graph.filter((r) => r.subject === userId);
 
   if (userRelations.length === 0) return '';
 
-  // Group by relation
+  // Group ACTIVE relations by relation label (current state only).
   const byRelation = new Map<string, string[]>();
   for (const rel of userRelations) {
+    if (!rel.active) continue;
     const existing = byRelation.get(rel.relation) ?? [];
     existing.push(rel.object);
     byRelation.set(rel.relation, existing);
   }
 
-  // Format: "喜欢·拿铁咖啡, 科幻电影 | 讨厌·社交场合 | 工作·程序员"
+  // Format: "喜欢·拿铁咖啡, 科幻电影 | 讨厌·社交场合 | lives_in·上海"
   const parts: string[] = [];
   for (const [relation, objects] of byRelation) {
     parts.push(`${relation}·${objects.join(', ')}`);
   }
 
-  return `关于${userId}: ${parts.join(' | ')}`;
+  let out = parts.length > 0 ? `关于${userId}: ${parts.join(' | ')}` : '';
+
+  // Optional past-state trailer — current state takes priority.
+  if (includeHistory) {
+    const superseded = userRelations.filter((r) => !r.active);
+    if (superseded.length > 0) {
+      const past = `（曾经: ${superseded.map((r) => `${r.relation}·${r.object}`).join(', ')}）`;
+      out = out ? `${out} ${past}` : `关于${userId}: ${past}`;
+    }
+  }
+
+  return out;
 }
 
 /**
@@ -229,6 +312,10 @@ export function writeEntityGraph(relations: EntityRelation[]): void {
 /**
  * Read the entity graph from disk.
  * Returns an empty array if the file doesn't exist or is corrupt.
+ *
+ * Legacy records (persisted before the temporal upgrade, with no `active`/
+ * `validFrom` fields) are normalized on read — `active` defaults to true so
+ * pre-existing facts keep showing up as current state.
  */
 export function readEntityGraph(): EntityRelation[] {
   const path = entityGraphPath();
@@ -236,43 +323,73 @@ export function readEntityGraph(): EntityRelation[] {
   try {
     const raw = readFileSyncSafe(path);
     if (!raw || raw.trim().length === 0) return [];
-    return JSON.parse(raw) as EntityRelation[];
+    const parsed = JSON.parse(raw) as Partial<EntityRelation>[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(normalizeRelationRecord);
   } catch {
     return [];
   }
 }
 
 /**
- * Merge new relations into the existing graph.
- * Updates confidence and evidence for existing (subject, relation, object) tuples.
- * Appends genuinely new relations.
+ * Merge new relations into the existing graph with temporal state modeling.
+ *
+ * For each incoming relation:
+ *  1. State change — if the relation is *functional* (single-valued, e.g.
+ *     lives_in/works_at/studies_at) and the graph already holds an ACTIVE fact
+ *     with the same subject+relation but a DIFFERENT object, the old one is
+ *     marked `active=false` and tombstoned via `supersededBy`. This is the core
+ *     of the temporal upgrade: "搬家" makes the old city stale instead of having
+ *     "住在·北京" and "住在·上海" coexist and contradict each other.
+ *  2. Same fact — an existing (subject, relation, object) triple is not
+ *     duplicated; its confidence/evidence/lastSeen are refreshed and it is
+ *     (re)activated (clearing any prior tombstone).
+ *  3. New fact — genuinely new triples are appended as active.
+ *
+ * Multi-valued relations (likes/dislikes/has_pet/…) are NOT superseded: liking
+ * a new thing leaves earlier likes intact and active.
  *
  * @param newRelations  Array of new EntityRelation objects to merge
  */
 export function mergeEntityGraph(newRelations: EntityRelation[]): void {
   const existing = readEntityGraph();
-  const seen = new Map<string, number>();
 
-  // Index existing relations by key
-  for (let i = 0; i < existing.length; i++) {
-    const r = existing[i];
-    const key = `${r.subject}|${r.relation}|${r.object}`;
-    seen.set(key, i);
-  }
+  for (const incoming of newRelations) {
+    const nr = normalizeRelationRecord(incoming);
+    const key = relationKey(nr);
 
-  for (const nr of newRelations) {
-    const key = `${nr.subject}|${nr.relation}|${nr.object}`;
-    const existingIdx = seen.get(key);
-    if (existingIdx !== undefined) {
-      // Merge: take higher confidence, update evidence
-      const existingRel = existing[existingIdx];
-      existingRel.confidence = Math.max(existingRel.confidence, nr.confidence);
-      existingRel.evidence = nr.evidence;
-      existing[existingIdx] = existingRel;
-    } else {
-      seen.set(key, existing.length);
-      existing.push(nr);
+    // 1. Functional state change: supersede any other active object for this
+    //    subject+relation (different object).
+    if (isFunctionalRelation(nr.relation)) {
+      for (let i = 0; i < existing.length; i++) {
+        const r = existing[i];
+        if (r.active && r.subject === nr.subject && r.relation === nr.relation && r.object !== nr.object) {
+          existing[i] = { ...r, active: false, supersededBy: key };
+        }
+      }
     }
+
+    // 2. Same exact fact already present → refresh + (re)activate, no duplicate.
+    const idx = existing.findIndex((r) => relationKey(r) === key);
+    if (idx !== -1) {
+      const cur = existing[idx];
+      existing[idx] = {
+        ...cur,
+        confidence: Math.max(cur.confidence, nr.confidence),
+        evidence: nr.evidence || cur.evidence,
+        // Keep the original anchor while continuously active; on reactivation
+        // (the fact had been superseded and is now true again) start a fresh
+        // validity period.
+        validFrom: cur.active ? cur.validFrom : nr.validFrom,
+        lastSeen: nr.validFrom,
+        active: true,
+        supersededBy: undefined,
+      };
+      continue;
+    }
+
+    // 3. Genuinely new fact → append as active.
+    existing.push({ ...nr, active: true, supersededBy: undefined });
   }
 
   writeEntityGraph(existing);
