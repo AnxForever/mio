@@ -33,8 +33,16 @@ export function buildDeltaFragment(delta: PersonaDelta | null | undefined): stri
   if (typeof delta.initiative === 'number') {
     parts.push(`主动程度：${delta.initiative >= 0.66 ? '常常主动开话题' : delta.initiative <= 0.33 ? '比较被动，等对方先说' : '适度'}`);
   }
-  if (parts.length === 0) return '';
-  return `## 用户把你调成了这样\n${parts.join('\n')}`;
+  const main = parts.length > 0 ? `## 用户把你调成了这样\n${parts.join('\n')}` : '';
+  const demo = buildBeginDialogs(delta.beginDialogs);
+  return [main, demo].filter(Boolean).join('\n\n');
+}
+
+/** C5: 渲染 per-user 语气示范对话对（few-shot 定调，借鉴 AstrBot begin_dialogs）。无则空串。 */
+export function buildBeginDialogs(dialogs?: { user: string; assistant: string }[]): string {
+  if (!dialogs || dialogs.length === 0) return '';
+  const lines = dialogs.slice(0, 6).map((d) => `用户：${d.user}\n你：${d.assistant}`);
+  return `## 你平时这样回应（参考语气，不要照搬）\n${lines.join('\n')}`;
 }
 
 /** L1 原型片段 ⊕ L2 覆盖。空 delta 原样返回 base。 */

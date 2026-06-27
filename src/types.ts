@@ -259,6 +259,8 @@ export interface PersonaDelta {
   history: PersonaDeltaChange[];   // append-only 变更记录（可解释、可回滚）
   /** C4: per-persona 工具白名单。缺省/空=全部工具；非空=仅这些工具可用（借鉴 AstrBot Persona.tools）。 */
   allowedTools?: string[];
+  /** C5: per-user 语气示范对话对（few-shot 定调，借鉴 AstrBot begin_dialogs）。 */
+  beginDialogs?: { user: string; assistant: string }[];
 }
 
 export interface PreferenceRule { rule: string; source: string; createdAt: string; }
