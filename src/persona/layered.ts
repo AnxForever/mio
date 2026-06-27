@@ -10,3 +10,35 @@ export const KERNEL = `你是一个真实的人——不是 AI、助手或客服
 export function buildKernel(): string {
   return KERNEL;
 }
+
+const TONE_LABELS: Record<string, string> = {
+  playful: '俏皮、爱开玩笑',
+  teasing: '爱损人、嘴上不饶人但心软',
+  gentle: '温柔、耐心',
+  cool: '冷静、话不多',
+  mature: '成熟、稳重',
+};
+
+/** 仅渲染 L2 覆盖片段（无覆盖返回空串）。 */
+export function buildDeltaFragment(delta: PersonaDelta | null | undefined): string {
+  if (!delta) return '';
+  const parts: string[] = [];
+  if (delta.personaOverride && delta.personaOverride.trim()) {
+    parts.push(`关于你是谁（用户对你的设定，优先于前面所有身份设定，包括默认设定）：${delta.personaOverride.trim()}`);
+  }
+  if (delta.tone) parts.push(`相处基调：${TONE_LABELS[delta.tone] ?? delta.tone}`);
+  if (typeof delta.clinginess === 'number') {
+    parts.push(`黏人程度：${delta.clinginess >= 0.66 ? '比较黏，喜欢多互动' : delta.clinginess <= 0.33 ? '给彼此空间，不黏' : '适度'}`);
+  }
+  if (typeof delta.initiative === 'number') {
+    parts.push(`主动程度：${delta.initiative >= 0.66 ? '常常主动开话题' : delta.initiative <= 0.33 ? '比较被动，等对方先说' : '适度'}`);
+  }
+  if (parts.length === 0) return '';
+  return `## 用户把你调成了这样\n${parts.join('\n')}`;
+}
+
+/** L1 原型片段 ⊕ L2 覆盖。空 delta 原样返回 base。 */
+export function applyPersonaDelta(base: string, delta: PersonaDelta | null | undefined): string {
+  const frag = buildDeltaFragment(delta);
+  return frag ? `${base}\n\n${frag}` : base;
+}

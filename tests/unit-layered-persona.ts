@@ -15,7 +15,7 @@ mkdirSync(join(dir, 'memory-bank'), { recursive: true });
 // === IMPORTS (each task appends here) ===
 const { readPersonaDelta, writePersonaDelta, readPreferences, upsertPreference, patchPersonaDelta } =
   await import('../dist/memory/persona-delta.js');
-const { buildKernel } = await import('../dist/persona/layered.js');
+const { buildKernel, applyPersonaDelta, buildDeltaFragment } = await import('../dist/persona/layered.js');
 const { ContextEngine } = await import('../dist/prompt/context-engine.js');
 // === END IMPORTS ===
 
@@ -54,6 +54,15 @@ console.log('\n\x1b[1mMio — layered persona tests\x1b[0m\n');
   const out = engine.assemble(2000);
   ok(out.includes(kernel), 'kernel survives hard-cap (critical never trimmed)');
   ok(!engine.getTrimmedSections().includes('kernel'), 'kernel not in trimmed list');
+}
+
+// --- Task 3: L1→L2 合成 ---
+{
+  const base = 'L1-ARCHETYPE-SOUL';
+  ok(applyPersonaDelta(base, null) === base, 'empty delta returns base unchanged');
+  const merged = applyPersonaDelta(base, { userId: 'default', personaOverride: '开酒吧的', tone: 'teasing', updatedAt: '', history: [] });
+  ok(merged.includes(base) && merged.includes('开酒吧的'), 'delta overlays after L1 base');
+  ok(buildDeltaFragment(null) === '', 'no delta → empty fragment');
 }
 
 // === APPEND NEW TEST BLOCKS ABOVE THIS LINE ===

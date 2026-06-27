@@ -43,7 +43,8 @@ import { buildXmlContext } from '../prompt/xml-context.js';
 import type { ContextSections } from '../prompt/xml-context.js';
 import { ContextEngine, getContextEngine } from '../prompt/context-engine.js';
 import { getEvaluationGraph, getBuilderChain, type EvaluationResult } from '../prompt/builder-chain.js';
-import { buildKernel } from '../persona/layered.js';
+import { buildKernel, applyPersonaDelta } from '../persona/layered.js';
+import { readPersonaDelta, readPreferences } from '../memory/persona-delta.js';
 import { selectProvider } from '../providers/index.js';
 import { getRouterConfig, routeTask } from '../providers/router.js';
 import { ensurePluginsLoaded, ensureToolsRegistered, type ToolRegistryLike } from './tool-runtime.js';
@@ -246,7 +247,8 @@ function registerPromptSections(
     type: 'persona',
     content: () => {
       const fragment = buildPersonaFragment(ctx);
-      return fragment ?? ctx.soulContent ?? '';
+      const base = fragment ?? ctx.soulContent ?? '';
+      return applyPersonaDelta(base, ctx.personaDelta);  // L1 ⊕ L2，在 ID-RAG 输出之后
     },
     priority: 'high',
     condition: () => {
@@ -806,6 +808,8 @@ function resolveSessionContext(input: TurnInput, sessionId: string): {
     connectedChannels: [],
     allowColaLinkSend: false,
     initialTask: input.text,
+    personaDelta: readPersonaDelta() ?? undefined,
+    preferences: readPreferences() ?? undefined,
   };
 
   return { ctx, promptCtx, recovery };
