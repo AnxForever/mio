@@ -99,6 +99,14 @@ console.log('\n\x1b[1mMio — layered persona tests\x1b[0m\n');
   ok((readPersonaDelta()?.personaOverride ?? '').includes('开酒吧的'), 'persona override persisted to delta');
   captureExplicitDirectives('你能不能皮一点');
   ok((readPreferences()?.explicit.length ?? 0) >= 1, 'preference persisted');
+
+  // 收紧正则后的反例：防误捕 + 防否定反转
+  ok(detectDirectives('记得叫我起床').every((d) => d.kind !== 'nickname'), 'no nickname FP: 记得叫我起床');
+  ok(detectDirectives('你为什么叫我笨蛋').every((d) => d.kind !== 'nickname'), 'no nickname FP: question');
+  ok(detectDirectives('你其实是对的').every((d) => d.kind !== 'persona'), 'no persona FP: 你其实是对的');
+  ok(detectDirectives('你能不能帮我看看吗').every((d) => d.kind !== 'preference'), 'no preference FP: task request');
+  const negPref = detectDirectives('别老哄我了').find((d) => d.kind === 'preference');
+  ok(!!negPref && negPref.value.startsWith('别'), 'negation preference keeps 别 (not inverted)');
 }
 
 // === APPEND NEW TEST BLOCKS ABOVE THIS LINE ===
