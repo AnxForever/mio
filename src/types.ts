@@ -25,6 +25,7 @@ export type ProviderPreset =
   | 'qwen'
   | 'doubao'
   | 'siliconflow'
+  | 'lora'
   | 'mock';
 
 /**
@@ -149,6 +150,22 @@ export interface SessionContext {
   connectedChannels?: ChannelInfo[];
   /** True for external IM bridge sessions that must not read/write shared user memory. */
   isolatedMemory?: boolean;
+}
+
+export interface TurnChannelContext {
+  type: 'private' | 'group' | 'web' | 'unknown';
+  platform?: string;
+  userId?: string;
+  groupId?: string;
+  hasAt?: boolean;
+  hasMention?: boolean;
+  focusActive?: boolean;
+  pendingCount?: number;
+  recentSelfReplies?: number;
+  consecutiveSelfReplies?: number;
+  effectiveFrequency?: number;
+  idleSeconds?: number;
+  idleReachedAverage?: boolean;
 }
 
 // ─── IM Channel ───

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { getConfig } from '../config.js';
 import type { TurnOutput } from '../core/agent-loop.js';
+import type { TurnChannelContext } from '../types.js';
 import type { OpenAIChatCompletionsBody, OpenAIChatMessage } from '../validation.js';
 
 const DEFAULT_MODEL_ID = 'mio';
@@ -56,6 +57,21 @@ export interface OpenAISessionInfo {
   sessionId: string;
   rawSessionId?: string;
 }
+
+const CHANNEL_TYPE_KEYS = [
+  'channelType',
+  'channel_type',
+  'messageType',
+  'message_type',
+  'chatType',
+  'chat_type',
+  'conversation.type',
+  'chat.type',
+];
+const GROUP_ID_KEYS = ['groupId', 'group_id', 'roomId', 'room_id', 'conversation.group_id', 'chat.group_id'];
+const USER_ID_KEYS = ['userId', 'user_id', 'senderId', 'sender_id', 'fromUserName', 'from_user_name'];
+const HAS_AT_KEYS = ['hasAt', 'has_at', 'atMe', 'at_me', 'mentionedMe', 'mentioned_me'];
+const HAS_MENTION_KEYS = ['hasMention', 'has_mention', 'mentioned', 'isMentioned', 'is_mentioned'];
 
 export function buildOpenAIModelsResponse(): Record<string, unknown> {
   const config = getConfig();
@@ -128,6 +144,64 @@ export function resolveOpenAISessionInfo(body: OpenAIChatCompletionsBody, req: R
   }
 
   return { sessionId: FALLBACK_SESSION_ID };
+}
+
+export function resolveOpenAIChannelContext(
+  body: OpenAIChatCompletionsBody,
+  req: Request,
+): TurnChannelContext | undefined {
+  const typeHint = firstCleanString(
+    firstHeaderValue(req.headers['x-mio-channel-type']),
+    firstHeaderValue(req.headers['x-openclaw-chat-type']),
+    firstHeaderValue(req.headers['x-onebot-message-type']),
+    ...CHANNEL_TYPE_KEYS.map((key) => metadataString(body.metadata, key)),
+  );
+  const groupId = firstCleanString(
+    firstHeaderValue(req.headers['x-mio-group-id']),
+    firstHeaderValue(req.headers['x-openclaw-group-id']),
+    firstHeaderValue(req.headers['x-onebot-group-id']),
+    ...GROUP_ID_KEYS.map((key) => metadataString(body.metadata, key)),
+  );
+  const userId = firstCleanString(
+    firstHeaderValue(req.headers['x-mio-user-id']),
+    firstHeaderValue(req.headers['x-openclaw-user-id']),
+    firstHeaderValue(req.headers['x-wechat-user-id']),
+    firstHeaderValue(req.headers['x-onebot-user-id']),
+    ...USER_ID_KEYS.map((key) => metadataString(body.metadata, key)),
+    body.user,
+  );
+
+  const type = normalizeChannelType(typeHint, groupId);
+  const hasAt = firstBoolean(
+    firstHeaderValue(req.headers['x-mio-has-at']),
+    firstHeaderValue(req.headers['x-openclaw-has-at']),
+    ...HAS_AT_KEYS.map((key) => readMetadataValue(body.metadata, key)),
+  );
+  const hasMention = firstBoolean(
+    firstHeaderValue(req.headers['x-mio-has-mention']),
+    firstHeaderValue(req.headers['x-openclaw-mentioned']),
+    ...HAS_MENTION_KEYS.map((key) => readMetadataValue(body.metadata, key)),
+    hasAt,
+  );
+
+  if (type === 'unknown' && !userId && !groupId && hasAt === undefined && hasMention === undefined) {
+    return undefined;
+  }
+
+  return {
+    type,
+    platform: 'openai',
+    userId,
+    groupId,
+    hasAt,
+    hasMention,
+    pendingCount: firstNumber(readMetadataValue(body.metadata, 'pendingCount'), readMetadataValue(body.metadata, 'pending_count')),
+    recentSelfReplies: firstNumber(readMetadataValue(body.metadata, 'recentSelfReplies'), readMetadataValue(body.metadata, 'recent_self_replies')),
+    consecutiveSelfReplies: firstNumber(readMetadataValue(body.metadata, 'consecutiveSelfReplies'), readMetadataValue(body.metadata, 'consecutive_self_replies')),
+    effectiveFrequency: firstNumber(readMetadataValue(body.metadata, 'effectiveFrequency'), readMetadataValue(body.metadata, 'effective_frequency')),
+    idleSeconds: firstNumber(readMetadataValue(body.metadata, 'idleSeconds'), readMetadataValue(body.metadata, 'idle_seconds')),
+    idleReachedAverage: firstBoolean(readMetadataValue(body.metadata, 'idleReachedAverage'), readMetadataValue(body.metadata, 'idle_reached_average')),
+  };
 }
 
 function findWeClawContactHint(body: OpenAIChatCompletionsBody, req: Request): string | null {
@@ -326,6 +400,50 @@ function readMetadataValue(metadata: OpenAIChatCompletionsBody['metadata'], dott
 function firstHeaderValue(value: string | string[] | undefined): string | null {
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
+}
+
+function metadataString(metadata: OpenAIChatCompletionsBody['metadata'], key: string): string | undefined {
+  const value = readMetadataValue(metadata, key);
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return undefined;
+}
+
+function firstCleanString(...values: Array<string | null | undefined>): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function normalizeChannelType(value: string | undefined, groupId: string | undefined): TurnChannelContext['type'] {
+  const raw = value?.trim().toLowerCase();
+  if (raw === 'group' || raw === 'room' || raw === 'chatroom' || raw === 'channel') return 'group';
+  if (raw === 'private' || raw === 'direct' || raw === 'dm' || raw === 'friend') return 'private';
+  if (raw === 'web') return 'web';
+  if (groupId) return 'group';
+  return raw ? 'unknown' : 'unknown';
+}
+
+function firstBoolean(...values: unknown[]): boolean | undefined {
+  for (const value of values) {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number' && Number.isFinite(value)) return value !== 0;
+    if (typeof value === 'string') {
+      const raw = value.trim().toLowerCase();
+      if (['1', 'true', 'yes', 'on'].includes(raw)) return true;
+      if (['0', 'false', 'no', 'off'].includes(raw)) return false;
+    }
+  }
+  return undefined;
+}
+
+function firstNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
 }
 
 function completionId(): string {

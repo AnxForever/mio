@@ -30,6 +30,7 @@ const ONEBOT_ENV_KEYS = [
   'MIO_ONEBOT_GROUP_MODE',
   'MIO_ONEBOT_TIMEOUT_MS',
   'MIO_ONEBOT_IGNORE_SELF',
+  'MIO_ONEBOT_OUTBOUND_FORMAT',
   'MIO_ONEBOT_ALLOW_USERS',
   'MIO_ONEBOT_ALLOWED_USERS',
   'MIO_ONEBOT_ALLOW_GROUPS',
@@ -114,6 +115,7 @@ async function main(): Promise<void> {
   clearEnv();
 
   const {
+    buildOneBotOutboundMessage,
     dispatchOneBotReply,
     extractOneBotIncomingMessage,
     getOneBotBridgeStatus,
@@ -130,6 +132,7 @@ async function main(): Promise<void> {
       assert(status.replyMode === 'quick', `unexpected reply mode: ${status.replyMode}`);
       assert(status.timeoutMs === 10_000, `unexpected timeout: ${status.timeoutMs}`);
       assert(status.ignoreSelf === true, 'self messages should be ignored by default');
+      assert(status.outboundFormat === 'string', `unexpected outbound format: ${status.outboundFormat}`);
       assert(status.allowUsersConfigured === false, 'user allowlist should be absent');
       assert(status.allowUsersCount === 0, `unexpected user allow count: ${status.allowUsersCount}`);
       assert(status.allowGroupsConfigured === false, 'group allowlist should be absent');
@@ -366,6 +369,21 @@ async function main(): Promise<void> {
     }
   });
 
+  await test('outbound array format preserves text and image segments', () => {
+    const message = buildOneBotOutboundMessage('看这个 ![图](https://example.com/a.png)\n[mio:image file:///tmp/b.jpg]', 'array');
+    assert(Array.isArray(message), 'expected segment array');
+    assert(message.length === 4, `unexpected segment count: ${message.length}`);
+    assert(message[0].type === 'text' && message[0].data?.text === '看这个 ', 'first text segment mismatch');
+    assert(message[1].type === 'image' && message[1].data?.file === 'https://example.com/a.png', 'first image segment mismatch');
+    assert(message[2].type === 'text' && message[2].data?.text === '\n', 'middle text segment mismatch');
+    assert(message[3].type === 'image' && message[3].data?.file === 'file:///tmp/b.jpg', 'second image segment mismatch');
+  });
+
+  await test('outbound string format stays backward compatible', () => {
+    const message = buildOneBotOutboundMessage('plain reply', 'string');
+    assert(message === 'plain reply', 'string format should return raw text');
+  });
+
   await test('explicit api reply mode fails clearly without API base', async () => {
     const old = snapshotEnv();
     clearEnv();
@@ -395,6 +413,7 @@ async function main(): Promise<void> {
     process.env.MIO_ONEBOT_API_BASE = api.url;
     process.env.MIO_ONEBOT_ACCESS_TOKEN = 'secret-token';
     process.env.MIO_ONEBOT_TIMEOUT_MS = '2000';
+    process.env.MIO_ONEBOT_OUTBOUND_FORMAT = 'array';
     try {
       const response = await dispatchOneBotReply(
         { type: 'group', text: 'hi', sessionId: 'onebot-group-test', userId: 12345, groupId: 67890 },
@@ -406,7 +425,10 @@ async function main(): Promise<void> {
       assert(api.calls[0].path === '/send_group_msg', `unexpected path: ${api.calls[0].path}`);
       assert(api.calls[0].authorization === 'Bearer secret-token', 'missing bearer token');
       assert(api.calls[0].body.group_id === 67890, 'wrong group_id');
-      assert(api.calls[0].body.message === 'group reply', 'wrong message');
+      assert(Array.isArray(api.calls[0].body.message), 'wrong message format');
+      const message = api.calls[0].body.message as Array<{ type?: string; data?: Record<string, unknown> }>;
+      assert(message[0]?.type === 'text', 'wrong message segment type');
+      assert(message[0]?.data?.text === 'group reply', 'wrong message text');
     } finally {
       restoreEnv(old);
       await api.close();

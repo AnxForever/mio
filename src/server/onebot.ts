@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
 import type { TurnOutput } from '../core/agent-loop.js';
 import type { OneBotEventBody, OneBotMessageSegment } from '../validation.js';
+import { splitIntoBubbles, computeBubbleDelaysMs, sleep } from './im-pacing.js';
 
 type OneBotMessageType = 'private' | 'group';
 type OneBotGroupMode = 'off' | 'mention' | 'all';
 type OneBotReplyMode = 'api' | 'quick' | 'both' | 'off';
+export type OneBotOutboundFormat = 'string' | 'array';
 
 const DEFAULT_ONEBOT_TIMEOUT_MS = 10_000;
 
@@ -15,6 +17,8 @@ export interface OneBotIncomingMessage {
   userId: string | number;
   groupId?: string | number;
   messageId?: string | number;
+  hasAt?: boolean;
+  hasMention?: boolean;
 }
 
 export interface OneBotSkipResult {
@@ -32,6 +36,7 @@ export interface OneBotBridgeStatus {
   replyMode: OneBotReplyMode;
   timeoutMs: number;
   ignoreSelf: boolean;
+  outboundFormat: OneBotOutboundFormat;
   allowUsersConfigured: boolean;
   allowUsersCount: number;
   allowGroupsConfigured: boolean;
@@ -62,6 +67,7 @@ interface OneBotConfig {
   replyMode: OneBotReplyMode;
   timeoutMs: number;
   ignoreSelf: boolean;
+  outboundFormat: OneBotOutboundFormat;
   allowUsers: Set<string> | null;
   allowGroups: Set<string> | null;
 }
@@ -76,6 +82,7 @@ export function getOneBotBridgeStatus(): OneBotBridgeStatus {
     replyMode: config.replyMode,
     timeoutMs: config.timeoutMs,
     ignoreSelf: config.ignoreSelf,
+    outboundFormat: config.outboundFormat,
     allowUsersConfigured: config.allowUsers !== null,
     allowUsersCount: config.allowUsers?.size ?? 0,
     allowGroupsConfigured: config.allowGroups !== null,
@@ -133,6 +140,8 @@ export function extractOneBotIncomingMessage(event: OneBotEventBody): OneBotInco
     userId: event.user_id,
     groupId: event.group_id,
     messageId: event.message_id,
+    hasAt: event.message_type === 'group' ? isMentioningSelf(event) : false,
+    hasMention: event.message_type === 'group' ? isMentioningSelf(event) : false,
   };
 }
 
@@ -171,7 +180,7 @@ export async function dispatchOneBotReply(
   }
 
   if (config.replyMode === 'api' || config.replyMode === 'both') {
-    const sendResult = await sendOneBotMessage(config, incoming, replyText);
+    const sendResult = await sendPacedOneBotReply(config, incoming, replyText);
     if (config.replyMode === 'api') {
       return {
         ok: true,
@@ -205,6 +214,30 @@ export async function dispatchOneBotReply(
   };
 }
 
+/**
+ * 私聊开启 imPacing 时把长回复分段、逐条带延迟发送（首条立即发，后续条间停顿模拟连打）；
+ * 否则单条发送。返回最后一条的发送结果。
+ */
+async function sendPacedOneBotReply(
+  config: OneBotConfig,
+  incoming: OneBotIncomingMessage,
+  replyText: string,
+): Promise<Awaited<ReturnType<typeof sendOneBotMessage>>> {
+  const pacing = process.env.MIO_FEATURE_IM_PACING === 'true' && incoming.type === 'private';
+  if (!pacing) {
+    return sendOneBotMessage(config, incoming, replyText);
+  }
+  const bubbles = splitIntoBubbles(replyText);
+  const list = bubbles.length > 0 ? bubbles : [replyText];
+  const delays = computeBubbleDelaysMs(list);
+  let last = await sendOneBotMessage(config, incoming, list[0]);
+  for (let i = 1; i < list.length; i++) {
+    await sleep(delays[i]);
+    last = await sendOneBotMessage(config, incoming, list[i]);
+  }
+  return last;
+}
+
 function readOneBotConfig(): OneBotConfig {
   const apiBase = firstCleanEnv(process.env.MIO_ONEBOT_API_BASE, process.env.ONEBOT_API_BASE);
   const accessToken = firstCleanEnv(process.env.MIO_ONEBOT_ACCESS_TOKEN, process.env.ONEBOT_ACCESS_TOKEN);
@@ -213,6 +246,7 @@ function readOneBotConfig(): OneBotConfig {
   const replyMode = explicitReplyMode ?? (apiBase ? 'api' : 'quick');
   const timeoutMs = parseTimeoutMs(process.env.MIO_ONEBOT_TIMEOUT_MS);
   const ignoreSelf = parseBoolean(process.env.MIO_ONEBOT_IGNORE_SELF, true);
+  const outboundFormat = parseOutboundFormat(process.env.MIO_ONEBOT_OUTBOUND_FORMAT);
   const allowUsers = parseIdSet(firstCleanEnv(process.env.MIO_ONEBOT_ALLOW_USERS, process.env.MIO_ONEBOT_ALLOWED_USERS));
   const allowGroups = parseIdSet(firstCleanEnv(process.env.MIO_ONEBOT_ALLOW_GROUPS, process.env.MIO_ONEBOT_ALLOWED_GROUPS));
   return {
@@ -222,6 +256,7 @@ function readOneBotConfig(): OneBotConfig {
     replyMode,
     timeoutMs,
     ignoreSelf,
+    outboundFormat,
     allowUsers,
     allowGroups,
   };
@@ -235,6 +270,10 @@ function parseGroupMode(raw: string | undefined): OneBotGroupMode {
 function parseReplyMode(raw: string | undefined): OneBotReplyMode | null {
   if (raw === 'api' || raw === 'quick' || raw === 'both' || raw === 'off') return raw;
   return null;
+}
+
+function parseOutboundFormat(raw: string | undefined): OneBotOutboundFormat {
+  return raw === 'array' ? 'array' : 'string';
 }
 
 function parseTimeoutMs(raw: string | undefined): number {
@@ -363,9 +402,10 @@ async function sendOneBotMessage(
   }
 
   const endpoint = incoming.type === 'private' ? 'send_private_msg' : 'send_group_msg';
+  const outboundMessage = buildOneBotOutboundMessage(message, config.outboundFormat);
   const payload = incoming.type === 'private'
-    ? { user_id: incoming.userId, message, auto_escape: false }
-    : { group_id: incoming.groupId, message, auto_escape: false };
+    ? { user_id: incoming.userId, message: outboundMessage, auto_escape: false }
+    : { group_id: incoming.groupId, message: outboundMessage, auto_escape: false };
 
   let response: Response;
   try {
@@ -390,6 +430,49 @@ async function sendOneBotMessage(
   }
 
   return body;
+}
+
+export function buildOneBotOutboundMessage(
+  text: string,
+  format: OneBotOutboundFormat = 'string',
+): string | OneBotMessageSegment[] {
+  if (format === 'string') return text;
+
+  const segments = parseOutboundSegments(text);
+  return segments.length > 0 ? segments : [{ type: 'text', data: { text } }];
+}
+
+function parseOutboundSegments(text: string): OneBotMessageSegment[] {
+  const segments: OneBotMessageSegment[] = [];
+  const imagePattern = /!\[[^\]]*\]\(([^)\s]+)\)|\[mio:image\s+([^\]\s]+)\]/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = imagePattern.exec(text)) !== null) {
+    const before = text.slice(lastIndex, match.index);
+    appendTextSegment(segments, before);
+
+    const file = match[1] ?? match[2];
+    if (file) {
+      segments.push({
+        type: 'image',
+        data: { file },
+      });
+    }
+
+    lastIndex = imagePattern.lastIndex;
+  }
+
+  appendTextSegment(segments, text.slice(lastIndex));
+  return segments;
+}
+
+function appendTextSegment(segments: OneBotMessageSegment[], text: string): void {
+  if (!text) return;
+  segments.push({
+    type: 'text',
+    data: { text },
+  });
 }
 
 async function readOneBotResponse(response: Response): Promise<OneBotSendResponse> {

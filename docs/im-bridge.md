@@ -408,6 +408,17 @@ Configure the OneBot HTTP post URL:
 http://127.0.0.1:3000/onebot/v11/events
 ```
 
+If NapCat runs in Docker bridge mode through `npm run qq:napcat:up`, use the
+host address visible from the container instead:
+
+```text
+http://host.docker.internal:3000/onebot/v11/events
+```
+
+In the same Docker bridge mode, configure NapCat's HTTP server to listen on
+`0.0.0.0:3001`; the script publishes it only on the host's
+`127.0.0.1:3001`, so Mio still uses `MIO_ONEBOT_API_BASE=http://127.0.0.1:3001`.
+
 If `MIO_AUTH_TOKEN` is set, configure the OneBot HTTP post client to send:
 
 ```text
@@ -431,6 +442,7 @@ Environment variables:
 | `MIO_ONEBOT_GROUP_MODE` | `mention` | `mention`, `all`, or `off` |
 | `MIO_ONEBOT_TIMEOUT_MS` | `10000` | Outbound OneBot API timeout, clamped to 500-60000 ms |
 | `MIO_ONEBOT_IGNORE_SELF` | `true` | Ignore events sent by the bot's own QQ account |
+| `MIO_ONEBOT_OUTBOUND_FORMAT` | `string` | Outbound message format: `string` or OneBot segment `array` |
 | `MIO_ONEBOT_ALLOW_USERS` | unset | Comma-separated QQ user IDs allowed to trigger Mio; applies to private messages and group senders |
 | `MIO_ONEBOT_ALLOW_GROUPS` | unset | Comma-separated QQ group IDs allowed to trigger Mio |
 
@@ -470,7 +482,7 @@ Copyable NapCat/Lagrange HTTP post settings:
 ```yaml
 post:
   - type: http
-    url: http://127.0.0.1:3000/onebot/v11/events
+    url: http://host.docker.internal:3000/onebot/v11/events
     headers:
       Authorization: Bearer change-me
 ```
@@ -489,4 +501,26 @@ Quick reply mode:
 ```bash
 MIO_ONEBOT_REPLY_MODE=quick
 MIO_ONEBOT_GROUP_MODE=mention
+```
+
+For NapCat, prefer segment-array outbound once the API path is working:
+
+```bash
+MIO_ONEBOT_OUTBOUND_FORMAT=array
+```
+
+This lets Mio send OneBot text/image segments instead of a single raw string.
+Explicit image markers in the assistant text are converted to image segments:
+`![alt](https://example.com/a.png)` and `[mio:image file:///absolute/path.jpg]`.
+
+Local protocol verification without a real QQ login:
+
+```bash
+npm run qq:verify
+```
+
+After a real NapCat instance is configured, use:
+
+```bash
+npm run qq:status
 ```

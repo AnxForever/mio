@@ -11,6 +11,7 @@
  * - 3-tier memory: STM (FIFO) -> MTM (topic segments) -> LTM (durable facts)
  */
 
+import { createHash } from 'node:crypto';
 import { readFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { logger } from '../utils/logger.js';
 import { readFileSyncSafe, writeFileSyncSafe } from './bank.js';
@@ -47,6 +48,13 @@ export interface StructuredMemory {
   topics: TopicSegment[];        // topic-clustered segments
   durableFacts: MemoryEntity[];  // high-confidence long-term facts (confidence >= 0.8, occurrences >= 3)
   updatedAt: string;
+  extractionState?: StructuredMemoryExtractionState;
+}
+
+export interface StructuredMemoryExtractionState {
+  sourceHash: string;
+  processedSourceIds: string[];
+  lastProcessedAt: string;
 }
 
 // ─── Topic keywords for classification ───
@@ -269,8 +277,10 @@ export function extractStructuredMemory(
   existingMemory?: StructuredMemory,
 ): StructuredMemory {
   const now = new Date().toISOString();
-  const newEntities = extractEntitiesFromBookmarks(bookmarksContent);
-  return assembleMemory(newEntities, existingMemory, now);
+  const dirtyContent = dirtyBookmarkContent(bookmarksContent, existingMemory);
+  if (!dirtyContent && existingMemory) return existingMemory;
+  const newEntities = extractEntitiesFromBookmarks(dirtyContent || bookmarksContent);
+  return assembleMemory(newEntities, existingMemory, now, buildExtractionState(bookmarksContent, now));
 }
 
 /** A parsed `- <time=…> …` bookmark line. */
@@ -300,6 +310,32 @@ function extractEntitiesFromBookmarks(bookmarksContent: string): MemoryEntity[] 
   return newEntities;
 }
 
+function hashText(text: string): string {
+  return createHash('sha1').update(text).digest('hex');
+}
+
+function sourceId(entry: BookmarkEntry): string {
+  return hashText(entry.source);
+}
+
+function buildExtractionState(bookmarksContent: string, at: string): StructuredMemoryExtractionState {
+  return {
+    sourceHash: hashText(bookmarksContent),
+    processedSourceIds: parseBookmarkEntries(bookmarksContent).map(sourceId),
+    lastProcessedAt: at,
+  };
+}
+
+function dirtyBookmarkContent(bookmarksContent: string, existingMemory?: StructuredMemory): string {
+  const existing = existingMemory?.extractionState;
+  const sourceHash = hashText(bookmarksContent);
+  if (existing?.sourceHash === sourceHash) return '';
+
+  const processed = new Set(existing?.processedSourceIds ?? []);
+  const dirty = parseBookmarkEntries(bookmarksContent).filter((entry) => !processed.has(sourceId(entry)));
+  return dirty.map((entry) => entry.source).join('\n');
+}
+
 /**
  * Merge newly-extracted entities with the existing memory, decay stale ones,
  * re-cluster by topic, and recompute durable facts.
@@ -312,6 +348,7 @@ function assembleMemory(
   newEntities: MemoryEntity[],
   existingMemory: StructuredMemory | undefined,
   now: string,
+  extractionState?: StructuredMemoryExtractionState,
 ): StructuredMemory {
   // Merge with existing memory or start fresh
   let merged: MemoryEntity[];
@@ -365,6 +402,7 @@ function assembleMemory(
     topics,
     durableFacts,
     updatedAt: now,
+    extractionState,
   };
 }
 
@@ -546,13 +584,16 @@ export async function extractStructuredMemoryLLM(
   opts?: { provider?: AIProvider; model?: string },
 ): Promise<StructuredMemory> {
   const now = new Date().toISOString();
+  const dirtyContent = dirtyBookmarkContent(bookmarksContent, existingMemory);
+  if (!dirtyContent && existingMemory) return existingMemory;
+  const extractionState = buildExtractionState(bookmarksContent, now);
   try {
-    const newEntities = await extractEntitiesViaLLM(bookmarksContent, now, opts);
+    const newEntities = await extractEntitiesViaLLM(dirtyContent || bookmarksContent, now, opts);
     if (newEntities === null) {
       logger.warn('[structured-memory] LLM extraction unavailable/unparseable; using regex fallback');
       return extractStructuredMemory(bookmarksContent, existingMemory);
     }
-    return assembleMemory(newEntities, existingMemory, now);
+    return assembleMemory(newEntities, existingMemory, now, extractionState);
   } catch (err) {
     logger.warn('[structured-memory] LLM extraction failed; using regex fallback', { error: String(err) });
     return extractStructuredMemory(bookmarksContent, existingMemory);

@@ -29,6 +29,7 @@ import { readEmotionState } from '../emotion/state.js';
 import { readRelationshipState, getProgressInfo } from '../relationship/progression.js';
 import { buildAvatarState } from './avatar.js';
 import { detectVoiceCapabilities, synthesizeToBuffer } from '../voice/voice-pipeline.js';
+import { transcribeAudio } from '../voice/stt.js';
 import { describeProvider } from '../memory/embedding.js';
 import { indexStats } from '../memory/vector.js';
 import { getProviderInfo, listAvailableProviders } from '../providers/index.js';
@@ -41,6 +42,7 @@ import {
   buildOpenAIModelsResponse,
   createOpenAIStreamContext,
   extractOpenAIUserText,
+  resolveOpenAIChannelContext,
   resolveOpenAISessionInfo,
   writeOpenAIStreamDone,
   writeOpenAIStreamError,
@@ -53,6 +55,7 @@ import {
   extractOneBotIncomingMessage,
   getOneBotBridgeStatus,
 } from './onebot.js';
+import { planPacing, sleep } from './im-pacing.js';
 import { createBackup, exportMemory, listBackups, pruneBackups } from '../utils/backup.js';
 import { sendToAllChannels, getNotifyChannels, sendTelegramMessage, sendWebhookMessage, sendWhatsAppMessage, sendDiscordMessage, sendSlackMessage, sendWeClawMessage } from './notify.js';
 import { logger } from '../utils/logger.js';
@@ -75,6 +78,7 @@ import {
   personaModeBody,
   openAIChatCompletionsBody,
   imageUploadBody,
+  audioUploadBody,
   oneBotEventBody,
   modNameParam,
   soulBody,
@@ -116,7 +120,7 @@ import { generatePersona } from '../persona/generator.js';
 import { getCurrentMode } from '../persona/dual-mode.js';
 import type { PersonaRequest } from '../types.js';
 import type { OneBotEventBody, OpenAIChatCompletionsBody } from '../validation.js';
-import { imageUploadsDir, modSoulPath, uploadedImagePath } from '../memory/paths.js';
+import { audioUploadsDir, imageUploadsDir, modSoulPath, uploadedAudioPath, uploadedImagePath } from '../memory/paths.js';
 import { readFileSyncSafe, writeFileSyncSafe } from '../memory/bank.js';
 import { upsertWeClawTarget } from '../memory/persona-delta.js';
 import { refreshPersonaGraph } from '../persona/extractor.js';
@@ -174,7 +178,7 @@ function applyCors(req: Request, res: Response, next: NextFunction): void {
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
     res.setHeader(
       'Access-Control-Allow-Headers',
-      'Authorization,Content-Type,X-Mio-Session-Id,X-OpenAI-Session-Id,X-OpenClaw-Session-Id,X-OpenClaw-User-Id,X-WeChat-User-Id,X-OneBot-User-Id',
+      'Authorization,Content-Type,X-Mio-Session-Id,X-Mio-Channel-Type,X-Mio-Group-Id,X-Mio-User-Id,X-Mio-Has-At,X-Mio-Has-Mention,X-OpenAI-Session-Id,X-OpenClaw-Session-Id,X-OpenClaw-User-Id,X-OpenClaw-Group-Id,X-OpenClaw-Chat-Type,X-OpenClaw-Has-At,X-OpenClaw-Mentioned,X-WeChat-User-Id,X-OneBot-User-Id,X-OneBot-Group-Id,X-OneBot-Message-Type',
     );
     res.setHeader('Access-Control-Expose-Headers', 'X-Mio-Session-Id');
     res.setHeader('Access-Control-Max-Age', '86400');
@@ -203,6 +207,15 @@ const IMAGE_EXT_BY_MIME: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/webp': 'webp',
   'image/gif': 'gif',
+};
+
+const AUDIO_EXT_BY_MIME: Record<string, string> = {
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/mpeg': 'mp3',
+  'audio/mp4': 'm4a',
+  'audio/webm': 'webm',
+  'audio/ogg': 'ogg',
 };
 
 function detectImageMime(buffer: Buffer): string | null {
@@ -246,8 +259,34 @@ function parseUploadedImage(body: { data: string; mimeType?: string }): { buffer
   };
 }
 
+function parseUploadedAudio(body: { data: string; mimeType?: string }): { buffer: Buffer; mimeType: string; ext: string } {
+  let raw = body.data.trim();
+  let declared = body.mimeType;
+  const dataUrl = raw.match(/^data:(audio\/(?:wav|x-wav|mpeg|mp4|webm|ogg));base64,(.+)$/);
+  if (dataUrl) {
+    declared = dataUrl[1];
+    raw = dataUrl[2];
+  }
+
+  const mimeType = declared ?? 'audio/wav';
+  const ext = AUDIO_EXT_BY_MIME[mimeType];
+  if (!ext) throw new Error('Unsupported audio MIME type');
+
+  const buffer = Buffer.from(raw.replace(/\s+/g, ''), 'base64');
+  if (buffer.length === 0) throw new Error('Empty audio upload');
+  if (buffer.length > 15_000_000) throw new Error('Audio too large. Maximum 15MB.');
+
+  return { buffer, mimeType, ext };
+}
+
 function isUploadedImagePath(path: string): boolean {
   const root = resolve(imageUploadsDir());
+  const target = resolve(path);
+  return target === root || target.startsWith(root + sep);
+}
+
+function isUploadedAudioPath(path: string): boolean {
+  const root = resolve(audioUploadsDir());
   const target = resolve(path);
   return target === root || target.startsWith(root + sep);
 }
@@ -430,6 +469,29 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     }
   });
 
+  app.post('/voice/transcribe', requireAuth, validate(audioUploadBody), async (req, res) => {
+    let path: string | null = null;
+    try {
+      const parsed = parseUploadedAudio(req.body as { data: string; mimeType?: string });
+      mkdirSync(audioUploadsDir(), { recursive: true });
+      const fileName = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}.${parsed.ext}`;
+      path = uploadedAudioPath(fileName);
+      writeFileSync(path, parsed.buffer);
+      const text = (await transcribeAudio(path)).trim();
+      res.json({
+        ok: true,
+        text,
+        audioPath: path,
+        mimeType: parsed.mimeType,
+        size: parsed.buffer.length,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const status = msg.includes('too large') ? 413 : msg.includes('OPENAI_API_KEY') ? 503 : 400;
+      res.status(status).json({ error: msg });
+    }
+  });
+
   // ─── Uploads ───
   app.post('/uploads/images', requireAuth, validate(imageUploadBody), (req, res) => {
     try {
@@ -441,6 +503,25 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       res.json({
         ok: true,
         imagePath: path,
+        mimeType: parsed.mimeType,
+        size: parsed.buffer.length,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(msg.includes('too large') ? 413 : 400).json({ error: msg });
+    }
+  });
+
+  app.post('/uploads/audio', requireAuth, validate(audioUploadBody), (req, res) => {
+    try {
+      const parsed = parseUploadedAudio(req.body as { data: string; mimeType?: string });
+      mkdirSync(audioUploadsDir(), { recursive: true });
+      const fileName = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}.${parsed.ext}`;
+      const path = uploadedAudioPath(fileName);
+      writeFileSync(path, parsed.buffer);
+      res.json({
+        ok: true,
+        audioPath: path,
         mimeType: parsed.mimeType,
         size: parsed.buffer.length,
       });
@@ -498,8 +579,9 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       writeOpenAIStreamStart(res, streamCtx);
 
       try {
+        const channel = resolveOpenAIChannelContext(body, req);
         await runTurn(
-          { text, sessionId },
+          { text, sessionId, channel },
           {
             onToken: (chunk) => writeOpenAIStreamToken(res, streamCtx, chunk),
           },
@@ -515,9 +597,18 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     }
 
     try {
-      const result = await runTurn({ text, sessionId });
+      const channel = resolveOpenAIChannelContext(body, req);
+      const result = await runTurn({ text, sessionId, channel });
       res.setHeader('X-Mio-Session-Id', result.sessionId);
-      res.json(buildOpenAICompletionResponse(body, result));
+      // 私聊节奏感：imPacing 开启时长回复分段（微信桥按换行拆多条）+ 返回前模拟打字延迟。
+      const config = getConfig();
+      if (config.features.imPacing && channel?.type !== 'group' && !result.ghosted && result.text.trim()) {
+        const plan = planPacing(result.text);
+        await sleep(plan.initialDelayMs);
+        res.json(buildOpenAICompletionResponse(body, { ...result, text: plan.text }));
+      } else {
+        res.json(buildOpenAICompletionResponse(body, result));
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       res.status(500).json(buildOpenAIErrorResponse(msg, 'server_error'));
@@ -540,7 +631,18 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     }
 
     try {
-      const result = await runTurn({ text: incoming.text, sessionId: incoming.sessionId });
+      const result = await runTurn({
+        text: incoming.text,
+        sessionId: incoming.sessionId,
+        channel: {
+          type: incoming.type,
+          platform: 'onebot',
+          userId: String(incoming.userId),
+          groupId: incoming.groupId === undefined ? undefined : String(incoming.groupId),
+          hasAt: incoming.hasAt === true,
+          hasMention: incoming.hasMention === true,
+        },
+      });
       const responseBody = await dispatchOneBotReply(incoming, result);
       res.json(responseBody);
     } catch (err) {
@@ -551,12 +653,12 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   });
 
   app.post('/chat', requireAuth, validate(chatBody), async (req, res) => {
-    const body = req.body as { text?: string; sessionId?: string; imagePath?: string } | undefined;
-    if (!body || typeof body.text !== 'string') {
-      res.status(400).json({ error: 'Missing "text" in body' });
+    const body = req.body as { text?: string; sessionId?: string; imagePath?: string; audioPath?: string } | undefined;
+    if (!body || (!body.text && !body.imagePath && !body.audioPath)) {
+      res.status(400).json({ error: 'Missing chat input in body' });
       return;
     }
-    if (body.text.length > 10000) {
+    if (body.text && body.text.length > 10000) {
       res.status(413).json({ error: 'Input too long. Maximum 10000 characters.' });
       return;
     }
@@ -574,7 +676,11 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
           imageBlocks = [block];
         } catch { /* image processing failed, continue text-only */ }
       }
-      const result = await runTurn({ text: body.text, sessionId: body.sessionId, imageBlocks });
+      if (body.audioPath && !isUploadedAudioPath(body.audioPath)) {
+        res.status(400).json({ error: 'Invalid audioPath' });
+        return;
+      }
+      const result = await runTurn({ text: body.text, sessionId: body.sessionId, imageBlocks, audioPath: body.audioPath });
       res.json(result);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -583,9 +689,9 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   });
 
   app.post('/chat/stream', requireAuth, validate(chatBody), async (req, res) => {
-    const body = req.body as { text?: string; sessionId?: string; imagePath?: string } | undefined;
-    if (!body || typeof body.text !== 'string') {
-      res.status(400).json({ error: 'Missing "text" in body' });
+    const body = req.body as { text?: string; sessionId?: string; imagePath?: string; audioPath?: string } | undefined;
+    if (!body || (!body.text && !body.imagePath && !body.audioPath)) {
+      res.status(400).json({ error: 'Missing chat input in body' });
       return;
     }
 
@@ -614,8 +720,13 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
           imageBlocks = [block];
         } catch { /* image processing failed, continue text-only */ }
       }
+      if (body.audioPath && !isUploadedAudioPath(body.audioPath)) {
+        writeEvent('error', { error: 'Invalid audioPath' });
+        res.end();
+        return;
+      }
       const result = await runTurn(
-        { text: body.text, sessionId: body.sessionId, imageBlocks },
+        { text: body.text, sessionId: body.sessionId, imageBlocks, audioPath: body.audioPath },
         {
           onToken: (chunk) => writeEvent('token', { chunk }),
         },
@@ -1207,8 +1318,10 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       logger.info(`[mio]   POST /v1/chat/completions OpenAI-compatible chat`);
       logger.info(`[mio]   GET  /onebot/v11/status OneBot bridge status`);
       logger.info(`[mio]   POST /onebot/v11/events OneBot event webhook`);
-      logger.info(`[mio]   POST /chat         { text, sessionId? }`);
+      logger.info(`[mio]   POST /chat         { text?, imagePath?, audioPath?, sessionId? }`);
       logger.info(`[mio]   POST /chat/stream  (SSE)`);
+      logger.info(`[mio]   POST /uploads/audio  upload base64 audio`);
+      logger.info(`[mio]   POST /voice/transcribe upload + transcribe audio`);
       logger.info(`[mio]   POST /mod          { name: "male" | "female" }`);
       logger.info(`[mio]   WS   /ws            (full-duplex streaming)`);
       logger.info(`[mio]   GET  /analytics            full analytics snapshot`);

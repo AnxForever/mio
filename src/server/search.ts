@@ -59,14 +59,16 @@ export async function searchTranscripts(
     query: qTrimmed,
     maxResults,
     searchTranscripts: true,
-    searchMemory: true,
+    searchMemory: opts?.role ? false : true,
+    role: opts?.role === 'assistant' ? 'assistant' : opts?.role === 'user' ? 'user' : undefined,
+    scope: opts?.sessionId ? { sessionId: opts.sessionId } : undefined,
   });
 
   // Remap to SearchResult interface
   return results.map((r: HybridResult) => ({
     sessionId: r.id.replace(/^transcript:/, '').split(':')[0] || 'unknown',
     timestamp: r.timestamp,
-    role: 'user' as const, // We lose role info in hybrid search; default to user
+    role: r.role ?? 'user',
     content: r.content,
     snippet: r.content.length > 100 ? r.content.slice(0, 100) + '...' : r.content,
     score: r.score,

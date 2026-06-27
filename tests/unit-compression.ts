@@ -33,6 +33,8 @@ const msg = (role: 'user' | 'assistant', text: string): Message => ({ role, cont
   ok(r.removedCount > 0, 'long convo compressed');
   ok(r.messages.length < long.length, 'fewer messages after compression');
   ok(r.summary.includes('摘要'), 'middle section summarized');
+  ok(r.summary.includes('召回线索'), 'summary includes recall cues');
+  ok(r.recallCues.length > 0, 'compression returns recall cues');
   ok(r.messages[r.messages.length - 1].content === long[long.length - 1].content, 'latest message always kept');
   ok(r.messages[cfg.keepOldest].role === 'user', 'recent section starts at a user turn (round-aware)');
   ok(estimateTotalTokens(r.messages) <= cfg.maxTokens, 'kept within token budget');

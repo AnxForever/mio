@@ -43,6 +43,8 @@ export interface CompressionResult {
   messages: Message[];
   /** Summary of removed messages (for injection as system context). */
   summary: string;
+  /** Short searchable cues that can recall the compressed segment later. */
+  recallCues: string[];
   /** How many messages were removed. */
   removedCount: number;
 }
@@ -101,13 +103,14 @@ function totalTokens(msgs: Message[]): number {
 
 function slidingWindow(messages: Message[], keepRecent: number): CompressionResult {
   if (messages.length <= keepRecent) {
-    return { messages, summary: '', removedCount: 0 };
+    return { messages, summary: '', recallCues: [], removedCount: 0 };
   }
   const kept = messages.slice(-keepRecent);
   const removed = messages.slice(0, messages.length - keepRecent);
   return {
     messages: kept,
     summary: '',
+    recallCues: buildRecallCues(removed),
     removedCount: removed.length,
   };
 }
@@ -150,6 +153,49 @@ function truncateByHalving(msgs: Message[], maxTokens: number, keepOldestN: numb
   return [...head, ...recent];
 }
 
+function textFromMessage(msg: Message): string {
+  if (typeof msg.content === 'string') return msg.content;
+  return msg.content
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text)
+    .join(' ');
+}
+
+function normalizeCue(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+function buildRecallCues(messages: Message[], limit = 6): string[] {
+  const userTexts = messages
+    .filter((m) => m.role === 'user')
+    .map(textFromMessage)
+    .map(normalizeCue)
+    .filter((t) => t.length >= 4 && !t.startsWith('tool '));
+  const cues: string[] = [];
+  const seen = new Set<string>();
+
+  for (const text of userTexts) {
+    const cue = text.length > 42 ? text.slice(0, 42) : text;
+    if (!cue || seen.has(cue)) continue;
+    seen.add(cue);
+    cues.push(cue);
+    if (cues.length >= limit) return cues;
+  }
+
+  const allText = userTexts.join(' ');
+  const terms = allText
+    .split(/[^\p{Script=Han}a-zA-Z0-9_-]+/u)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 2 && t.length <= 18);
+  for (const term of terms) {
+    if (seen.has(term)) continue;
+    seen.add(term);
+    cues.push(term);
+    if (cues.length >= limit) break;
+  }
+  return cues;
+}
+
 function hybrid(
   messages: Message[],
   keepOldest: number,
@@ -158,7 +204,7 @@ function hybrid(
   keepRecentTokens?: number,
 ): CompressionResult {
   if (messages.length <= keepOldest + keepRecent) {
-    return { messages, summary: '', removedCount: 0 };
+    return { messages, summary: '', recallCues: [], removedCount: 0 };
   }
 
   const oldest = messages.slice(0, keepOldest);
@@ -169,7 +215,7 @@ function hybrid(
   const middle = messages.slice(keepOldest, messages.length - recent.length);
 
   if (middle.length === 0) {
-    return { messages, summary: '', removedCount: 0 };
+    return { messages, summary: '', recallCues: [], removedCount: 0 };
   }
 
   // Build a structured summary of the removed middle section
@@ -205,6 +251,12 @@ function hybrid(
     summaryParts.push(`期间使用了 ${toolMsgs.length} 次工具。`);
   }
 
+  const recallCues = buildRecallCues(middle);
+  if (recallCues.length > 0) {
+    summaryParts.push('召回线索：');
+    for (const cue of recallCues) summaryParts.push(`- ${cue}`);
+  }
+
   const summary = summaryParts.join('\n');
 
   // Fallback ladder: ensure oldest+recent fit the budget even if minKeep forced
@@ -214,6 +266,7 @@ function hybrid(
   return {
     messages: kept,
     summary,
+    recallCues,
     removedCount: messages.length - kept.length,
   };
 }
@@ -238,7 +291,7 @@ export function compressIfNeeded(
   const estimated = totalTokens(messages);
 
   if (estimated <= cfg.maxTokens) {
-    return { messages, summary: '', removedCount: 0 };
+    return { messages, summary: '', recallCues: [], removedCount: 0 };
   }
 
   switch (cfg.strategy) {

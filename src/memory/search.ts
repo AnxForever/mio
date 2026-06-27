@@ -19,6 +19,7 @@ import { readIndex, type MaterializedEntry } from './vector.js';
 import { getEmbeddingProvider } from './embedding.js';
 import { memoryBankDir } from './paths.js';
 import { bankFilePath, readFileSyncSafe } from './bank.js';
+import { transcriptVisibleInScope, type MemorySearchScope } from './scope.js';
 
 // ─── Types ───
 
@@ -28,6 +29,7 @@ export interface SearchResult {
   score: number;
   source: string;
   timestamp: string;
+  role?: 'user' | 'assistant';
 }
 
 export interface HybridSearchOptions {
@@ -36,6 +38,8 @@ export interface HybridSearchOptions {
   minScore?: number;
   searchTranscripts?: boolean;
   searchMemory?: boolean;
+  role?: 'user' | 'assistant';
+  scope?: MemorySearchScope;
 }
 
 // ─── Constants ───
@@ -139,6 +143,7 @@ interface ScoredMatch {
   score: number;
   source: string;
   timestamp: string;
+  role?: 'user' | 'assistant';
 }
 
 /**
@@ -237,7 +242,11 @@ function scoreKeywordMatch(
 /**
  * Search transcript JSONL files for keyword matches.
  */
-function keywordSearchTranscripts(query: string): ScoredMatch[] {
+function keywordSearchTranscripts(
+  query: string,
+  scope?: MemorySearchScope,
+  role?: 'user' | 'assistant',
+): ScoredMatch[] {
   const results: ScoredMatch[] = [];
   const qLower = query.toLowerCase();
   const terms = qLower.split(/\s+/).filter((w) => w.length > 0);
@@ -250,6 +259,7 @@ function keywordSearchTranscripts(query: string): ScoredMatch[] {
 
   for (const file of files) {
     const sessionId = file.replace(/\.jsonl$/, '');
+    if (!transcriptVisibleInScope(sessionId, scope)) continue;
     const filePath = join(dir, file);
     try {
       const raw = readFileSync(filePath, 'utf-8');
@@ -257,16 +267,26 @@ function keywordSearchTranscripts(query: string): ScoredMatch[] {
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
+        let entry: {
+          type?: string;
+          role?: string;
+          content?: string;
+          summary?: string;
+          recallCues?: string[];
+          timestamp?: string;
+        };
         try {
-          const entry = JSON.parse(trimmed) as {
-            type?: string;
-            role?: string;
-            content?: string;
-            timestamp?: string;
-          };
-          if (entry.type !== 'message' && entry.type !== undefined) continue;
+          entry = JSON.parse(trimmed);
+        } catch {
+          // skip malformed JSON lines
+          continue;
+        }
+
+        if (entry.type === 'message' || entry.type === undefined) {
           const content = entry.content;
           if (!content || typeof content !== 'string') continue;
+          const entryRole = entry.role === 'assistant' ? 'assistant' : entry.role === 'user' ? 'user' : undefined;
+          if (role && entryRole !== role) continue;
 
           const score = scoreKeywordMatch(content, qLower, terms);
           if (score > 0) {
@@ -276,10 +296,25 @@ function keywordSearchTranscripts(query: string): ScoredMatch[] {
               score,
               source: 'transcript',
               timestamp: entry.timestamp ?? new Date().toISOString(),
+              role: entryRole,
             });
           }
-        } catch {
-          // skip malformed JSON lines
+          continue;
+        }
+
+        if (!role && entry.type === 'compaction' && entry.summary) {
+          const cueText = Array.isArray(entry.recallCues) ? entry.recallCues.join(' ') : '';
+          const content = `${entry.summary}\n${cueText}`.trim();
+          const score = scoreKeywordMatch(content, qLower, terms);
+          if (score > 0) {
+            results.push({
+              id: `transcript:${sessionId}:${entry.timestamp ?? now}:compaction`,
+              content: content.slice(0, 300),
+              score,
+              source: 'transcript_compaction',
+              timestamp: entry.timestamp ?? new Date().toISOString(),
+            });
+          }
         }
       }
     } catch {
@@ -461,7 +496,7 @@ export async function hybridSearch(opts: HybridSearchOptions): Promise<SearchRes
 
   const maxResults = opts.maxResults ?? DEFAULT_MAX_RESULTS;
   const searchTranscripts = opts.searchTranscripts !== false;
-  const searchMemory = opts.searchMemory !== false;
+  const searchMemory = opts.searchMemory !== false && !opts.role;
 
   const now = new Date();
   const lists: ScoredMatch[][] = [];
@@ -472,7 +507,7 @@ export async function hybridSearch(opts: HybridSearchOptions): Promise<SearchRes
     keywordResults.push(...keywordSearchMemory(query));
   }
   if (searchTranscripts) {
-    keywordResults.push(...keywordSearchTranscripts(query));
+    keywordResults.push(...keywordSearchTranscripts(query, opts.scope, opts.role));
   }
   if (keywordResults.length > 0) {
     lists.push(keywordResults);
@@ -480,7 +515,7 @@ export async function hybridSearch(opts: HybridSearchOptions): Promise<SearchRes
 
   // 2. Semantic search (async)
   try {
-    const semanticResults = await semanticSearch(query);
+    const semanticResults = searchMemory ? await semanticSearch(query) : [];
     if (semanticResults.length > 0) {
       lists.push(semanticResults);
     }
@@ -518,6 +553,7 @@ export async function hybridSearch(opts: HybridSearchOptions): Promise<SearchRes
     score: r.score,
     source: r.source,
     timestamp: r.timestamp,
+    role: r.role,
   }));
 }
 

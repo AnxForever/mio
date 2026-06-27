@@ -69,7 +69,7 @@ import { reindexBookmarks, search as searchMemory } from '../memory/vector.js';
 import { rerankByLLM } from '../memory/rerank.js';
 import { getRelationContext } from '../memory/entity-graph.js';
 import { compressIfNeeded } from '../memory/compression.js';
-import { loadTranscriptWindow } from '../memory/transcript.js';
+import { appendTranscript, loadTranscriptWindow } from '../memory/transcript.js';
 import { getLorebookContext, commitLorebookState } from '../memory/lorebook.js';
 import { PromptBudget } from '../utils/prompt-budget.js';
 import { getMirrorHint } from '../learning/mirror.js';
@@ -124,7 +124,9 @@ import type {
   EmotionState,
   RelationshipState,
   ContentBlock,
+  TurnChannelContext,
 } from '../types.js';
+import { shouldSkipReplyForNecessity } from '../emotion/reply-necessity.js';
 
 // ─── Public types ───
 
@@ -141,6 +143,7 @@ export interface TurnInput {
   imageBlocks?: ContentBlock[];
   audioPath?: string;
   sessionId?: string;
+  channel?: TurnChannelContext;
 }
 
 /**
@@ -159,6 +162,14 @@ export interface TurnOutput {
   crisisFlagged: boolean;
   /** Whether Mio chose to ghost this turn (no reply generated). */
   ghosted?: boolean;
+  /** Optional machine-readable reason for silent turns. */
+  silentReason?: string;
+}
+
+interface RunTurnOptions {
+  onToken?: (chunk: string) => void;
+  provider?: AIProvider;
+  registry?: ToolRegistryLike;
 }
 
 /** Turn counter for periodic operations (bank rotation, etc.) */
@@ -1164,6 +1175,12 @@ async function buildConversationMessages({
 
       if (compression.removedCount > 0) {
         systemPrompt = `${systemPrompt}\n\n${compression.summary}`;
+        appendTranscript(input.sessionId, {
+          type: 'compaction',
+          timestamp: new Date().toISOString(),
+          summary: compression.summary,
+          recallCues: compression.recallCues,
+        });
 
         if (!promptCtx.isolatedMemory) {
           appendBookmark({
@@ -1334,33 +1351,54 @@ function handleGhostTurn({
     turns: 0,
     crisisFlagged: false,
     ghosted: true,
+    silentReason: 'ghost',
   };
 }
 
-// ─── Main entry ───
+function handleSilentTurn({
+  sessionId,
+  userMessage,
+  crisisFlagged,
+  reason,
+}: {
+  sessionId: string;
+  userMessage: Message;
+  crisisFlagged: boolean;
+  reason: string;
+}): TurnOutput {
+  recordMessage(sessionId, userMessage);
+  recordMessage(sessionId, {
+    role: 'assistant',
+    content: '',
+    timestamp: new Date().toISOString(),
+  });
 
-/**
- * Run a single turn of conversation.
- *
- * Pure function: takes input, returns output. No global state mutation
- * outside the documented side effects (transcript append, emotion track,
- * BOOKMARKS append, MEMORY.md Active Context update).
- *
- * @param input            The turn input.
- * @param opts             Optional callbacks.
- *   - onToken: streaming token callback (called as the model emits text).
- *   - provider: override the default provider (for testing).
- *   - registry: override the default tool registry (for testing).
- * @returns                The turn output.
- */
-export async function runTurn(
-  input: TurnInput,
-  opts: {
-    onToken?: (chunk: string) => void;
-    provider?: AIProvider;
-    registry?: ToolRegistryLike;
-  } = {},
-): Promise<TurnOutput> {
+  return {
+    text: '',
+    sessionId,
+    toolCallCount: 0,
+    turns: 0,
+    crisisFlagged,
+    ghosted: true,
+    silentReason: reason,
+  };
+}
+
+interface PreparedTurnContext {
+  registry: ToolRegistryLike;
+  config: ReturnType<typeof getConfig>;
+  provider: AIProvider;
+  turnInput: TurnInput;
+  sessionId: string;
+  capturedDirectiveCount: number;
+  sessionCtx: SessionContext;
+  promptCtx: PromptCtx;
+  recovery: 'new' | 'compact' | 'none';
+  userMessage: Message;
+  crisisResult: ReturnType<typeof screenForCrisis>;
+}
+
+async function prepareTurnContext(input: TurnInput, opts: RunTurnOptions): Promise<PreparedTurnContext> {
   ensureBankStructure();
   await ensurePluginsLoaded();
   const registry = opts.registry ?? ensureToolsRegistered();
@@ -1371,8 +1409,6 @@ export async function runTurn(
   const config = getConfig();
   const provider = opts.provider ?? selectProvider(config.provider, config.model);
   const turnInput = await prepareTurnInput(input);
-
-  // 1. Resolve session + context
   const sessionId = turnInput.sessionId ?? randomUUID().slice(0, 12);
 
   // User shaping should affect the same turn that contains it. Capturing here
@@ -1387,7 +1423,6 @@ export async function runTurn(
     await pluginRegistry().invokeHook('onBeforeTurn', sessionCtx);
   }
 
-  // 2. Build the user message (text + optional image content blocks)
   const userContent: string | ContentBlock[] = buildUserContent(turnInput);
   const userMessage: Message = {
     role: 'user',
@@ -1397,35 +1432,52 @@ export async function runTurn(
 
   trackTurnActivity(turnInput, sessionId);
 
-  // 3. Crisis pre-screen (Phase 4). Runs in parallel with provider selection.
-  //    If triggered, we still let the model respond — but the loop will inject
-  //    a safety preamble and the side-effect step will append a BOOKMARKS line.
+  // Crisis pre-screen. If triggered, inference still runs with a safety
+  // injection and post-turn side effects record the crisis signal.
   const crisisResult = screenForCrisis(turnInput.text ?? '');
 
-  // 3a. Ghost check — should Mio stay silent this turn?
-  // Feature-gated via MIO_FEATURE_GHOST / config.features.ghost
-  let ghosted = false;
-  if (!sessionCtx.isolatedMemory && config.features.ghost && !crisisResult.shouldIntervene) {
-    ghosted = shouldGhost(turnInput.text ?? '', sessionCtx);
-  }
+  return {
+    registry,
+    config,
+    provider,
+    turnInput,
+    sessionId,
+    capturedDirectiveCount: capturedDirectives.length,
+    sessionCtx,
+    promptCtx,
+    recovery,
+    userMessage,
+    crisisResult,
+  };
+}
 
-  // If ghosting, skip inference entirely and return empty text
-  if (ghosted) {
-    const result = handleGhostTurn({ input: turnInput, sessionId, userMessage, config });
-    if (!sessionCtx.isolatedMemory) {
-      await pluginRegistry().invokeHook('onAfterTurn', sessionCtx, result);
-    }
-    if (!sessionCtx.isolatedMemory && !turnInput.sessionId) {
-      await pluginRegistry().invokeHook('onSessionEnd', sessionId);
-    }
-    return result;
-  }
+interface InferenceStageResult {
+  text: string;
+  toolCallCount: number;
+  turns: number;
+  intent: ReturnType<typeof classifyIntent>;
+  budget?: PromptBudget;
+}
+
+async function runInferenceStage(
+  prepared: PreparedTurnContext,
+  opts: RunTurnOptions,
+): Promise<InferenceStageResult> {
+  const {
+    registry,
+    config,
+    provider,
+    turnInput,
+    sessionId,
+    sessionCtx,
+    promptCtx,
+    recovery,
+    userMessage,
+    crisisResult,
+  } = prepared;
 
   if (!sessionCtx.isolatedMemory) {
     markReplied();
-  }
-
-  if (!sessionCtx.isolatedMemory) {
     applyPrePromptPersonalityDriver(turnInput, sessionCtx);
   }
 
@@ -1433,7 +1485,7 @@ export async function runTurn(
   // search) so the synchronous memory prompt section can consume them.
   await prefetchSemanticMemories(turnInput, promptCtx);
 
-  // 4. Build system prompt (after crisis screen so we can inject safety block)
+  // Build system prompt after crisis screen so safety can override recovery.
   const budget = config.features.promptBudgetLog ? new PromptBudget() : undefined;
   let systemPrompt = buildSystemPrompt(
     promptCtx,
@@ -1456,7 +1508,6 @@ export async function runTurn(
 
   recordMessage(sessionId, userMessage);
 
-  // 6. Run inference loop
   const onToken = opts.onToken ?? (() => {});
   const { text, toolCallCount, turns } = await runInferenceLoop(
     provider,
@@ -1466,6 +1517,80 @@ export async function runTurn(
     scopedToolRegistry(registry, sessionCtx),
     onToken,
   );
+
+  return { text, toolCallCount, turns, intent, budget };
+}
+
+// ─── Main entry ───
+
+/**
+ * Run a single turn of conversation.
+ *
+ * Pure function: takes input, returns output. No global state mutation
+ * outside the documented side effects (transcript append, emotion track,
+ * BOOKMARKS append, MEMORY.md Active Context update).
+ *
+ * @param input            The turn input.
+ * @param opts             Optional callbacks.
+ *   - onToken: streaming token callback (called as the model emits text).
+ *   - provider: override the default provider (for testing).
+ *   - registry: override the default tool registry (for testing).
+ * @returns                The turn output.
+ */
+export async function runTurn(
+  input: TurnInput,
+  opts: RunTurnOptions = {},
+): Promise<TurnOutput> {
+  const prepared = await prepareTurnContext(input, opts);
+  const {
+    config,
+    turnInput,
+    sessionId,
+    capturedDirectiveCount,
+    sessionCtx,
+    userMessage,
+    crisisResult,
+  } = prepared;
+
+  // 3a. Reply necessity check — group/channel messages should not always make
+  // Mio speak. Direct mentions and crisis messages always proceed.
+  if (!crisisResult.shouldIntervene) {
+    const necessity = shouldSkipReplyForNecessity(turnInput.text ?? '', turnInput.channel);
+    if (necessity.skip) {
+      logger.info('[reply-necessity] silent group turn', {
+        sessionId,
+        score: necessity.score.score,
+        detail: necessity.score.detail,
+      });
+      return handleSilentTurn({
+        sessionId,
+        userMessage,
+        crisisFlagged: false,
+        reason: 'reply_necessity_low',
+      });
+    }
+  }
+
+  // 3b. Ghost check — should Mio stay silent this turn?
+  // Feature-gated via MIO_FEATURE_GHOST / config.features.ghost
+  let ghosted = false;
+  if (!sessionCtx.isolatedMemory && config.features.ghost && !crisisResult.shouldIntervene) {
+    ghosted = shouldGhost(turnInput.text ?? '', sessionCtx);
+  }
+
+  // If ghosting, skip inference entirely and return empty text
+  if (ghosted) {
+    const result = handleGhostTurn({ input: turnInput, sessionId, userMessage, config });
+    if (!sessionCtx.isolatedMemory) {
+      await pluginRegistry().invokeHook('onAfterTurn', sessionCtx, result);
+    }
+    if (!sessionCtx.isolatedMemory && !turnInput.sessionId) {
+      await pluginRegistry().invokeHook('onSessionEnd', sessionId);
+    }
+    return result;
+  }
+
+  const { text, toolCallCount, turns, intent, budget } = await runInferenceStage(prepared, opts);
 
   await applyPostTurnSideEffects({
     input: turnInput,
@@ -1477,7 +1602,7 @@ export async function runTurn(
     config,
     budget,
     isNewSession: !turnInput.sessionId,
-    capturedDirectiveCount: capturedDirectives.length,
+    capturedDirectiveCount,
   });
 
   const result: TurnOutput = {

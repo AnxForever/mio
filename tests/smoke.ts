@@ -391,6 +391,55 @@ async function main(): Promise<void> {
         `reason=${j.reason}`,
       );
     }
+    {
+      const fakeOneBot = await startFakeOneBotApi();
+      const previousApiBase = process.env.MIO_ONEBOT_API_BASE;
+      const previousReplyMode = process.env.MIO_ONEBOT_REPLY_MODE;
+      const previousGroupMode = process.env.MIO_ONEBOT_GROUP_MODE;
+      process.env.MIO_ONEBOT_API_BASE = fakeOneBot.url;
+      process.env.MIO_ONEBOT_REPLY_MODE = 'api';
+      process.env.MIO_ONEBOT_GROUP_MODE = 'all';
+      try {
+        const r = await fetch(`${base}/onebot/v11/events`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            post_type: 'message',
+            message_type: 'group',
+            user_id: 10001,
+            group_id: 40004,
+            self_id: 20002,
+            raw_message: '哈哈',
+            message: '哈哈',
+          }),
+        });
+        const j = (await r.json()) as {
+          ok: boolean;
+          processed: boolean;
+          sent: boolean;
+          ghosted?: boolean;
+          sessionId?: string;
+        };
+        record(
+          'POST /onebot/v11/events group-all low necessity stays silent',
+          r.status === 200 &&
+            j.ok === true &&
+            j.processed === true &&
+            j.sent === false &&
+            j.ghosted === true &&
+            fakeOneBot.calls.length === 0,
+          `session=${j.sessionId} calls=${fakeOneBot.calls.length}`,
+        );
+      } finally {
+        if (previousApiBase === undefined) delete process.env.MIO_ONEBOT_API_BASE;
+        else process.env.MIO_ONEBOT_API_BASE = previousApiBase;
+        if (previousReplyMode === undefined) delete process.env.MIO_ONEBOT_REPLY_MODE;
+        else process.env.MIO_ONEBOT_REPLY_MODE = previousReplyMode;
+        if (previousGroupMode === undefined) delete process.env.MIO_ONEBOT_GROUP_MODE;
+        else process.env.MIO_ONEBOT_GROUP_MODE = previousGroupMode;
+        await fakeOneBot.close();
+      }
+    }
 
     // ─── 6. Crisis detection ───
     {

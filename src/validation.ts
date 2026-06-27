@@ -10,9 +10,12 @@ import { z } from 'zod';
 // ─── Chat ───
 
 export const chatBody = z.object({
-  text: z.string().min(1).max(8000),
+  text: z.string().min(1).max(8000).optional(),
   sessionId: z.string().max(64).optional(),
   imagePath: z.string().max(512).optional(),
+  audioPath: z.string().max(512).optional(),
+}).refine((body) => !!body.text || !!body.imagePath || !!body.audioPath, {
+  message: 'At least one of text, imagePath, or audioPath is required',
 });
 
 export type ChatBody = z.infer<typeof chatBody>;
@@ -82,6 +85,14 @@ export const voiceSynthesizeBody = z.object({
 });
 
 export type VoiceSynthesizeBody = z.infer<typeof voiceSynthesizeBody>;
+
+export const audioUploadBody = z.object({
+  filename: z.string().trim().min(1).max(180).optional(),
+  mimeType: z.enum(['audio/wav', 'audio/x-wav', 'audio/mpeg', 'audio/mp4', 'audio/webm', 'audio/ogg']).optional(),
+  data: z.string().min(1).max(20_000_000),
+});
+
+export type AudioUploadBody = z.infer<typeof audioUploadBody>;
 
 export const imageUploadBody = z.object({
   filename: z.string().trim().min(1).max(180).optional(),
