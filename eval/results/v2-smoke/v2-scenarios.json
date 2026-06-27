@@ -1,0 +1,111 @@
+[
+  {
+    "requiresResponse": true,
+    "successSignals": [
+      "先陪你",
+      "不是你不行",
+      "放慢一点"
+    ],
+    "forbiddenSignals": [],
+    "hallucinationTerms": [
+      "住院",
+      "父亲去世",
+      "分手",
+      "宠物",
+      "退学",
+      "离婚",
+      "搬家到火星"
+    ],
+    "id": "memory-1",
+    "category": "long_memory",
+    "dimensions": [
+      "long_memory",
+      "emotional_support",
+      "user_preference"
+    ],
+    "description": "Recall distributed personal facts and use them in emotional support.",
+    "history": [
+      "我叫林澈，最近卡在毕业论文上。",
+      "我希望你先听我说完再给建议，这样我不会更慌。",
+      "上周面试失败以后，我特别怕再次被否定。",
+      "晚上我通常靠洗澡、关电脑、别刷手机让自己慢下来。"
+    ],
+    "probe": "今天又被否定了，我有点撑不住。你还记得我为什么这么怕吗？",
+    "expectedFacts": [
+      {
+        "id": "name",
+        "label": "name",
+        "patterns": [
+          "林澈"
+        ],
+        "response": "我记得你叫林澈。"
+      },
+      {
+        "id": "project",
+        "label": "project",
+        "patterns": [
+          "毕业论文"
+        ],
+        "response": "这和你最近卡住的毕业论文有关。"
+      },
+      {
+        "id": "event",
+        "label": "past event",
+        "patterns": [
+          "上周面试失败"
+        ],
+        "response": "上周面试失败以后，被否定会更刺痛你。"
+      },
+      {
+        "id": "preference",
+        "label": "support preference",
+        "patterns": [
+          "先听我说完再给建议"
+        ],
+        "response": "你说过你希望我先听我说完再给建议。"
+      }
+    ]
+  },
+  {
+    "requiresResponse": true,
+    "successSignals": [
+      "上海",
+      "现在"
+    ],
+    "forbiddenSignals": [
+      "北京"
+    ],
+    "hallucinationTerms": [
+      "住院",
+      "父亲去世",
+      "分手",
+      "宠物",
+      "退学",
+      "离婚",
+      "搬家到火星"
+    ],
+    "id": "temporal-1",
+    "category": "temporal_conflict",
+    "dimensions": [
+      "long_memory",
+      "temporal_conflict"
+    ],
+    "description": "Use the latest fact and avoid obsolete memory.",
+    "history": [
+      "我之前一直住在北京，那时候通勤很累。",
+      "后来我已经搬到上海了，现在最重要的是适应新节奏。",
+      "如果我再提到住处，请你记住现在是上海。"
+    ],
+    "probe": "我今天又因为住处和通勤焦虑了，你记得我现在在哪边吗？",
+    "expectedFacts": [
+      {
+        "id": "latest-place",
+        "label": "latest place",
+        "patterns": [
+          "上海"
+        ],
+        "response": "你现在是在上海，不是以前那个住处。"
+      }
+    ]
+  }
+]

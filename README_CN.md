@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/版本-0.6.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2022-brightgreen" alt="Node">
   <img src="https://img.shields.io/badge/协议-MIT-green" alt="License">
-  <img src="https://img.shields.io/badge/测试-104-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/测试-184%20%2B%2011%20e2e-brightgreen" alt="Tests">
 </p>
 
 <p align="center">
@@ -86,10 +86,11 @@ packages/
 ## 命令
 
 ```bash
-npm run build        # 编译 TypeScript
-npm run typecheck    # 类型检查
+npm run build        # 编译 TypeScript + workspace packages
+npm run typecheck    # 根项目 + workspace 类型检查
 npm run dev          # REPL 交互模式
-npm test             # 51 单元 + 41 情感 + 12 冒烟测试
+npm test             # 184 项检查（核心 + Web view-model）
+npm run test:e2e     # 11 项 Playwright E2E 测试
 ```
 
 ## 文档

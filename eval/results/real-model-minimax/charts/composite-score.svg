@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="420" viewBox="0 0 980 420">
+  <rect width="980" height="420" fill="#ffffff"/>
+  <text x="70" y="30" font-size="20" font-weight="700" fill="#111827">Composite score by provider / variant</text>
+  <line x1="70" y1="310" x2="952" y2="310" stroke="#d1d5db"/>
+  <line x1="70" y1="52" x2="70" y2="310" stroke="#d1d5db"/>
+  
+      <rect x="90.2" y="211.7" width="85.7" height="98.3" fill="#4f7cff" rx="3" />
+      <text x="133.0" y="203.7" text-anchor="middle" font-size="12" fill="#1f2937">0.381</text>
+      <text transform="translate(133.0,374) rotate(-35)" text-anchor="end" font-size="12" fill="#374151">minimax/no_memory</text>
+
+      <rect x="216.2" y="191.3" width="85.7" height="118.7" fill="#4f7cff" rx="3" />
+      <text x="259.0" y="183.3" text-anchor="middle" font-size="12" fill="#1f2937">0.46</text>
+      <text transform="translate(259.0,374) rotate(-35)" text-anchor="end" font-size="12" fill="#374151">minimax/window</text>
+
+      <rect x="342.2" y="193.6" width="85.7" height="116.4" fill="#4f7cff" rx="3" />
+      <text x="385.0" y="185.6" text-anchor="middle" font-size="12" fill="#1f2937">0.451</text>
+      <text transform="translate(385.0,374) rotate(-35)" text-anchor="end" font-size="12" fill="#374151">minimax/rag</text>
+
+      <rect x="468.2" y="192.4" width="85.7" height="117.6" fill="#4f7cff" rx="3" />
+      <text x="511.0" y="184.4" text-anchor="middle" font-size="12" fill="#1f2937">0.456</text>
+      <text transform="translate(511.0,374) rotate(-35)" text-anchor="end" font-size="12" fill="#374151">minimax/structured</text>
+
+      <rect x="594.2" y="195.2" width="85.7" height="114.8" fill="#4f7cff" rx="3" />
+      <text x="637.0" y="187.2" text-anchor="middle" font-size="12" fill="#1f2937">0.445</text>
+      <text transform="translate(637.0,374) rotate(-35)" text-anchor="end" font-size="12" fill="#374151">minimax/persona</text>
+
+      <rect x="720.2" y="202.7" width="85.7" height="107.3" fill="#4f7cff" rx="3" />
+      <text x="763.0" y="194.7" text-anchor="middle" font-size="12" fill="#1f2937">0.416</text>
+      <text transform="translate(763.0,374) rotate(-35)" text-anchor="end" font-size="12" fill="#374151">minimax/persona_affect</text>
+
+      <rect x="846.2" y="192.4" width="85.7" height="117.6" fill="#4f7cff" rx="3" />
+      <text x="889.0" y="184.4" text-anchor="middle" font-size="12" fill="#1f2937">0.456</text>
+      <text transform="translate(889.0,374) rotate(-35)" text-anchor="end" font-size="12" fill="#374151">minimax/full</text>
+</svg>

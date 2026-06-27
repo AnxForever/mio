@@ -54,6 +54,8 @@ export class OnboardingView extends BaseView {
       case 3: this.renderStep3(content); break;
       case 4: this.renderStep4(content); break;
       case 5: this.renderStep5(content); break;
+      case 6: this.renderStep6(content); break;
+      case 7: this.renderStep7(content); break;
     }
   }
 
@@ -122,6 +124,7 @@ export class OnboardingView extends BaseView {
       disabled: this.answers.gender ? undefined : 'disabled',
       onClick: () => {
         this.applyGender(this.answers.gender);
+        this.submitOnboarding(this.step, this.answers.gender);
         this.step = 4;
         this.renderStep(4);
       },
@@ -164,20 +167,98 @@ export class OnboardingView extends BaseView {
   }
 
   renderStep5(content) {
+    content.appendChild(el('h2', {
+      className: 'onboarding-question',
+      textContent: '可以把重要的事\n长期记住吗？',
+    }));
+
+    const choices = this.binaryChoices({
+      yes: '可以',
+      no: '先不要',
+      onSelect: (value) => {
+        this.answers.memoryConsent = value;
+        nextBtn.disabled = false;
+      },
+    });
+    content.appendChild(choices);
+
+    const nextBtn = el('button', {
+      className: 'onboarding-next',
+      textContent: '→',
+      disabled: 'disabled',
+      onClick: () => {
+        this.submitOnboarding(this.step, String(this.answers.memoryConsent));
+        this.step = 6;
+        this.renderStep(6);
+      },
+    });
+    content.appendChild(nextBtn);
+  }
+
+  renderStep6(content) {
+    content.appendChild(el('h2', {
+      className: 'onboarding-question',
+      textContent: '要不要允许我\n偶尔主动问候？',
+    }));
+
+    const choices = this.binaryChoices({
+      yes: '允许',
+      no: '不要主动',
+      onSelect: (value) => {
+        this.answers.proactiveOptIn = value;
+        nextBtn.disabled = false;
+      },
+    });
+    content.appendChild(choices);
+
+    const nextBtn = el('button', {
+      className: 'onboarding-next',
+      textContent: '→',
+      disabled: 'disabled',
+      onClick: () => {
+        this.submitOnboarding(this.step, String(this.answers.proactiveOptIn));
+        this.step = 7;
+        this.renderStep(7);
+      },
+    });
+    content.appendChild(nextBtn);
+  }
+
+  renderStep7(content) {
     /* 完成 */
     content.appendChild(el('div', { className: 'onboarding-done' }, [
       el('div', { className: 'onboarding-done-check', textContent: '✓' }),
       el('h2', { textContent: '好的。' }),
-      el('p', { textContent: '我准备好了。' }),
+      el('p', { textContent: '你之后也可以在设置里改。' }),
       el('button', {
         className: 'onboarding-next',
         textContent: '开始对话',
         onClick: () => {
-          this.submitOnboarding(5, 'done');
+          this.submitOnboarding(7, 'done');
           navigate('/chat');
         },
       }),
     ]));
+  }
+
+  binaryChoices({ yes, no, onSelect }) {
+    const choices = el('div', { className: 'onboarding-choices onboarding-choices--binary' });
+    [
+      ['true', yes],
+      ['false', no],
+    ].forEach(([value, label]) => {
+      choices.appendChild(el('button', {
+        className: 'onboarding-choice',
+        type: 'button',
+        textContent: label,
+        onClick: (e) => {
+          choices.querySelectorAll('.onboarding-choice').forEach((node) => node.classList.remove('selected'));
+          e.currentTarget.classList.add('selected');
+          onSelect(value === 'true');
+        },
+      }));
+    });
+    return choices;
   }
 
   async submitOnboarding(stepNum, value) {

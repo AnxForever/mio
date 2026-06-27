@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/version-0.6.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2022-brightgreen" alt="Node">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
-  <img src="https://img.shields.io/badge/tests-104-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-184%20%2B%2011%20e2e-brightgreen" alt="Tests">
 </p>
 
 <p align="center">
@@ -86,10 +86,11 @@ packages/
 ## Commands
 
 ```bash
-npm run build        # tsc
-npm run typecheck    # tsc --noEmit
+npm run build        # tsc + workspace packages
+npm run typecheck    # root + workspace typecheck
 npm run dev          # REPL
-npm test             # 51 unit + 41 emotion + 12 smoke
+npm test             # 184 checks (core + web view-models)
+npm run test:e2e     # 11 Playwright E2E tests
 ```
 
 ## Documentation

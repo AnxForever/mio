@@ -42,6 +42,8 @@ export class SettingsView extends BaseView {
     container.innerHTML = '';
 
     this.buildGenderSection(container);
+    this.buildMemorySection(container);
+    this.buildProactiveSection(container);
     this.buildConnectionSection(container);
     this.buildNotifySection(container);
     this.buildDataSection(container);
@@ -52,6 +54,85 @@ export class SettingsView extends BaseView {
       el('div', { className: 'about-version', textContent: 'v0.7.0' }),
       el('div', { className: 'about-tagline', textContent: '用心陪伴 · 每一帧' }),
     ]));
+  }
+
+  /* ─── 记忆 ─── */
+
+  buildMemorySection(container) {
+    const { wrap, body } = this.makeSection('记忆');
+
+    body.appendChild(this.row({
+      label: '查看和修正记忆',
+      desc: '检查 Mio 记住了什么，删除不该保留的内容',
+      onClick: () => navigate('/memories'),
+    }));
+
+    wrap.appendChild(el('div', {
+      className: 'settings-hint',
+      textContent: '长期记忆只有在你能审查和修改时才值得信任。',
+    }));
+
+    container.appendChild(wrap);
+  }
+
+  /* ─── 主动关心 ─── */
+
+  buildProactiveSection(container) {
+    const { wrap, body } = this.makeSection('主动关心');
+    const enabledToggle = this.toggleControl(false, async (checked) => {
+      await this.saveProactivePreference({ enabled: checked });
+    });
+
+    body.appendChild(this.row({
+      label: '允许低压力问候',
+      desc: '关闭后 Mio 不会主动发起消息',
+      value: enabledToggle,
+    }));
+
+    const intervalSelect = this.selectControl([
+      ['120', '至少 2 小时'],
+      ['360', '至少 6 小时'],
+      ['720', '至少 12 小时'],
+      ['1440', '至少 1 天'],
+    ], async (value) => {
+      await this.saveProactivePreference({ minIntervalMinutes: Number(value) });
+    });
+
+    body.appendChild(this.row({
+      label: '最短间隔',
+      desc: '限制主动消息频率',
+      value: intervalSelect,
+    }));
+
+    wrap.appendChild(el('div', {
+      className: 'settings-hint',
+      textContent: '主动消息应该是可关闭、可预测、不过度打扰的。',
+    }));
+
+    container.appendChild(wrap);
+    this.loadProactivePreferences(enabledToggle, intervalSelect);
+  }
+
+  async loadProactivePreferences(toggle, intervalSelect) {
+    try {
+      const data = await api.get('/proactive/preferences');
+      const prefs = data?.preferences || {};
+      const input = toggle.querySelector('input');
+      if (input) input.checked = !!prefs.enabled;
+      if (prefs.minIntervalMinutes) intervalSelect.value = String(prefs.minIntervalMinutes);
+    } catch {
+      toast('主动关心设置读取失败', 'error');
+    }
+  }
+
+  async saveProactivePreference(patch) {
+    try {
+      await api.post('/proactive/preferences', patch);
+      toast('设置已更新', 'success');
+    } catch {
+      toast('保存失败', 'error');
+      this.buildSettings(this.el.querySelector('#settings-content'));
+    }
   }
 
   /* ─── Mio 性别 ─── */
@@ -184,7 +265,7 @@ export class SettingsView extends BaseView {
   /* ─── 数据 ─── */
 
   buildDataSection(container) {
-    const { wrap, body } = this.makeSection('数据');
+    const { wrap, body } = this.makeSection('隐私与数据');
 
     body.appendChild(this.row({
       label: '导出记忆',
@@ -204,6 +285,12 @@ export class SettingsView extends BaseView {
           toast('导出失败', 'error');
         }
       },
+    }));
+
+    body.appendChild(this.row({
+      label: '删除单条记忆',
+      desc: '打开记忆审查页，移除不该保留的内容',
+      onClick: () => navigate('/memories'),
     }));
 
     body.appendChild(this.row({
@@ -251,6 +338,24 @@ export class SettingsView extends BaseView {
     }
 
     return cell;
+  }
+
+  toggleControl(initial, onChange) {
+    const input = el('input', { type: 'checkbox', name: 'proactive-enabled' });
+    input.checked = !!initial;
+    const track = el('span', { className: 'settings-switch-track' });
+    const wrap = el('label', { className: 'settings-switch' }, [input, track]);
+    this.on(input, 'change', () => onChange(input.checked));
+    return wrap;
+  }
+
+  selectControl(options, onChange) {
+    const select = el('select', { className: 'settings-select', name: 'proactive-interval' });
+    options.forEach(([value, label]) => {
+      select.appendChild(el('option', { value, textContent: label }));
+    });
+    this.on(select, 'change', () => onChange(select.value));
+    return select;
   }
 }
 

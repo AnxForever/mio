@@ -13,8 +13,7 @@
  * The server is intentionally thin: it owns HTTP plumbing, CORS, and
  * lifecycle. Business logic lives in src/core/agent-loop.ts.
  *
- * Auth: none in v0.1. Add a bearer-token middleware before exposing
- * this beyond localhost.
+ * Auth: optional bearer-token middleware via MIO_AUTH_TOKEN.
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -44,6 +43,10 @@ import {
   modBody,
   searchQuery,
   analyticsQuery,
+  memoryQuery,
+  memoryIdParam,
+  memoryPatchBody,
+  proactivePreferencesBody,
   onboardingBody,
   backupPruneBody,
   characterConfigSchema,
@@ -64,6 +67,15 @@ import {
   getConversationStats,
 } from './analytics.js';
 import { searchHandler } from './search.js';
+import {
+  deleteMemoryReviewItem,
+  listMemoryReviewItems,
+  updateMemoryReviewItem,
+} from './memories.js';
+import {
+  getSmartProactiveConfig,
+  updateSmartProactiveConfig,
+} from '../scheduler/smart-proactive.js';
 import {
   isFirstRun,
   getOnboardingSteps,
@@ -133,12 +145,6 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   const app = express();
   app.use(express.json({ limit: '5mb' })); // vision base64 can be large
 
-  // ─── Rate limiting (DoS protection) ───
-  // Applied BEFORE auth middleware — we want to block abusive IPs before
-  // spending CPU cycles on authentication. GET /health is exempt so liveness
-  // probes always work under load.
-  app.use(createRateLimiter());
-
   // ─── Static files ───
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = dirname(__filename);
@@ -149,6 +155,11 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   app.get('/', (_req, res) => {
     res.redirect('/index.html');
   });
+
+  // ─── Rate limiting (DoS protection) ───
+  // Applied to API routes after static assets, so initial web UI boot does not
+  // consume the request budget with CSS/JS/image fetches.
+  app.use(createRateLimiter());
 
   // ─── Onboarding routes (no auth — must be available before config exists) ───
 
@@ -189,14 +200,23 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     // Load or create state
     const state = loadOnboardingState() ?? { done: false, currentStep: 1 };
     const updated = applyValue(state, body.step, body.value);
-    saveOnboardingState(updated as Parameters<typeof saveOnboardingState>[0]);
+    if (body.step === 6) {
+      updateSmartProactiveConfig({ enabled: body.value === 'true' });
+    }
 
-    // If step 5 was answered, we're done (the CLI version sends the first message;
+    // If the final step was answered, we're done (the CLI version sends the first message;
     // the web UI will do it separately via POST /chat)
-    if (body.step >= 5) {
+    if (body.step >= 7) {
+      saveOnboardingState({
+        ...(updated as Parameters<typeof saveOnboardingState>[0]),
+        done: true,
+        currentStep: 0,
+      });
       res.json({ step: 0, question: '', done: true, key: '' });
       return;
     }
+
+    saveOnboardingState(updated as Parameters<typeof saveOnboardingState>[0]);
 
     // Return next step
     const nextStep = getStep(body.step + 1);
@@ -210,7 +230,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   // ─── Routes ───
 
   app.get('/health', (_req, res) => {
-    res.json({ ok: true, name: 'mio', version: '0.1.0' });
+    res.json({ ok: true, name: 'mio', version: '0.6.0' });
   });
 
   app.get('/status', (_req, res) => {
@@ -515,6 +535,49 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   // GET /analytics/conversation — conversation stats
   app.get('/analytics/conversation', requireAuth, (_req, res) => {
     res.json(getConversationStats());
+  });
+
+  // ─── Memory review ───
+
+  app.get('/memories', requireAuth, validateQuery(memoryQuery), async (req, res) => {
+    const { q, limit } = req.query as unknown as { q?: string; limit?: number };
+    const items = listMemoryReviewItems().slice(0, limit ?? 100);
+    const trimmed = q?.trim();
+    const searchResults = trimmed
+      ? (await searchHandler(trimmed, { maxResults: limit ?? 20 })).results
+      : [];
+    res.json({ items, searchResults });
+  });
+
+  app.patch('/memories/:id', requireAuth, validateParams(memoryIdParam), validate(memoryPatchBody), (req, res) => {
+    const { id } = req.params as { id: string };
+    const item = updateMemoryReviewItem(id, req.body);
+    if (!item) {
+      res.status(404).json({ error: 'Memory not found' });
+      return;
+    }
+    res.json({ item });
+  });
+
+  app.delete('/memories/:id', requireAuth, validateParams(memoryIdParam), (req, res) => {
+    const { id } = req.params as { id: string };
+    const deleted = deleteMemoryReviewItem(id);
+    if (!deleted) {
+      res.status(404).json({ error: 'Memory not found' });
+      return;
+    }
+    res.json({ ok: true, id });
+  });
+
+  // ─── Proactive preferences ───
+
+  app.get('/proactive/preferences', requireAuth, (_req, res) => {
+    res.json({ preferences: getSmartProactiveConfig() });
+  });
+
+  app.post('/proactive/preferences', requireAuth, validate(proactivePreferencesBody), (req, res) => {
+    const preferences = updateSmartProactiveConfig(req.body);
+    res.json({ preferences });
   });
 
   // ─── Conversation search ───

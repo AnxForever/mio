@@ -22,8 +22,8 @@ const STAGE_INTERACTION_THRESHOLD = {
   intimate: Infinity,
 };
 
-/** 表情 → 心情中文标签 */
-const EXPR_MOOD_LABEL = {
+/** 表情 → 心情中文标签(消息列表/心情屋共享,避免重复维护)。 */
+export const EXPR_MOOD_LABEL = {
   happy: '开心',
   gentle: '温柔',
   longing: '想你了',

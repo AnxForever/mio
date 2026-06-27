@@ -15,18 +15,7 @@ import { ICONS } from '../utils/icons.js';
 import { navigate } from '../router.js';
 import { haptic } from '../utils/haptics.js';
 import { mascotSrc, EXPRESSIONS } from '../mascot.js';
-import { moodVM, relationshipVM } from '../liveness.js';
-
-/** 表情 → 情感全谱中文标签(与 EXPRESSIONS 顺序对应)。
- *  liveness.js 内有同款映射但未导出,这里独立维护 6 谱标签。 */
-const EXPR_LABELS = {
-  happy: '开心',
-  gentle: '温柔',
-  longing: '想你了',
-  shy: '害羞',
-  worried: '担心',
-  surprised: '惊喜',
-};
+import { moodVM, relationshipVM, EXPR_MOOD_LABEL as EXPR_LABELS } from '../liveness.js';
 
 /** 表情 → 一句温柔的当前心情描述(longing 走"想你"专属文案)。 */
 const EXPR_DESC = {

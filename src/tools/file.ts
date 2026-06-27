@@ -1,7 +1,7 @@
 // tools/file.ts — 通用文件工具 read/write/edit/find/bash（适配自 cola-companion）
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
-import { join, dirname, relative, resolve } from 'node:path';
+import { join, dirname, isAbsolute, relative, resolve } from 'node:path';
 import { execSync } from 'node:child_process';
 import { getDataDir } from '../config.js';
 import type { ToolDef, ToolHandler } from '../types.js';
@@ -10,7 +10,7 @@ import type { ToolDef, ToolHandler } from '../types.js';
 
 /** Directories that file tools are allowed to access. */
 function allowedDirs(): string[] {
-  return [getDataDir(), resolve(import.meta.dirname ?? process.cwd(), '..')];
+  return [...new Set([getDataDir(), process.cwd()].map((dir) => resolve(dir)))];
 }
 
 /** Resolve a path and verify it's within allowed directories. Returns null if blocked. */
@@ -18,7 +18,7 @@ function safeResolve(rawPath: string): string | null {
   const resolved = resolve(rawPath);
   for (const dir of allowedDirs()) {
     const rel = relative(dir, resolved);
-    if (!rel.startsWith('..') && !resolve(rel).startsWith('..')) {
+    if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) {
       return resolved;
     }
   }
@@ -130,7 +130,7 @@ const FIND_HANDLER: ToolHandler = async (args) => {
       }
     } catch { /* ignore */ }
   };
-  walk(path);
+  walk(safePath);
   return results.length ? results.join('\n') : 'No files found';
 };
 
@@ -141,7 +141,7 @@ function matchGlob(name: string, pattern: string): boolean {
 
 const BASH_DEF: ToolDef = {
   name: 'bash',
-  description: 'Execute a shell command. Returns stdout. Use for system operations, git, etc.',
+  description: 'Execute a restricted read-only shell command. Returns stdout.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -152,26 +152,80 @@ const BASH_DEF: ToolDef = {
   },
 };
 
-/** Read-only commands allowed in bash tool. Block destructive operations. */
-const BASH_ALLOWLIST = new Set([
-  'ls', 'cat', 'head', 'tail', 'wc', 'find', 'grep', 'git', 'pwd', 'which',
-  'node', 'npm', 'npx', 'tsc', 'tsx', 'echo', 'date', 'df', 'du', 'env',
-  'sort', 'uniq', 'wc', 'xargs', 'pgrep', 'ps',
+/**
+ * Read-only commands allowed in bash tool.
+ *
+ * Keep this deliberately narrower than a developer shell. The tool is exposed
+ * to the model, so commands that can execute code, install packages, mutate git
+ * state, or leak environment secrets are not allowed by default.
+ */
+const READ_ONLY_COMMANDS = new Set([
+  'ls', 'cat', 'head', 'tail', 'wc', 'find', 'grep', 'pwd', 'which',
+  'date', 'df', 'du', 'sort', 'uniq', 'pgrep', 'ps',
 ]);
+
+const READ_ONLY_GIT_SUBCOMMANDS = new Set([
+  'status', 'diff', 'show', 'log', 'branch', 'rev-parse', 'ls-files', 'grep', 'describe',
+]);
+
+function tokenizeCommand(command: string): string[] {
+  return command.trim().split(/\s+/).filter(Boolean);
+}
+
+function validateBashCommand(command: string, cwd?: string): string | null {
+  const trimmed = command.trim();
+  if (!trimmed) return 'Command is empty';
+
+  // execSync runs through a shell. Disallow shell composition entirely so a
+  // permitted first token cannot hide a second mutating command.
+  if (/[;&|`<>$\\\n\r]/.test(trimmed)) {
+    return 'Shell control operators, redirection, interpolation, and escapes are not allowed';
+  }
+
+  const tokens = tokenizeCommand(trimmed);
+  const cmdName = tokens[0]!;
+  if (cmdName === 'git') {
+    const subcommand = tokens[1];
+    if (!subcommand || !READ_ONLY_GIT_SUBCOMMANDS.has(subcommand)) {
+      return `Git subcommand "${subcommand ?? '(none)'}" not allowed. Allowed: ${[...READ_ONLY_GIT_SUBCOMMANDS].sort().join(', ')}`;
+    }
+    if (tokens.some((t) => t === '--output' || t.startsWith('--output=') || t === '-o')) {
+      return 'Git output-writing options are not allowed';
+    }
+  } else if (!READ_ONLY_COMMANDS.has(cmdName)) {
+    return `Command "${cmdName}" not allowed. Allowed: ${[...READ_ONLY_COMMANDS, 'git'].sort().join(', ')}`;
+  }
+
+  if (cmdName === 'find' && tokens.some((t) => t === '-exec' || t === '-delete')) {
+    return 'find -exec and -delete are not allowed';
+  }
+
+  for (const token of tokens.slice(1)) {
+    const unquoted = token.replace(/^['"]|['"]$/g, '');
+    if (/(^|\/)\.\.(\/|$)/.test(unquoted)) {
+      return 'Parent-directory path traversal is not allowed';
+    }
+    if (unquoted.startsWith('/') && safeResolve(unquoted) === null) {
+      return `Absolute path outside allowed directories is not allowed: ${unquoted}`;
+    }
+  }
+
+  if (cwd && safeResolve(cwd) === null) {
+    return `Access denied: cwd "${cwd}" is outside allowed directories`;
+  }
+
+  return null;
+}
 
 const BASH_HANDLER: ToolHandler = async (args, ctx) => {
   const { command, cwd } = args as { command: string; cwd?: string };
-  const cmdName = command.trim().split(/\s+/)[0];
-  if (!BASH_ALLOWLIST.has(cmdName)) {
-    return `Command "${cmdName}" not allowed. Allowed: ${[...BASH_ALLOWLIST].sort().join(', ')}`;
-  }
-  // Block dangerous patterns even within allowed commands
-  if (/rm\s+-rf|>\/dev|mkfs|dd\s+if|curl.*\|.*sh|wget.*\|.*sh/i.test(command)) {
-    return 'Destructive command pattern blocked';
-  }
+  const validationError = validateBashCommand(command, cwd);
+  if (validationError) return validationError;
+  const safeCwd = safeResolve(cwd ?? ctx.colaDir);
+  if (!safeCwd) return `Access denied: cwd "${cwd ?? ctx.colaDir}" is outside allowed directories`;
   try {
     const out = execSync(command, {
-      cwd: cwd ?? ctx.colaDir,
+      cwd: safeCwd,
       encoding: 'utf-8',
       timeout: 30000,
       maxBuffer: 1024 * 1024,

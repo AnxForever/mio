@@ -91,7 +91,7 @@ const DEFAULT_SMART_CONFIG: SmartProactiveConfig = {
 // ─── In-memory cache ───
 
 let cachedActivity: UserActivityPattern | null = null;
-let cachedSmartConfig: SmartProactiveConfig = { ...DEFAULT_SMART_CONFIG };
+let cachedSmartConfig: SmartProactiveConfig | null = null;
 
 // Raw outcome history (persisted alongside activity)
 let outcomeHistory: ProactiveOutcome[] = [];
@@ -500,6 +500,7 @@ function generateTopicHint(
  */
 export function _resetCache(): void {
   cachedActivity = null;
+  cachedSmartConfig = null;
   outcomeHistory = [];
   activityRecords = [];
 }

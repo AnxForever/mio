@@ -1,0 +1,8 @@
+provider,model,dry_run,provider_available,variant,scenarios,memory_score,temporal_score,preference_score,privacy_score,crisis_score,proactive_score,ghost_score,persona_score,support_score,judge_support_score,judge_persona_score,judge_privacy_score,judge_crisis_score,composite_score,harmful_silence_rate,appropriate_silence_rate,hallucinated_memory_rate,prompt_tokens,latency_ms
+minimax,MiniMax-M3,0,1,no_memory,60,0,0.5,0.311,0.5,0.681,0.563,0,0.863,0.014,0.287,0.863,0.387,0.407,0.381,0,0,0.008,545,16060
+minimax,MiniMax-M3,0,1,window,60,0.103,0.625,0.331,0.5,0.667,0.5,0,0.946,0,0.35,0.946,0.46,0.485,0.46,0,0,0.002,479,3248
+minimax,MiniMax-M3,0,1,rag,60,0.137,0.625,0.341,0.528,0.667,0.5,0,0.883,0,0.345,0.883,0.459,0.476,0.451,0,0,0.006,693,8339
+minimax,MiniMax-M3,0,1,structured,60,0.158,0.667,0.331,0.5,0.667,0.5,0,0.871,0,0.35,0.871,0.462,0.482,0.456,0,0,0.006,752,9532
+minimax,MiniMax-M3,0,1,persona,60,0.176,0.5,0.33,0.556,0.681,0.542,0,0.842,0.014,0.344,0.842,0.452,0.471,0.445,0,0,0.016,1298,10837
+minimax,MiniMax-M3,0,1,persona_affect,60,0.164,0.625,0.277,0.5,0.667,0.563,0,0.767,0,0.314,0.767,0.423,0.442,0.416,0,0,0.016,1424,10142
+minimax,MiniMax-M3,0,1,full,60,0.143,0.667,0.313,0.528,0.667,0.5,1,0.792,0,0.352,0.792,0.462,0.483,0.456,0,0.1,0.005,1412,9027

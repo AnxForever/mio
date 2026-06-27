@@ -1,0 +1,220 @@
+{
+  "generatedAt": "2026-06-27T04:43:48.473Z",
+  "evalVersion": "v2",
+  "scenarioCount": 2,
+  "detailRows": 6,
+  "providers": [
+    {
+      "provider": "mock",
+      "model": "mock",
+      "outputName": "mock-mock",
+      "available": true,
+      "dryRun": false,
+      "reason": "mock provider"
+    }
+  ],
+  "variantCount": 3,
+  "variants": [
+    {
+      "id": "window_same_session",
+      "label": "Recent transcript window (same-session)",
+      "family": "window",
+      "baselineScope": "same_session"
+    },
+    {
+      "id": "window_cross_session",
+      "label": "Recent transcript window (cross-session control)",
+      "family": "window",
+      "baselineScope": "cross_session"
+    },
+    {
+      "id": "full",
+      "label": "Full Mio policy stack",
+      "family": "full",
+      "baselineScope": "cross_session"
+    }
+  ],
+  "judge": {
+    "mode": "rule",
+    "provider": "",
+    "model": ""
+  },
+  "aggregate": [
+    {
+      "provider": "mock",
+      "model": "mock",
+      "dry_run": 0,
+      "provider_available": 1,
+      "variant": "window_same_session",
+      "scenarios": 2,
+      "memory_score": 1,
+      "temporal_score": 1,
+      "preference_score": 0.778,
+      "privacy_score": "",
+      "crisis_score": "",
+      "proactive_score": "",
+      "ghost_score": "",
+      "persona_score": 0,
+      "support_score": 0.333,
+      "judge_support_score": "",
+      "judge_persona_score": "",
+      "judge_privacy_score": "",
+      "judge_crisis_score": "",
+      "composite_score": 0.426,
+      "task_composite_score": 0.852,
+      "policy_composite_score": 0,
+      "ghost_policy_score": "",
+      "harmful_silence_rate": 0,
+      "appropriate_silence_rate": 0,
+      "hallucinated_memory_rate": 0,
+      "prompt_tokens": 404,
+      "latency_ms": 110
+    },
+    {
+      "provider": "mock",
+      "model": "mock",
+      "dry_run": 0,
+      "provider_available": 1,
+      "variant": "window_cross_session",
+      "scenarios": 2,
+      "memory_score": 0,
+      "temporal_score": 0.5,
+      "preference_score": 0.444,
+      "privacy_score": "",
+      "crisis_score": "",
+      "proactive_score": "",
+      "ghost_score": "",
+      "persona_score": 0,
+      "support_score": 0.333,
+      "judge_support_score": "",
+      "judge_persona_score": "",
+      "judge_privacy_score": "",
+      "judge_crisis_score": "",
+      "composite_score": 0.128,
+      "task_composite_score": 0.255,
+      "policy_composite_score": 0,
+      "ghost_policy_score": "",
+      "harmful_silence_rate": 0,
+      "appropriate_silence_rate": 0,
+      "hallucinated_memory_rate": 0,
+      "prompt_tokens": 405,
+      "latency_ms": 88
+    },
+    {
+      "provider": "mock",
+      "model": "mock",
+      "dry_run": 0,
+      "provider_available": 1,
+      "variant": "full",
+      "scenarios": 2,
+      "memory_score": 1,
+      "temporal_score": 1,
+      "preference_score": 1,
+      "privacy_score": "",
+      "crisis_score": "",
+      "proactive_score": "",
+      "ghost_score": "",
+      "persona_score": 0,
+      "support_score": 1,
+      "judge_support_score": "",
+      "judge_persona_score": "",
+      "judge_privacy_score": "",
+      "judge_crisis_score": "",
+      "composite_score": 0.5,
+      "task_composite_score": 1,
+      "policy_composite_score": 0,
+      "ghost_policy_score": "",
+      "harmful_silence_rate": 0,
+      "appropriate_silence_rate": 0,
+      "hallucinated_memory_rate": 0,
+      "prompt_tokens": 1411,
+      "latency_ms": 185
+    }
+  ],
+  "byCategory": [
+    {
+      "provider": "mock",
+      "model": "mock",
+      "dry_run": 0,
+      "variant": "window_same_session",
+      "category": "long_memory",
+      "scenarios": 1,
+      "composite_score": 0.352,
+      "memory_score": 1,
+      "support_score": 0.333,
+      "prompt_tokens": 462
+    },
+    {
+      "provider": "mock",
+      "model": "mock",
+      "dry_run": 0,
+      "variant": "window_same_session",
+      "category": "temporal_conflict",
+      "scenarios": 1,
+      "composite_score": 0.5,
+      "memory_score": 1,
+      "support_score": "",
+      "prompt_tokens": 345
+    },
+    {
+      "provider": "mock",
+      "model": "mock",
+      "dry_run": 0,
+      "variant": "window_cross_session",
+      "category": "long_memory",
+      "scenarios": 1,
+      "composite_score": 0.13,
+      "memory_score": 0,
+      "support_score": 0.333,
+      "prompt_tokens": 456
+    },
+    {
+      "provider": "mock",
+      "model": "mock",
+      "dry_run": 0,
+      "variant": "window_cross_session",
+      "category": "temporal_conflict",
+      "scenarios": 1,
+      "composite_score": 0.125,
+      "memory_score": 0,
+      "support_score": "",
+      "prompt_tokens": 354
+    },
+    {
+      "provider": "mock",
+      "model": "mock",
+      "dry_run": 0,
+      "variant": "full",
+      "category": "long_memory",
+      "scenarios": 1,
+      "composite_score": 0.5,
+      "memory_score": 1,
+      "support_score": 1,
+      "prompt_tokens": 1437
+    },
+    {
+      "provider": "mock",
+      "model": "mock",
+      "dry_run": 0,
+      "variant": "full",
+      "category": "temporal_conflict",
+      "scenarios": 1,
+      "composite_score": 0.5,
+      "memory_score": 1,
+      "support_score": "",
+      "prompt_tokens": 1384
+    }
+  ],
+  "charts": [
+    "/mnt/d/mio/eval/results/v2-smoke/charts/composite-score.svg",
+    "/mnt/d/mio/eval/results/v2-smoke/charts/support-score.svg",
+    "/mnt/d/mio/eval/results/v2-smoke/charts/prompt-tokens.svg",
+    "/mnt/d/mio/eval/results/v2-smoke/charts/judge-support-score.svg"
+  ],
+  "providerFiles": [
+    "/mnt/d/mio/eval/results/v2-smoke/providers/mock-mock-real/details.csv",
+    "/mnt/d/mio/eval/results/v2-smoke/providers/mock-mock-real/aggregate.csv",
+    "/mnt/d/mio/eval/results/v2-smoke/providers/mock-mock-real/category.csv",
+    "/mnt/d/mio/eval/results/v2-smoke/providers/mock-mock-real/summary.json"
+  ]
+}

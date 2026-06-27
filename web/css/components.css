@@ -23,6 +23,8 @@
 /* 可点反馈 */
 .tap { transition: transform var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease); }
 .tap:active { transform: scale(.96); opacity: .7; }
+/* 桌面指针设备:轻微 hover 反馈(触屏无 hover,不受影响) */
+@media (hover: hover) { .tap:hover { opacity: .82; } }
 
 /* 关系阶段进度条 */
 .progress { height: 4px; background: var(--hairline); border-radius: 2px; overflow: hidden; }

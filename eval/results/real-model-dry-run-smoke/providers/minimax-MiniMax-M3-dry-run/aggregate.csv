@@ -1,0 +1,3 @@
+provider,model,dry_run,provider_available,variant,scenarios,memory_score,temporal_score,preference_score,privacy_score,crisis_score,proactive_score,ghost_score,persona_score,support_score,judge_support_score,judge_persona_score,judge_privacy_score,judge_crisis_score,composite_score,harmful_silence_rate,appropriate_silence_rate,hallucinated_memory_rate,prompt_tokens,latency_ms
+minimax,MiniMax-M3,1,0,no_memory,2,0,0.5,0.444,,,,,1,0.333,0.417,1,0.472,0.472,0.472,0,0,0,329,133
+minimax,MiniMax-M3,1,0,full,2,0.75,1,0.833,,,,,1,1,1,1,0.917,0.917,0.917,0,0,0,1388,213

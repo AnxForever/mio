@@ -3,14 +3,33 @@
   "version": "0.6.0",
   "description": "ID-RAG knowledge graph — bootstrap a persona from markdown, retrieve contextually relevant subgraphs at inference time",
   "type": "module",
-  "main": "./src/index.js",
-  "types": "./src/index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.js",
-    "./graph": "./src/graph.js",
-    "./extractor": "./src/extractor.js",
-    "./generator": "./src/generator.js",
-    "./driver": "./src/driver.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./graph": {
+      "types": "./dist/graph.d.ts",
+      "import": "./dist/graph.js"
+    },
+    "./extractor": {
+      "types": "./dist/extractor.d.ts",
+      "import": "./dist/extractor.js"
+    },
+    "./generator": {
+      "types": "./dist/generator.d.ts",
+      "import": "./dist/generator.js"
+    },
+    "./driver": {
+      "types": "./dist/driver.d.ts",
+      "import": "./dist/driver.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "npm run build -w @mio/emotion && tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@mio/emotion": "*"

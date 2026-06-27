@@ -41,6 +41,10 @@ export interface OnboardingState {
   gender?: Gender;
   /** Custom name for Mio */
   name?: string;
+  /** Whether the user allows long-term memory extraction/retrieval */
+  memoryConsent?: string;
+  /** Whether the user opted into proactive check-ins */
+  proactiveOptIn?: string;
   /** The user's first message to Mio */
   firstMessage?: string;
 }
@@ -89,10 +93,28 @@ const STEPS: OnboardingStep[] = [
   },
   {
     step: 5,
+    question: 'Allow Mio to remember durable context over time?',
+    key: 'memoryConsent',
+    validate: (v: string) => {
+      if (v === 'true' || v === 'false') return null;
+      return 'Please choose true or false.';
+    },
+  },
+  {
+    step: 6,
+    question: 'Allow low-pressure proactive check-ins?',
+    key: 'proactiveOptIn',
+    validate: (v: string) => {
+      if (v === 'true' || v === 'false') return null;
+      return 'Please choose true or false.';
+    },
+  },
+  {
+    step: 7,
     question: 'Say your first message to Mio:',
     key: 'firstMessage',
     validate: (v: string) => {
-      if (v.trim().length === 0) return 'Please say something.';
+      if (v.trim().length === 0 && v !== 'done') return 'Please say something.';
       return null;
     },
   },

@@ -1,0 +1,104 @@
+[
+  {
+    "id": "advisor-rejection",
+    "description": "User feels rejected by an advisor after prior interview failure.",
+    "history": [
+      "我叫林澈，最近在准备论文，导师总说我进度慢。",
+      "我喜欢别人先听我说完，再给建议，不然我会更紧张。",
+      "上周我面试失败了，所以现在很怕再次被否定。"
+    ],
+    "probe": "今天导师又说我的论文不行，我有点撑不住。你还记得我为什么这么怕被否定吗？",
+    "requiresResponse": true,
+    "expectedFacts": [
+      {
+        "id": "name",
+        "label": "uses the user's name",
+        "patterns": ["林澈"]
+      },
+      {
+        "id": "advisor-paper",
+        "label": "recalls the advisor/paper context",
+        "patterns": ["论文", "导师"]
+      },
+      {
+        "id": "listen-first",
+        "label": "recalls the user's support preference",
+        "patterns": ["先听", "听你说完", "不急着给建议"]
+      },
+      {
+        "id": "interview-failure",
+        "label": "recalls the prior interview failure",
+        "patterns": ["面试失败", "上周面试"]
+      }
+    ],
+    "supportSignals": ["不是你不行", "先陪你", "被否定", "慢一点"]
+  },
+  {
+    "id": "coffee-sleep",
+    "description": "User has a sleep problem after coffee and wants grounded support.",
+    "history": [
+      "我最近睡眠很差，凌晨两三点还醒着。",
+      "我最喜欢冰美式，但晚上喝咖啡以后会心慌。",
+      "如果我焦虑，你提醒我先洗澡、关电脑、别继续刷手机会有用。"
+    ],
+    "probe": "我今晚又喝了冰美式，现在心跳有点快，睡不着。",
+    "requiresResponse": true,
+    "expectedFacts": [
+      {
+        "id": "poor-sleep",
+        "label": "recalls poor sleep pattern",
+        "patterns": ["睡眠", "睡不好", "凌晨"]
+      },
+      {
+        "id": "iced-americano",
+        "label": "recalls iced americano preference",
+        "patterns": ["冰美式"]
+      },
+      {
+        "id": "coffee-palpitations",
+        "label": "recalls coffee causes palpitations",
+        "patterns": ["心慌", "心跳"]
+      },
+      {
+        "id": "routine",
+        "label": "recalls calming routine",
+        "patterns": ["洗澡", "关电脑", "别刷手机", "不要刷手机"]
+      }
+    ],
+    "supportSignals": ["先", "慢慢", "今晚", "陪你"]
+  },
+  {
+    "id": "family-boundary",
+    "description": "User struggles with family pressure and a privacy boundary.",
+    "history": [
+      "我妈总想看我的聊天记录，我觉得很窒息。",
+      "我不想让家人知道我在考虑换工作，只想先自己想清楚。",
+      "你可以提醒我边界不是冷漠，我可以晚点再解释。"
+    ],
+    "probe": "我妈刚才又问我是不是想换工作，我一下子慌了。",
+    "requiresResponse": true,
+    "expectedFacts": [
+      {
+        "id": "mother-records",
+        "label": "recalls mother/chat-record pressure",
+        "patterns": ["聊天记录", "妈妈", "我妈"]
+      },
+      {
+        "id": "job-change-private",
+        "label": "recalls job-change privacy boundary",
+        "patterns": ["换工作", "不想让家人知道", "先自己想清楚"]
+      },
+      {
+        "id": "boundary-not-cold",
+        "label": "recalls boundary phrase",
+        "patterns": ["边界不是冷漠", "边界"]
+      },
+      {
+        "id": "delay-explaining",
+        "label": "recalls delayed explanation strategy",
+        "patterns": ["晚点再解释", "不用马上解释", "之后再解释"]
+      }
+    ],
+    "supportSignals": ["慌", "边界", "不用马上", "陪你"]
+  }
+]

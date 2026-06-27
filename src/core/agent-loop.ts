@@ -11,8 +11,8 @@
  *  5. After the loop: record transcript, update emotion state, append to BOOKMARKS
  *  6. Return the final assistant text + (optional) voice flag
  *
- * The orchestrator owns:
- *  - Tool registry lifecycle (registers all built-in tools on first use)
+ * The orchestrator coordinates:
+ *  - Tool registry lifecycle (delegated to core/tool-runtime.ts)
  *  - Memory-bank side effects (MEMORY.md Active Context, BOOKMARKS.md append)
  *  - Crisis-detection pre-screening (Phase 4)
  *
@@ -45,9 +45,9 @@ import { ContextEngine, getContextEngine } from '../prompt/context-engine.js';
 import { getEvaluationGraph, getBuilderChain, type EvaluationResult } from '../prompt/builder-chain.js';
 import { selectProvider } from '../providers/index.js';
 import { getRouterConfig, routeTask } from '../providers/router.js';
-import { pluginRegistry, BUILTIN_PLUGINS } from '../plugins/index.js';
+import { ensurePluginsLoaded, ensureToolsRegistered, type ToolRegistryLike } from './tool-runtime.js';
+import { runInferenceLoop } from './inference-loop.js';
 import { readGlobalMemory } from '../memory/global.js';
-import { toolRegistry } from '../tools/registry.js';
 import { modManager } from '../mod/mod-manager.js';
 import { getConfig } from '../config.js';
 import { getDataDir } from '../config.js';
@@ -74,12 +74,6 @@ import { getDynamicFewShot, collectFromFeedback } from '../learning/dynamic-fews
 import { logger } from '../utils/logger.js';
 import { screenForCrisis } from '../safety/crisis.js';
 import { updateActivityPattern } from '../scheduler/smart-proactive.js';
-import { registerEmotionTools } from '../tools/emotion.js';
-import { registerCronTools } from '../tools/cron.js';
-import { registerFileTools } from '../tools/file.js';
-import { registerSessionTools } from '../tools/session.js';
-import { registerWorkTools } from '../tools/work.js';
-import { registerRecallTools } from '../tools/recall.js';
 import { shouldGhost, markReplied } from '../emotion/ghost.js';
 import { updateAffinity, getAffinityContext } from '../emotion/affinity.js';
 import { updateFrustration, getAttachmentContext } from '../emotion/frustration.js';
@@ -118,7 +112,6 @@ import { readActiveCharacter } from '../character/factory.js';
 import { acknowledgeRecentEvents, getMemoryContext } from '../character/memory-stream.js';
 import type {
   AIProvider,
-  StreamingProvider,
   SessionContext,
   Message,
   PromptCtx,
@@ -163,59 +156,10 @@ export interface TurnOutput {
   ghosted?: boolean;
 }
 
-// ─── Constants ───
-
-/** Max inference → tool-execution iterations per turn. */
-const MAX_LOOP_TURNS = 8;
-
 /** Turn counter for periodic operations (bank rotation, etc.) */
 let _turnCounter = 0;
 /** Last seen mtime of BOOKMARKS.md for dirty-flag optimization. */
 let _lastBookmarkMtime = 0;
-
-/**
- * Minimal interface for the parts of ToolRegistry that agent-loop needs.
- * Local to this file so we don't break callers when the registry grows.
- */
-interface ToolRegistryLike {
-  listDefs(names?: string[]): { name: string; description: string; inputSchema: Record<string, unknown> }[];
-  execute(
-    call: { id: string; name: string; input: Record<string, unknown> },
-    ctx: SessionContext,
-  ): Promise<{ id: string; name: string; output: string; isError?: boolean }>;
-}
-
-// ─── Tool registration ───
-
-let toolsRegistered = false;
-let pluginsLoaded = false;
-
-/** Load builtin plugins once per process. */
-function ensurePluginsLoaded(): void {
-  if (pluginsLoaded) return;
-  for (const plugin of BUILTIN_PLUGINS) {
-    try { pluginRegistry().register(plugin); } catch { /* duplicate */ }
-  }
-  pluginsLoaded = true;
-}
-
-/**
- * Register all built-in tools exactly once per process.
- *
- * Idempotent. Called from inside the loop on first turn.
- */
-function ensureToolsRegistered(): ToolRegistryLike {
-  const reg = toolRegistry();
-  if (toolsRegistered) return reg;
-  registerFileTools(reg as unknown as { register: (def: unknown, handler: unknown) => void });
-  registerSessionTools(reg as unknown as { register: (def: unknown, handler: unknown) => void });
-  registerCronTools(reg as unknown as { register: (def: unknown, handler: unknown) => void });
-  registerWorkTools(reg as unknown as { register: (def: unknown, handler: unknown) => void });
-  registerEmotionTools(reg as unknown as { register: (def: unknown, handler: unknown) => void });
-  registerRecallTools(reg as unknown as { register: (def: unknown, handler: unknown) => void });
-  toolsRegistered = true;
-  return reg;
-}
 
 // ─── Prompt assembly ───
 
@@ -857,93 +801,6 @@ function resolveSessionContext(input: TurnInput, sessionId: string): {
   };
 
   return { ctx, promptCtx, recovery };
-}
-
-// ─── Inference loop ───
-
-/**
- * Run the inference → tool-execution loop.
- *
- * @param provider      AI provider (streaming preferred).
- * @param systemPrompt  Assembled system prompt.
- * @param messages      Mutable message history.
- * @param sessionCtx    Session context for tool dispatch.
- * @param registry      Tool registry.
- * @param onToken       Streaming token callback (no-op for non-streaming providers).
- * @returns             Final assistant text and tool call count.
- */
-async function runInferenceLoop(
-  provider: AIProvider,
-  systemPrompt: string,
-  messages: Message[],
-  sessionCtx: SessionContext,
-  registry: ToolRegistryLike,
-  onToken: (chunk: string) => void,
-): Promise<{ text: string; toolCallCount: number; turns: number }> {
-  let toolCallCount = 0;
-
-  for (let i = 0; i < MAX_LOOP_TURNS; i++) {
-    // Use streaming when the provider supports it, else fall back to non-streaming chat.
-    const isStreaming = (provider as StreamingProvider).chatStream !== undefined;
-
-    const callOpts = { temperature: 0.7, model: sessionCtx.model };
-    const result: { text: string; toolCalls?: import('../types.js').ToolCall[] } = isStreaming
-      ? await (provider as StreamingProvider).chatStream(
-          messages,
-          systemPrompt,
-          registry.listDefs(),
-          onToken,
-          undefined,
-          callOpts,
-        )
-      : await provider.chat(messages, systemPrompt, registry.listDefs(), callOpts);
-
-    const toolCalls = result.toolCalls ?? [];
-    const assistantMsg: Message = {
-      role: 'assistant',
-      content: result.text,
-      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-      timestamp: new Date().toISOString(),
-    };
-    messages.push(assistantMsg);
-
-    if (toolCalls.length === 0) {
-      return { text: result.text, toolCallCount, turns: i + 1 };
-    }
-
-    toolCallCount += toolCalls.length;
-
-    // Execute each tool call sequentially. Most tools are I/O-bound, so a
-    // small loop is fine here. Parallel execution would complicate ordering
-    // and transcript recording.
-    const results: import('../types.js').ToolResult[] = [];
-    for (const call of toolCalls) {
-      const result = await registry.execute(
-        { id: call.id, name: call.name, input: call.input },
-        sessionCtx,
-      );
-      results.push(result);
-    }
-
-    // Append tool results as a user message (the standard pattern for
-    // providers that don't support native tool_result messages — see
-    // providers/anthropic.ts for the native variant).
-    const toolResultMsg: Message = {
-      role: 'user',
-      content: results.map((r) => `tool ${r.name}:\n${r.output}`).join('\n\n'),
-      toolResults: results,
-      timestamp: new Date().toISOString(),
-    };
-    messages.push(toolResultMsg);
-  }
-
-  // Hit the cap. Return whatever the last assistant message was.
-  const last = [...messages].reverse().find((m) => m.role === 'assistant');
-  return {
-    text: typeof last?.content === 'string' ? last.content : '',
-    toolCallCount,
-    turns: MAX_LOOP_TURNS,
-  };
 }
 
 interface PostTurnSideEffectsInput {

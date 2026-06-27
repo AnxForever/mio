@@ -1,22 +1,26 @@
 export interface PersonaRequest {
-  userMessage: string;
-  context: string;
-  personaName: string;
-  recentHistory?: string;
+  name: string;
+  gender: 'male' | 'female';
+  style: string;
+  age?: number;
+  occupation?: string;
+  traits?: string[];
 }
 
 export interface PersonaResult {
-  response: string;
-  usedNodes: string[];
-  tokenUsage: number;
+  soul: string;
+  preview: string;
+  tokenEstimate: number;
 }
 
 export interface DualModeState {
-  activeMode: 'boyfriend' | 'girlfriend';
+  currentMode: PersonaMode;
   switchedAt: string;
+  switchCount: number;
+  hysteresis: number;
 }
 
-export type PersonaMode = 'boyfriend' | 'girlfriend';
+export type PersonaMode = 'base' | 'deep';
 
 export interface PADState {
   pleasure: number;
@@ -25,18 +29,24 @@ export interface PADState {
 }
 
 export interface ResponseSignals {
-  emotionalTone?: string;
-  warmth?: number;
+  responseLatencyMs: number;
+  messageBurst: boolean;
+  lengthRatio: number;
+  sessionGapHours: number;
+  engagementTrend: 'rising' | 'steady' | 'falling';
 }
 
 export interface MultiAxisState {
-  warmth: number;
+  closeness: number;
   trust: number;
-  intimacy: number;
+  neediness: number;
+  updatedAt?: string;
 }
 
 export interface IntentResult {
-  label: string;
-  category: string;
-  confidence: number;
+  primary: string;
+  all?: { label: string; confidence: number }[];
+  tone?: 'positive' | 'negative' | 'neutral';
+  energy?: 'high' | 'mid' | 'low';
+  topics?: string[];
 }
