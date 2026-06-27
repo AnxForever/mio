@@ -106,3 +106,26 @@ MIO_WECLAW_NOTIFY=true
 MIO_WECLAW_API_ADDR=127.0.0.1:18011
 ```
 然后在微信对她说「主动找我聊天」→ 她按 Poisson + 智能门控偶尔主动发（per-contact opt-in；「别再主动联系我」可关）。
+
+## 8. 掉线邮件告警（cron）
+`scripts/wechat-bridge/health-alert.sh` 定时探活 Mio + WeClaw，掉线发一封、恢复再发一封（只在状态切换时发，不刷屏）。
+
+`.env` 配 SMTP（QQ 邮箱示例，密码用「授权码」不是登录密码）：
+```bash
+ALERT_SMTP_URL=smtps://smtp.qq.com:465
+ALERT_SMTP_USER=you@qq.com
+ALERT_SMTP_PASS=你的授权码
+ALERT_MAIL_FROM=you@qq.com
+ALERT_MAIL_TO=you@qq.com
+# 可选：进程活着但微信登录态失效时的兜底——按 weclaw.log 掉线时实际打印的词来填
+ALERT_LOG_PATTERN=offline|logout|expired|重新登录|扫码|relogin
+```
+（Gmail 用 `smtps://smtp.gmail.com:465` + 应用专用密码。）
+
+加 cron，每 5 分钟探一次：
+```bash
+crontab -e
+# 加一行：
+*/5 * * * * cd /opt/mio && /usr/bin/bash scripts/wechat-bridge/health-alert.sh >> data/runtime/wechat-bridge/alert.log 2>&1
+```
+⚠️ `/health` 主要反映「进程活没活」；微信登录态失效（进程还在）测不准，要靠 `ALERT_LOG_PATTERN` 命中日志关键词兜底——先观察 `weclaw.log` 掉线时实际输出什么，再把词填进去。
