@@ -30,6 +30,12 @@ export interface CompressionConfig {
   keepRecent: number;
   /** Number of oldest messages to always keep (greeting / context-setting). */
   keepOldest: number;
+  /**
+   * Token budget for the recent window. When set, the recent section is kept
+   * round-aware up to this many tokens (never splitting a turn, latest always
+   * kept) instead of a fixed message count; `keepRecent` becomes the minimum.
+   */
+  keepRecentTokens?: number;
 }
 
 export interface CompressionResult {
@@ -46,8 +52,9 @@ export interface CompressionResult {
 export const DEFAULT_COMPRESSION: CompressionConfig = {
   strategy: 'hybrid',
   maxTokens: 8000,   // trigger when estimated tokens exceed this
-  keepRecent: 10,     // always keep last 10 messages
+  keepRecent: 10,     // minimum recent messages to keep
   keepOldest: 3,      // always keep first 3 messages
+  keepRecentTokens: 2400, // round-aware token budget for the recent window
 };
 
 // ─── Token estimation ───
@@ -107,18 +114,66 @@ function slidingWindow(messages: Message[], keepRecent: number): CompressionResu
 
 // ─── Hybrid ───
 
-function hybrid(messages: Message[], keepOldest: number, keepRecent: number): CompressionResult {
+/**
+ * Keep the most recent messages within a token budget, round-aware: never split
+ * a turn, never begin on an orphaned assistant message, always keep at least
+ * `minKeep` messages and the latest one.
+ */
+function keepRecentRounds(messages: Message[], budgetTokens: number, minKeep: number): Message[] {
+  if (messages.length === 0) return [];
+  let used = 0;
+  let startIdx = messages.length - 1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const keptCount = messages.length - i;
+    const t = messageTokens(messages[i]);
+    if (used + t > budgetTokens && keptCount > minKeep) break;
+    used += t;
+    startIdx = i;
+  }
+  // round-aware: don't begin on an assistant whose user turn was cut
+  while (startIdx < messages.length - 1 && messages[startIdx].role === 'assistant') {
+    startIdx++;
+  }
+  return messages.slice(startIdx);
+}
+
+/**
+ * Fallback ladder: if the kept set still exceeds the budget, repeatedly drop the
+ * older half of the recent window (always keeping oldest + the latest message).
+ */
+function truncateByHalving(msgs: Message[], maxTokens: number, keepOldestN: number): Message[] {
+  const head = msgs.slice(0, keepOldestN);
+  let recent = msgs.slice(keepOldestN);
+  while (recent.length > 1 && totalTokens([...head, ...recent]) > maxTokens) {
+    recent = recent.slice(Math.ceil(recent.length / 2));
+  }
+  return [...head, ...recent];
+}
+
+function hybrid(
+  messages: Message[],
+  keepOldest: number,
+  keepRecent: number,
+  maxTokens: number,
+  keepRecentTokens?: number,
+): CompressionResult {
   if (messages.length <= keepOldest + keepRecent) {
     return { messages, summary: '', removedCount: 0 };
   }
 
   const oldest = messages.slice(0, keepOldest);
-  const recent = messages.slice(-keepRecent);
-  const middle = messages.slice(keepOldest, messages.length - keepRecent);
+  const recentPool = messages.slice(keepOldest);
+  const recent = keepRecentTokens
+    ? keepRecentRounds(recentPool, keepRecentTokens, keepRecent)
+    : recentPool.slice(-keepRecent);
+  const middle = messages.slice(keepOldest, messages.length - recent.length);
+
+  if (middle.length === 0) {
+    return { messages, summary: '', removedCount: 0 };
+  }
 
   // Build a structured summary of the removed middle section
   const userMsgs = middle.filter((m) => m.role === 'user');
-  const assistantMsgs = middle.filter((m) => m.role === 'assistant');
 
   const summaryParts: string[] = [];
   summaryParts.push(`[对话摘要 — ${middle.length} 条消息被压缩]`);
@@ -152,10 +207,14 @@ function hybrid(messages: Message[], keepOldest: number, keepRecent: number): Co
 
   const summary = summaryParts.join('\n');
 
+  // Fallback ladder: ensure oldest+recent fit the budget even if minKeep forced
+  // more than the token budget allows.
+  const kept = truncateByHalving([...oldest, ...recent], maxTokens, oldest.length);
+
   return {
-    messages: [...oldest, ...recent],
+    messages: kept,
     summary,
-    removedCount: middle.length,
+    removedCount: messages.length - kept.length,
   };
 }
 
@@ -187,7 +246,7 @@ export function compressIfNeeded(
       return slidingWindow(messages, cfg.keepRecent);
     case 'hybrid':
     default:
-      return hybrid(messages, cfg.keepOldest, cfg.keepRecent);
+      return hybrid(messages, cfg.keepOldest, cfg.keepRecent, cfg.maxTokens, cfg.keepRecentTokens);
   }
 }
 
