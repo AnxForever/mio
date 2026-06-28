@@ -33,19 +33,25 @@ function formatSource(source) {
 }
 
 export function memoryStatusLabel(status) {
+  if (status === 'disabled') return '已禁用';
   if (status === 'confirmed') return '已确认';
   if (status === 'ignored') return '已忽略';
   return '待确认';
 }
 
 export function memoryCardClass(item) {
-  return ['memory-card', item.status === 'ignored' ? 'memory-card--ignored' : '']
+  return ['memory-card', item.status === 'ignored' || item.enabled === false ? 'memory-card--ignored' : '']
     .filter(Boolean)
     .join(' ');
 }
 
 export function memoryReviewActions(item) {
   const actions = [];
+  if (item.enabled === false) {
+    actions.push({ kind: 'enable', label: '启用', patch: { enabled: true, reviewStatus: item.status === 'ignored' ? 'inferred' : item.status } });
+    return actions;
+  }
+  actions.push({ kind: 'disable', label: '禁用', patch: { enabled: false } });
   if (item.status !== 'confirmed') {
     actions.push({ kind: 'confirm', label: '确认', patch: { reviewStatus: 'confirmed' } });
   }
@@ -179,28 +185,61 @@ export class MemoriesView extends BaseView {
 
   renderItems() {
     this.listEl.innerHTML = '';
-    this.listEl.appendChild(el('div', { className: 'memories-section-label', textContent: '已保存的记忆' }));
 
     if (!this.items.length) {
+      this.listEl.appendChild(el('div', { className: 'memories-section-label', textContent: '已保存的记忆' }));
       this.listEl.appendChild(el('div', { className: 'memories-state', textContent: '还没有可审查的结构化记忆。继续聊天后，Mio 会把重要内容整理到这里。' }));
       return;
     }
+
+    this.listEl.appendChild(this.memorySummary());
+    this.listEl.appendChild(el('div', { className: 'memories-section-label', textContent: '已保存的记忆' }));
 
     this.items.forEach((item) => {
       this.listEl.appendChild(this.memoryCard(item));
     });
   }
 
+  memorySummary() {
+    const counts = this.items.reduce((acc, item) => {
+      const status = item.status || 'inferred';
+      acc.total += 1;
+      if (item.enabled === false) {
+        acc.disabled += 1;
+        return acc;
+      }
+      acc[status] = (acc[status] || 0) + 1;
+      return acc;
+    }, { total: 0, confirmed: 0, ignored: 0, inferred: 0, disabled: 0 });
+    const pending = counts.inferred;
+
+    return el('div', { className: 'memories-summary', 'aria-label': '记忆审查概览' }, [
+      this.summaryItem('全部', counts.total),
+      this.summaryItem('待确认', pending),
+      this.summaryItem('已确认', counts.confirmed),
+      this.summaryItem('已忽略', counts.ignored),
+      this.summaryItem('已禁用', counts.disabled),
+    ]);
+  }
+
+  summaryItem(label, value) {
+    return el('div', { className: 'memories-summary-item' }, [
+      el('span', { className: 'memories-summary-value', textContent: String(value) }),
+      el('span', { className: 'memories-summary-label', textContent: label }),
+    ]);
+  }
+
   memoryCard(item) {
     const card = el('article', { className: memoryCardClass(item), dataset: { id: item.id } });
     const meta = el('div', { className: 'memory-meta' }, [
       el('span', { className: 'memory-type', textContent: TYPE_LABELS[item.type] || item.type }),
-      el('span', { className: `memory-status memory-status--${item.status || 'inferred'}`, textContent: memoryStatusLabel(item.status) }),
+      el('span', { className: `memory-status memory-status--${item.enabled === false ? 'disabled' : item.status || 'inferred'}`, textContent: memoryStatusLabel(item.enabled === false ? 'disabled' : item.status) }),
       item.topic ? el('span', { className: 'memory-topic', textContent: item.topic }) : null,
     ]);
 
     const content = el('div', { className: 'memory-content', textContent: item.content });
-    const details = el('div', { className: 'memory-details', textContent: `${formatDate(item.lastSeen)} · 置信度 ${Math.round(item.confidence * 100)}% · ${formatSource(item.source)}` });
+    const source = item.provenance?.excerpt || item.source;
+    const details = el('div', { className: 'memory-details', textContent: `${formatDate(item.lastSeen)} · 置信度 ${Math.round(item.confidence * 100)}% · ${formatSource(source)}` });
 
     const reviewButtons = memoryReviewActions(item).map((action) => el('button', {
       type: 'button',

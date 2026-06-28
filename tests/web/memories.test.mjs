@@ -19,6 +19,7 @@ const {
 
 assert.equal(memoryStatusLabel('confirmed'), '已确认');
 assert.equal(memoryStatusLabel('ignored'), '已忽略');
+assert.equal(memoryStatusLabel('disabled'), '已禁用');
 assert.equal(memoryStatusLabel('inferred'), '待确认');
 assert.equal(memoryStatusLabel(undefined), '待确认');
 
@@ -26,6 +27,7 @@ const inferredActions = memoryReviewActions({ status: 'inferred' });
 assert.deepEqual(
   inferredActions.map((action) => [action.kind, action.label, action.patch]),
   [
+    ['disable', '禁用', { enabled: false }],
     ['confirm', '确认', { reviewStatus: 'confirmed' }],
     ['ignore', '忽略', { reviewStatus: 'ignored' }],
   ],
@@ -34,16 +36,25 @@ assert.deepEqual(
 const confirmedActions = memoryReviewActions({ status: 'confirmed' });
 assert.deepEqual(
   confirmedActions.map((action) => action.kind),
-  ['ignore'],
+  ['disable', 'ignore'],
 );
 
 const ignoredActions = memoryReviewActions({ status: 'ignored' });
 assert.deepEqual(
   ignoredActions.map((action) => action.kind),
-  ['confirm'],
+  ['disable', 'confirm'],
+);
+
+const disabledActions = memoryReviewActions({ status: 'ignored', enabled: false });
+assert.deepEqual(
+  disabledActions.map((action) => [action.kind, action.label, action.patch]),
+  [
+    ['enable', '启用', { enabled: true, reviewStatus: 'inferred' }],
+  ],
 );
 
 assert.equal(memoryCardClass({ status: 'inferred' }), 'memory-card');
 assert.equal(memoryCardClass({ status: 'ignored' }), 'memory-card memory-card--ignored');
+assert.equal(memoryCardClass({ status: 'inferred', enabled: false }), 'memory-card memory-card--ignored');
 
 console.log('✓ memories review view-models');
