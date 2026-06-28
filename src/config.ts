@@ -121,6 +121,19 @@ export const PROVIDER_PRESETS: Record<string, ProviderPresetConfig> = {
       { id: 'abab6.5s-chat', label: 'abab6.5s Chat（旧）' },
     ],
   },
+  hybgzs: {
+    name: 'hybgzs',
+    label: 'Gemini @ hybgzs（OpenAI 兼容代理）',
+    baseUrl: 'https://ai.hybgzs.com/v1',
+    apiKeyEnv: 'HYBGZS_API_KEY',
+    defaultModel: 'gemini-2.5-flash',
+    authHeader: 'Bearer ${apiKey}',
+    supportsVision: true,
+    supportsToolCalling: true,
+    models: [
+      { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    ],
+  },
   qwen: {
     name: 'qwen',
     label: 'Qwen / 通义千问（阿里云）',
