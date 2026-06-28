@@ -89,7 +89,12 @@ class ThrowingProvider implements AIProvider {
 async function main(): Promise<void> {
   console.log('\n\x1b[1mMio — structured extraction tests\x1b[0m\n');
 
-  const { extractStructuredMemoryLLM, extractStructuredMemory } = await import('../dist/memory/structured-memory.js');
+  const {
+    deriveStructuredStateView,
+    extractStructuredMemoryLLM,
+    extractStructuredMemory,
+    renderStructuredStateView,
+  } = await import('../dist/memory/structured-memory.js');
 
   // ── LLM path: injected provider returns controlled JSON ──
   await test('LLM path injects atomic facts from JSON output', async () => {
@@ -187,6 +192,107 @@ async function main(): Promise<void> {
 
     const syncMem = extractStructuredMemory(bookmarks);
     assert(syncMem.entities.some((e) => e.type === 'preference'), 'sync regex still extracts');
+  });
+
+  await test('structured state view separates current facts, multi-day arcs, recent events, and emotions', async () => {
+    const fact = {
+      type: 'fact',
+      content: '用户住在上海',
+      confidence: 1,
+      firstSeen: '2026-06-01T00:00:00.000Z',
+      lastSeen: '2026-06-20T00:00:00.000Z',
+      occurrences: 3,
+      source: 'unit',
+      reviewStatus: 'confirmed',
+    };
+    const preference = {
+      type: 'preference',
+      content: '用户喜欢乌龙茶',
+      confidence: 0.95,
+      firstSeen: '2026-06-01T00:00:00.000Z',
+      lastSeen: '2026-06-22T00:00:00.000Z',
+      occurrences: 3,
+      source: 'unit',
+    };
+    const arcEvent = {
+      type: 'event',
+      content: '用户这周在赶项目上线',
+      confidence: 0.8,
+      firstSeen: '2026-06-25T00:00:00.000Z',
+      lastSeen: '2026-06-27T00:00:00.000Z',
+      occurrences: 2,
+      source: 'unit',
+    };
+    const recentDecision = {
+      type: 'decision',
+      content: '用户明天准备去医院复查',
+      confidence: 0.75,
+      firstSeen: '2026-06-27T10:00:00.000Z',
+      lastSeen: '2026-06-27T10:00:00.000Z',
+      occurrences: 1,
+      source: 'unit',
+    };
+    const recentEmotion = {
+      type: 'emotion',
+      content: '用户有点焦虑',
+      confidence: 0.7,
+      firstSeen: '2026-06-28T08:00:00.000Z',
+      lastSeen: '2026-06-28T08:00:00.000Z',
+      occurrences: 1,
+      source: 'unit',
+    };
+    const ignoredFact = {
+      ...fact,
+      content: '用户住在杭州',
+      reviewStatus: 'ignored',
+    };
+    const invalidatedFact = {
+      ...fact,
+      content: '用户住在北京',
+      invalidatedAt: '2026-06-20T00:00:00.000Z',
+    };
+    const disabledPreference = {
+      ...preference,
+      content: '用户喜欢普洱茶',
+      enabled: false,
+    };
+    const structured = {
+      entities: [fact, preference, arcEvent, recentDecision, recentEmotion, ignoredFact, invalidatedFact, disabledPreference],
+      durableFacts: [fact, preference, ignoredFact, invalidatedFact, disabledPreference],
+      topics: [
+        {
+          topic: '工作',
+          entities: [arcEvent],
+          summary: '事件: 用户这周在赶项目上线',
+          dateRange: { start: '2026-06-25T00:00:00.000Z', end: '2026-06-27T00:00:00.000Z' },
+        },
+        {
+          topic: '健康',
+          entities: [recentDecision, recentEmotion],
+          summary: '事件: 用户明天准备去医院复查 | 情绪: 用户有点焦虑',
+          dateRange: { start: '2026-06-27T10:00:00.000Z', end: '2026-06-28T08:00:00.000Z' },
+        },
+      ],
+      updatedAt: '2026-06-28T09:00:00.000Z',
+    };
+
+    const view = deriveStructuredStateView(structured, new Date('2026-06-28T09:00:00.000Z'));
+    assert(view.currentFacts.some((entity) => entity.content === '用户住在上海'), 'confirmed fact should be current fact');
+    assert(view.currentFacts.some((entity) => entity.content === '用户喜欢乌龙茶'), 'durable preference should be current fact');
+    assert(!view.currentFacts.some((entity) => entity.content === '用户住在杭州'), 'ignored fact should be excluded');
+    assert(!view.currentFacts.some((entity) => entity.content === '用户住在北京'), 'invalidated fact should be excluded');
+    assert(!view.currentFacts.some((entity) => entity.content === '用户喜欢普洱茶'), 'disabled preference should be excluded');
+    assert(view.multiDayArcs.some((topic) => topic.topic === '工作'), 'multi-day work topic should be an arc');
+    assert(!view.recentEvents.some((entity) => entity.content === '用户这周在赶项目上线'), 'arc event should not be duplicated as recent event');
+    assert(view.recentEvents.some((entity) => entity.content === '用户明天准备去医院复查'), 'single recent decision should be recent event');
+    assert(view.recentEmotions.some((entity) => entity.content === '用户有点焦虑'), 'recent emotion should be recent emotion');
+
+    const rendered = renderStructuredStateView(view) ?? '';
+    assert(rendered.includes('当前事实'), 'rendered view should label current facts');
+    assert(rendered.includes('多日线索'), 'rendered view should label multi-day arcs');
+    assert(rendered.includes('近期事件'), 'rendered view should label recent events');
+    assert(rendered.includes('不等同于当前状态'), 'rendered view should warn arcs are not current state');
+    assert(rendered.includes('不自动当作现在'), 'rendered view should warn emotions are time-sensitive');
   });
 
   const passed = results.filter((r) => r.passed).length;

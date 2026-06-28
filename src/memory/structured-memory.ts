@@ -73,6 +73,13 @@ export interface StructuredMemoryExtractionState {
   lastProcessedAt: string;
 }
 
+export interface StructuredStateView {
+  currentFacts: MemoryEntity[];
+  multiDayArcs: TopicSegment[];
+  recentEvents: MemoryEntity[];
+  recentEmotions: MemoryEntity[];
+}
+
 // ─── Topic keywords for classification ───
 
 const TOPIC_KEYWORDS: Record<string, string[]> = {
@@ -770,6 +777,81 @@ function summarizeTopic(topic: string, entities: MemoryEntity[]): string {
   return summaryParts.join(' | ');
 }
 
+export function deriveStructuredStateView(
+  structured: StructuredMemory,
+  now = new Date(),
+): StructuredStateView {
+  const active = activeEntities(structured.entities);
+  const durableKeys = new Set(activeEntities(structured.durableFacts).map(entityKey));
+  const currentFacts = uniqueEntities([
+    ...activeEntities(structured.durableFacts)
+      .filter((entity) => entity.type === 'fact' || entity.type === 'preference'),
+    ...active
+      .filter((entity) => (entity.type === 'fact' || entity.type === 'preference') && entity.reviewStatus === 'confirmed'),
+  ])
+    .sort(compareMemoryPriority)
+    .slice(0, 10);
+
+  const activeTopics = structured.topics
+    .map((topic) => ({ ...topic, entities: activeEntities(topic.entities) }))
+    .filter((topic) => topic.entities.length > 0);
+  const multiDayArcs = activeTopics
+    .filter((topic) => isMultiDayTopic(topic))
+    .sort((a, b) => new Date(b.dateRange.end).getTime() - new Date(a.dateRange.end).getTime())
+    .slice(0, 5);
+  const arcEntityKeys = new Set(multiDayArcs.flatMap((topic) => topic.entities.map(entityKey)));
+  for (const key of durableKeys) arcEntityKeys.delete(key);
+
+  const nowMs = now.getTime();
+  const recentWindowMs = 14 * 86_400_000;
+  const emotionWindowMs = 72 * 3_600_000;
+  const recentEvents = active
+    .filter((entity) => entity.type === 'event' || entity.type === 'decision' || entity.type === 'intention')
+    .filter((entity) => !arcEntityKeys.has(entityKey(entity)))
+    .filter((entity) => isWithinWindow(entity.lastSeen, nowMs, recentWindowMs))
+    .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime())
+    .slice(0, 8);
+  const recentEmotions = active
+    .filter((entity) => entity.type === 'emotion' && entity.confidence >= 0.5)
+    .filter((entity) => isWithinWindow(entity.lastSeen, nowMs, emotionWindowMs))
+    .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime())
+    .slice(0, 5);
+
+  return { currentFacts, multiDayArcs, recentEvents, recentEmotions };
+}
+
+export function renderStructuredStateView(view: StructuredStateView): string | null {
+  const parts: string[] = [];
+
+  if (view.currentFacts.length > 0) {
+    parts.push(`## 当前事实（稳定/已确认）\n${view.currentFacts.map((entity) => `- ${entity.content}`).join('\n')}`);
+  }
+
+  if (view.multiDayArcs.length > 0) {
+    const lines = view.multiDayArcs.map((topic) => {
+      const summary = topic.summary.length > 120 ? `${topic.summary.slice(0, 120)}…` : topic.summary;
+      return `- ${topic.topic}: ${summary}（${formatDateOnly(topic.dateRange.start)} 至 ${formatDateOnly(topic.dateRange.end)}，多日线索，不等同于当前状态）`;
+    });
+    parts.push(`## 多日线索\n${lines.join('\n')}`);
+  }
+
+  if (view.recentEvents.length > 0) {
+    const lines = view.recentEvents.map((entity) => (
+      `- ${entity.content}（${formatDateOnly(entity.lastSeen)}，近期事件/计划，先当背景，不当稳定事实）`
+    ));
+    parts.push(`## 近期事件\n${lines.join('\n')}`);
+  }
+
+  if (view.recentEmotions.length > 0) {
+    const lines = view.recentEmotions.map((entity) => (
+      `- ${entity.content}（${formatDateOnly(entity.lastSeen)}观察，按时间判断，不自动当作现在）`
+    ));
+    parts.push(`## 近期情绪\n${lines.join('\n')}`);
+  }
+
+  return parts.length > 0 ? parts.join('\n\n') : null;
+}
+
 /**
  * Convert structured memory to a compact string for system prompt injection.
  *
@@ -777,53 +859,53 @@ function summarizeTopic(topic: string, entities: MemoryEntity[]): string {
  *   关于用户: <durable facts> | 偏好: <preferences> | 最近事件: <events>
  */
 export function memoryToContext(structured: StructuredMemory): string {
-  const parts: string[] = [];
-  const durableFacts = activeEntities(structured.durableFacts);
-  const entities = activeEntities(structured.entities);
-  const topics = structured.topics
-    .map((topic) => ({ ...topic, entities: activeEntities(topic.entities) }))
-    .filter((topic) => topic.entities.length > 0);
+  return renderStructuredStateView(deriveStructuredStateView(structured)) ?? '';
+}
 
-  // Durable facts first (most important)
-  if (durableFacts.length > 0) {
-    const factLines = durableFacts
-      .map((f) => f.content)
-      .slice(0, 10);
-    parts.push(`## 关于用户(结构化记忆)\n${factLines.map((f) => `- ${f}`).join('\n')}`);
+function entityKey(entity: MemoryEntity): string {
+  return `${entity.type}\u0000${entity.content}`;
+}
+
+function uniqueEntities(entities: MemoryEntity[]): MemoryEntity[] {
+  const seen = new Set<string>();
+  const out: MemoryEntity[] = [];
+  for (const entity of entities) {
+    const key = entityKey(entity);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(entity);
   }
+  return out;
+}
 
-  // Recent topics (top 3)
-  const activeTopics = topics
-    .filter((t) => t.entities.length >= 1)
-    .slice(0, 3);
+function compareMemoryPriority(a: MemoryEntity, b: MemoryEntity): number {
+  return (b.confidence - a.confidence)
+    || (b.occurrences - a.occurrences)
+    || (new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime());
+}
 
-  if (activeTopics.length > 0) {
-    const topicLines: string[] = [];
-    for (const topic of activeTopics) {
-      const recentFacts = topic.entities
-        .filter((e) => e.type === 'fact' || e.type === 'preference' || e.type === 'event')
-        .slice(0, 3)
-        .map((e) => e.content);
-      if (recentFacts.length > 0) {
-        topicLines.push(`${topic.topic}: ${recentFacts.join(', ')}`);
-      }
-    }
-    if (topicLines.length > 0) {
-      parts.push(`## 话题\n${topicLines.join('\n')}`);
-    }
-  }
+function isMultiDayTopic(topic: TopicSegment): boolean {
+  const start = new Date(topic.dateRange.start);
+  const end = new Date(topic.dateRange.end);
+  const startMs = start.getTime();
+  const endMs = end.getTime();
+  if (Number.isNaN(startMs) || Number.isNaN(endMs)) return false;
+  const arcEntities = topic.entities.filter((entity) => entity.type === 'event' || entity.type === 'decision' || entity.type === 'intention');
+  if (arcEntities.length === 0) return false;
+  if (arcEntities.some((entity) => entity.occurrences >= 2)) return true;
+  const differentCalendarDay = start.toISOString().slice(0, 10) !== end.toISOString().slice(0, 10);
+  return arcEntities.length >= 2 && (differentCalendarDay || endMs - startMs >= 20 * 3_600_000);
+}
 
-  // Recent emotions (top 5 high confidence)
-  const recentEmotions = entities
-    .filter((e) => e.type === 'emotion' && e.confidence >= 0.6)
-    .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime())
-    .slice(0, 5);
+function isWithinWindow(iso: string, nowMs: number, windowMs: number): boolean {
+  const time = new Date(iso).getTime();
+  return !Number.isNaN(time) && time <= nowMs && time >= nowMs - windowMs;
+}
 
-  if (recentEmotions.length > 0) {
-    parts.push(`## 近期情绪\n${recentEmotions.map((e) => `- ${e.content}`).join('\n')}`);
-  }
-
-  return parts.join('\n\n');
+function formatDateOnly(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '时间未知';
+  return date.toISOString().slice(0, 10);
 }
 
 /**
