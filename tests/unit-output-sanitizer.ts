@@ -53,6 +53,13 @@ ok(/现在咋样/.test(busyWhat), 'uses neutral current-state question', busyWha
 const activeBusy = sanitizeTemporalPresuppositions('我刚收拾完。你呢，忙完了吗？', temporal(['busy']));
 ok(/忙完/.test(activeBusy), 'does not rewrite busy question when busy state is active', activeBusy);
 
+const staleSleep = sanitizeTemporalPresuppositions('我在。你不是还困吗，怎么还不去睡？', noActive);
+ok(!/不是还困|还不去睡/.test(staleSleep), 'rewrites unsupported stale sleep presupposition', staleSleep);
+ok(/现在怎么样/.test(staleSleep), 'uses neutral current-state question for stale sleep', staleSleep);
+
+const activeSleep = sanitizeTemporalPresuppositions('我在。你不是还困吗？', temporal(['sleepy']));
+ok(/还困/.test(activeSleep), 'does not rewrite sleep question when sleep state is active', activeSleep);
+
 const neutral = sanitizeTemporalPresuppositions('我在翻歌单。你呢，现在咋样', noActive);
 ok(neutral === '我在翻歌单。你呢，现在咋样', 'leaves neutral text unchanged', neutral);
 

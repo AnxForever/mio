@@ -6,18 +6,27 @@ type TemporalKind = TemporalTurnContext['active'][number]['kind'];
  * Narrow output guard for IM-style temporal presuppositions.
  *
  * This is not a style censor. It only rewrites questions that assume the user
- * is currently busy when the temporal layer has no active busy/away evidence.
+ * is in a transient state when the temporal layer has no matching active evidence.
  */
 export function sanitizeTemporalPresuppositions(
   text: string,
   temporal: TemporalTurnContext | undefined,
 ): string {
-  if (!temporal || hasActiveTemporalKind(temporal, ['busy', 'away'])) return text;
+  if (!temporal) return text;
 
   let next = text;
-  next = next.replace(/你(?:咋样|怎么样|呢)?[，,、\s]*忙完[了啦]?还是也?瘫着[呢吗嘛]*[？?]?/g, '你呢，也瘫着吗');
-  next = next.replace(/你(?:呢|现在|这会儿)?[，,、\s]*(?:在)?忙(?:啥|什么)[呢呀啊嘛]*[？?]?/g, '你呢，现在咋样');
-  next = next.replace(/你(?:呢|现在|这会儿)?[，,、\s]*忙完[了啦]?(?:吗|没|没有|呀|啊|呢|嘛)?[？?]?/g, '你呢，现在咋样');
+  if (!hasActiveTemporalKind(temporal, ['busy', 'away'])) {
+    next = next.replace(/你(?:咋样|怎么样|呢)?[，,、\s]*忙完[了啦]?还是也?瘫着[呢吗嘛]*[？?]?/g, '你呢，也瘫着吗');
+    next = next.replace(/你(?:呢|现在|这会儿)?[，,、\s]*(?:在)?忙(?:啥|什么)[呢呀啊嘛]*[？?]?/g, '你呢，现在咋样');
+    next = next.replace(/你(?:呢|现在|这会儿)?[，,、\s]*忙完[了啦]?(?:吗|没|没有|呀|啊|呢|嘛)?[？?]?/g, '你呢，现在咋样');
+  }
+  if (!hasActiveTemporalKind(temporal, ['sleepy', 'going_to_sleep'])) {
+    next = next.replace(/你不是(?:还)?困[了吗嘛呀啊，,、\s]*怎么还不(?:去)?睡[呀啊吗嘛]*[？?]?/g, '你呢，现在怎么样');
+    next = next.replace(/你不是(?:说)?(?:还)?(?:困|要睡|想睡觉|睡觉)[了吗嘛呀啊，,、\s]*[？?]?/g, '你呢，现在怎么样');
+    next = next.replace(/不是说(?:还)?(?:困|要睡|想睡觉|睡觉)[了吗嘛呀啊，,、\s]*[？?]?/g, '你呢，现在怎么样');
+    next = next.replace(/你(?:呢|现在|这会儿)?[，,、\s]*还困[吗嘛呀啊]*[？?]?/g, '你呢，现在怎么样');
+    next = next.replace(/你(?:呢|现在|这会儿)?[，,、\s]*还不(?:去)?睡[吗嘛呀啊]*[？?]?/g, '你呢，现在怎么样');
+  }
   return cleanupSanitizedText(next);
 }
 
@@ -54,6 +63,7 @@ function hasRecentlyReopenedAfterMioSpace(ctx: TemporalTurnContext): boolean {
 function cleanupSanitizedText(text: string): string {
   return text
     .replace(/你呢，现在咋样[，,、\s]*你呢，现在咋样/g, '你呢，现在咋样')
+    .replace(/你呢，现在怎么样[，,、\s]*你呢，现在怎么样/g, '你呢，现在怎么样')
     .replace(/你呢[，,、\s]*你呢/g, '你呢')
     .trim();
 }

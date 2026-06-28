@@ -118,6 +118,17 @@ ok(activeBusy.text.includes('忙完'), 'quality gate preserves busy question whe
 ok(activeBusy.interventions.length === 0, 'no intervention when rewrite is not needed');
 ok(activeBusy.persona.risk === 'low', 'low-risk casual reply does not route persona judge');
 
+const staleSleep = applyReplyQualityGate({
+  text: '我在。你不是还困吗，怎么还不去睡？',
+  userText: '下午好，在干嘛',
+  sessionId: 'openai-quality-gate-user_im_wechat-sleep',
+  promptCtx: { temporalTurnContext: temporal([]) },
+});
+ok(!/不是还困|还不去睡/.test(staleSleep.text), 'quality gate rewrites unsupported stale sleep presupposition', staleSleep.text);
+ok(staleSleep.interventions.some((item) => item.type === 'temporal_presupposition'), 'stale sleep rewrite is logged as temporal intervention');
+const logLinesAfterStaleSleep = readFileSync(logPath, 'utf-8').trim().split('\n').filter(Boolean);
+ok(logLinesAfterStaleSleep.some((line) => JSON.parse(line).before?.includes('不是还困')), 'intervention log stores stale sleep before text');
+
 const noTrace = applyReplyQualityGate({
   text: '我刚坐下。你呢，忙啥呢',
   sessionId: 'openai-quality-gate-user_im_wechat-3',
@@ -126,7 +137,7 @@ const noTrace = applyReplyQualityGate({
 });
 const logLinesAfterNoTrace = readFileSync(logPath, 'utf-8').trim().split('\n').filter(Boolean);
 ok(noTrace.interventions.length === 1, 'trace=false still returns intervention');
-ok(logLinesAfterNoTrace.length === 1, 'trace=false does not append log rows');
+ok(logLinesAfterNoTrace.length === logLinesAfterStaleSleep.length, 'trace=false does not append log rows');
 
 const reopened = applyReplyQualityGate({
   text: '哟，你这个有点过分了啊，我刚说完不打扰你，你就真不回了？哼',
