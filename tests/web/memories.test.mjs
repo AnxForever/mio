@@ -15,6 +15,7 @@ const {
   memoryCardClass,
   memoryReviewActions,
   memoryStatusLabel,
+  memoryUsageLabel,
 } = await import('../../web/js/views/memories.js');
 
 assert.equal(memoryStatusLabel('confirmed'), '已确认');
@@ -56,5 +57,26 @@ assert.deepEqual(
 assert.equal(memoryCardClass({ status: 'inferred' }), 'memory-card');
 assert.equal(memoryCardClass({ status: 'ignored' }), 'memory-card memory-card--ignored');
 assert.equal(memoryCardClass({ status: 'inferred', enabled: false }), 'memory-card memory-card--ignored');
+
+assert.equal(memoryUsageLabel(undefined), '');
+assert.equal(memoryUsageLabel({ retrievedCount: 0, injectedCount: 0, mentionedCount: 0 }), '');
+assert.equal(
+  memoryUsageLabel({
+    retrievedCount: 2,
+    injectedCount: 1,
+    mentionedCount: 0,
+    lastInjectedAt: '2026-06-28T12:00:00.000Z',
+  }),
+  '进过提示 1 次 · 未在回复中引用 · 最近 6月28日',
+);
+assert.equal(
+  memoryUsageLabel({
+    retrievedCount: 3,
+    injectedCount: 2,
+    mentionedCount: 1,
+    lastMentionedAt: '2026-06-29T12:00:00.000Z',
+  }),
+  '进过提示 2 次 · 回复引用 1 次 · 最近 6月29日',
+);
 
 console.log('✓ memories review view-models');

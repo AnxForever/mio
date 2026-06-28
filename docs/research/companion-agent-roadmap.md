@@ -514,7 +514,7 @@ Implemented in this iteration:
 - `eval/companion-redteam.ts`: mock provider now treats LLM judge probes as dry-run passes instead of failing on unparseable mock output; real providers still perform JSON judge grading.
 - `src/memory/structured-memory.ts`: `MemoryEntity` now has `enabled` and structured `provenance`, while legacy `source` remains for display compatibility. Prompt-facing derived memory excludes `enabled=false`.
 - `src/server/memories.ts` and `src/validation.ts`: memory review API now returns `enabled`/`provenance` and accepts `enabled` patches. Review items also expose memory-usefulness usage metadata (`retrievedCount`, `injectedCount`, `mentionedCount`, recent timestamps, and last session id), so the memory surface can show whether a fact entered the prompt and whether Mio actually used it.
-- `web/js/views/memories.js`: memory review UI model now supports disabled memories and uses provenance excerpts when available.
+- `web/js/views/memories.js`: memory review UI model now supports disabled memories, uses provenance excerpts when available, and formats usage metadata so review cards can show whether a memory entered the prompt and whether a reply cited it.
 - `tests/unit-memory-review.ts`, `tests/unit-memory-usefulness.ts`, and `tests/web/memories.test.mjs`: coverage for provenance exposure, disable/enable behavior, prompt exclusion, and usage tracing.
 - `src/memory/temporal-state.ts`: temporal state now stores structured events, resolution metadata, resolved-recent context, assistant no-interrupt commitments, user-reopened-chat transitions, and transcript bootstrap for assistant commitments.
 - `src/core/turn-post-effects.ts`: assistant replies that promise not to interrupt are persisted into temporal state for the next turn.

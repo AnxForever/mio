@@ -61,6 +61,18 @@ export function memoryReviewActions(item) {
   return actions;
 }
 
+export function memoryUsageLabel(usage) {
+  if (!usage || usage.retrievedCount <= 0) return '';
+  const parts = [];
+  if (usage.injectedCount > 0) parts.push(`进过提示 ${usage.injectedCount} 次`);
+  else parts.push(`检索到 ${usage.retrievedCount} 次`);
+  if (usage.mentionedCount > 0) parts.push(`回复引用 ${usage.mentionedCount} 次`);
+  else if (usage.injectedCount > 0) parts.push('未在回复中引用');
+  const last = usage.lastMentionedAt || usage.lastInjectedAt || usage.lastRetrievedAt;
+  if (last) parts.push(`最近 ${formatDate(last)}`);
+  return parts.join(' · ');
+}
+
 export class MemoriesView extends BaseView {
   constructor(params) {
     super(params);
@@ -240,6 +252,8 @@ export class MemoriesView extends BaseView {
     const content = el('div', { className: 'memory-content', textContent: item.content });
     const source = item.provenance?.excerpt || item.source;
     const details = el('div', { className: 'memory-details', textContent: `${formatDate(item.lastSeen)} · 置信度 ${Math.round(item.confidence * 100)}% · ${formatSource(source)}` });
+    const usageLabel = memoryUsageLabel(item.usage);
+    const usage = usageLabel ? el('div', { className: 'memory-details memory-usage', textContent: usageLabel }) : null;
 
     const reviewButtons = memoryReviewActions(item).map((action) => el('button', {
       type: 'button',
@@ -257,6 +271,7 @@ export class MemoriesView extends BaseView {
     card.appendChild(meta);
     card.appendChild(content);
     card.appendChild(details);
+    if (usage) card.appendChild(usage);
     card.appendChild(actions);
     return card;
   }
