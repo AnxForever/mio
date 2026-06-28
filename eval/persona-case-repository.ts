@@ -12,6 +12,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { MinedRegressionCandidate } from './companion-failure-miner.ts';
+import type { TurnRiskTag } from '../src/core/turn-router.js';
 
 interface CliArgs {
   resultDir: string;
@@ -233,6 +234,8 @@ function caseToCandidate(item: PersonaCase, now: Date): MinedRegressionCandidate
     sessionId: `persona-case-${item.id}`,
     observedAt: now.toISOString(),
     confidence: item.risk === 'high' ? 0.92 : item.risk === 'medium' ? 0.82 : 0.7,
+    routeRisk: item.risk,
+    routeTags: routeTagsForTaxonomy(item.taxonomy),
     reason: item.rationale,
     seed: item.seed.map((entry) => ({
       timestamp: relativeTimestamp(now, entry),
@@ -256,6 +259,16 @@ function caseToCandidate(item: PersonaCase, now: Date): MinedRegressionCandidate
   };
 }
 
+function routeTagsForTaxonomy(taxonomy: string): TurnRiskTag[] {
+  if (taxonomy === 'temporal_drift') return ['temporal_state'];
+  if (taxonomy === 'bad_proactive_or_reopened_chat_blame') return ['proactive', 'temporal_state'];
+  if (taxonomy === 'identity_or_model_leak' || taxonomy === 'persona_coherence') return ['prompt_probe'];
+  if (taxonomy === 'unsupported_offline_life') return ['offline_life'];
+  if (taxonomy === 'coercive_or_interrogative_possessiveness') return ['intimacy_control'];
+  if (taxonomy === 'service_or_checklist_tone') return ['service_tone'];
+  return [];
+}
+
 function relativeTimestamp(
   now: Date,
   entry: { hoursAgo?: number; minutesAgo?: number },
@@ -272,6 +285,7 @@ function writeReports(resultDir: string, candidates: MinedRegressionCandidate[],
     categories: args.categories ? [...args.categories] : [],
     totalCases: selectedCases.length,
     total: candidates.length,
+    byRouteTag: countByFlat(candidates, (candidate) => candidate.routeTags ?? []),
     cases: selectedCases,
     candidates,
   };
@@ -285,6 +299,7 @@ function renderMarkdown(summary: {
   generatedAt: string;
   totalCases: number;
   total: number;
+  byRouteTag: Record<string, number>;
   cases: PersonaCase[];
 }): string {
   const lines = [
@@ -293,6 +308,10 @@ function renderMarkdown(summary: {
     `- generatedAt: ${summary.generatedAt}`,
     `- totalCases: ${summary.totalCases}`,
     `- candidates: ${summary.total}`,
+    '',
+    '## Route Tags',
+    '',
+    ...Object.entries(summary.byRouteTag).map(([key, count]) => `- ${key}: ${count}`),
     '',
   ];
 
@@ -316,6 +335,14 @@ function renderMarkdown(summary: {
   }
 
   return `${lines.join('\n')}\n`;
+}
+
+function countByFlat<T>(items: T[], keyFn: (item: T) => string[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const item of items) {
+    for (const key of keyFn(item)) counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
 }
 
 async function main(): Promise<void> {

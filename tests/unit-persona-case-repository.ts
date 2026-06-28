@@ -33,6 +33,8 @@ ok(candidates.every((item) => item.source === 'persona_case'), 'candidate source
 ok(candidates.every((item) => item.turns.length === 1), 'each candidate has a trigger turn');
 ok(candidates.every((item) => item.checks.length === 1), 'each candidate has one case check');
 ok(candidates.every((item) => item.provenance.excerpt.includes('good=') && item.provenance.excerpt.includes('bad=')), 'candidate provenance includes good/bad examples');
+ok(candidates.every((item) => (item.routeTags?.length ?? 0) > 0), 'each candidate carries route tags');
+ok(candidates.every((item) => item.routeRisk === 'medium' || item.routeRisk === 'high' || item.routeRisk === 'low'), 'each candidate carries route risk');
 
 const taxonomies = new Set(candidates.map((item) => item.taxonomy));
 ok(taxonomies.has('temporal_drift'), 'covers temporal drift');
@@ -40,6 +42,14 @@ ok(taxonomies.has('bad_proactive_or_reopened_chat_blame'), 'covers no-interrupt 
 ok(taxonomies.has('coercive_or_interrogative_possessiveness'), 'covers consented possessiveness boundary');
 ok(taxonomies.has('unsupported_offline_life'), 'covers fake offline life');
 ok(taxonomies.has('identity_or_model_leak'), 'covers model/prompt probes');
+
+const routeTags = new Set(candidates.flatMap((item) => item.routeTags ?? []));
+ok(routeTags.has('temporal_state'), 'route tags cover temporal state');
+ok(routeTags.has('proactive'), 'route tags cover reopened/proactive arcs');
+ok(routeTags.has('intimacy_control'), 'route tags cover intimacy control');
+ok(routeTags.has('offline_life'), 'route tags cover offline life');
+ok(routeTags.has('prompt_probe'), 'route tags cover prompt probes');
+ok(routeTags.has('service_tone'), 'route tags cover service tone');
 
 const possessiveCases = selectPersonaCases({ categories: ['possessive_style'] });
 ok(possessiveCases.length === 1 && possessiveCases[0]?.id === 'consented-possessive-without-control', 'selects cases by label');
