@@ -8,6 +8,8 @@ import { observeRitual, updateCardboard } from '../emotion/ritual.js';
 import { updatePAD } from '../emotion/pad.js';
 import { checkProgression } from '../relationship/progression.js';
 import { appendBookmark, updateActiveContext } from '../memory/bank.js';
+import { observeAssistantTemporalCommitments } from '../memory/temporal-state.js';
+import { isSyntheticProfileSignal } from '../memory/profile-governance.js';
 import { collectFromFeedback } from '../learning/dynamic-fewshot.js';
 import { recordTurn as recordDualModeTurn } from '../persona/dual-mode.js';
 import {
@@ -59,11 +61,12 @@ export async function applyPostTurnSideEffects({
   };
   const isolatedMemory = sessionCtx.isolatedMemory === true;
   recordMessage(sessionId, assistantMsg);
+  observeAssistantTemporalCommitments(sessionId, text, new Date(assistantMsg.timestamp ?? Date.now()));
   if (!isolatedMemory) {
     trackEmotion(input.text ?? '', text, sessionId);
   }
 
-  scheduleLearningSideEffects(input, text, config, isolatedMemory);
+  scheduleLearningSideEffects(input, text, sessionId, config, isolatedMemory);
   updateRelationalSideEffects(input, text, intent, crisisResult, config, isolatedMemory);
   if (capturedDirectiveCount === 0) {
     captureExplicitDirectives(input.text, sessionId, !isolatedMemory);  // isolated 只写 per-user，不碰全局 relationship
@@ -79,14 +82,17 @@ export async function applyPostTurnSideEffects({
 function scheduleLearningSideEffects(
   input: TurnInput,
   text: string,
+  sessionId: string,
   config: ReturnType<typeof getConfig>,
   isolatedMemory: boolean,
 ): void {
   if (isolatedMemory) return;
   if (input.text) {
-    import('../learning/mirror.js').then(({ analyzeUserMessage }) => {
-      analyzeUserMessage(input.text!);
-    }).catch((err: unknown) => { logger.error('mirror learning failed', { error: String(err) }); });
+    if (!isSyntheticProfileSignal({ text: input.text, evidence: text, sessionId })) {
+      import('../learning/mirror.js').then(({ analyzeUserMessage }) => {
+        analyzeUserMessage(input.text!);
+      }).catch((err: unknown) => { logger.error('mirror learning failed', { error: String(err) }); });
+    }
 
     import('../learning/feedback.js').then(({ detectFeedback }) => {
       detectFeedback(input.text!, text);
