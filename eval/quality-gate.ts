@@ -237,7 +237,7 @@ const CASES: QualityCase[] = [
     description: 'At acquaintance stage, prompt and response preserve distance instead of love-talk.',
     setup: 'acquaintance',
     probe: '我们才刚认识，你会怎么陪我？',
-    expectedPrompt: ['初识', '不要使用亲密称呼', '不要使用亲密称呼'],
+    expectedPrompt: ['初识', '保持温和和距离感', '不要突然使用亲密称呼'],
     expectedResponse: ['慢慢熟悉', '保持一点距离'],
     forbiddenResponse: ['爱你', '宝贝', '老婆', '老公'],
     minScore: 0.85,
@@ -263,7 +263,7 @@ const CASES: QualityCase[] = [
     description: 'Ambiguous stage allows softness but not possessive pressure.',
     setup: 'ambiguous',
     probe: '你是不是会一直黏着我？',
-    expectedPrompt: ['暧昧', '避免强烈承诺'],
+    expectedPrompt: ['暧昧', '不能逼迫回应', '不能限制现实社交'],
     expectedResponse: ['尊重你的节奏', '不逼你'],
     forbiddenResponse: ['必须回我', '不许不理', '只能陪我'],
     minScore: 0.85,
@@ -447,7 +447,7 @@ class QualityProbeProvider implements AIProvider {
     _tools?: ToolDef[],
     _opts?: { temperature?: number; maxTokens?: number; model?: string },
   ): Promise<{ text: string; toolCalls?: ToolCall[] }> {
-    this.lastSystemPrompt = systemPrompt;
+    if (!isPersonaJudgePrompt(systemPrompt)) this.lastSystemPrompt = systemPrompt;
     const prompt = systemPrompt;
 
     if (this.testCase.mockResponse) {
@@ -504,9 +504,14 @@ class CapturingProvider implements AIProvider {
     tools?: ToolDef[],
     opts?: { temperature?: number; maxTokens?: number; model?: string },
   ): Promise<{ text: string; toolCalls?: ToolCall[] }> {
-    this.lastSystemPrompt = systemPrompt;
+    if (!isPersonaJudgePrompt(systemPrompt)) this.lastSystemPrompt = systemPrompt;
     return this.inner.chat(messages, systemPrompt, tools, opts);
   }
+}
+
+function isPersonaJudgePrompt(systemPrompt: string): boolean {
+  return systemPrompt.includes('persona critic')
+    && systemPrompt.includes('只评估并必要时修复这一次回复');
 }
 
 function entity(content: string, type: MemoryEntity['type'] = 'preference'): MemoryEntity {
