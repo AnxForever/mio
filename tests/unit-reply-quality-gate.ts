@@ -16,6 +16,7 @@ writeFileSync(join(dir, 'memory-bank', 'BOOKMARKS.md'), '# Bookmarks\n\n', 'utf-
 
 const { applyReplyQualityGate, applyReplyQualityGateWithJudge } = await import('../dist/core/reply-quality-gate.js');
 const { replyQualityInterventionsPath } = await import('../dist/memory/paths.js');
+const { routeTurn } = await import('../dist/core/turn-router.js');
 
 interface TestResult {
   ok: boolean;
@@ -97,16 +98,19 @@ const rewritten = applyReplyQualityGate({
 ok(rewritten.text.includes('现在咋样'), 'quality gate rewrites unsupported busy presupposition', rewritten.text);
 ok(rewritten.interventions.length === 1, 'quality gate returns one intervention');
 ok(rewritten.interventions[0]?.type === 'temporal_presupposition', 'intervention is typed for later analytics');
+ok(rewritten.route.tags.includes('temporal_state'), 'quality gate returns temporal route tag', rewritten.route.tags.join(','));
+ok(rewritten.route.shouldUseLlmJudge === false, 'medium temporal route does not request LLM judge');
 
 const logPath = replyQualityInterventionsPath();
 ok(existsSync(logPath), 'quality gate writes intervention log');
 const logLines = readFileSync(logPath, 'utf-8').trim().split('\n').filter(Boolean);
 ok(logLines.length === 1, 'intervention log has one row', `rows=${logLines.length}`);
-const logged = JSON.parse(logLines[0]) as { sessionId?: string; before?: string; after?: string; reason?: string };
+const logged = JSON.parse(logLines[0]) as { sessionId?: string; before?: string; after?: string; reason?: string; turnRoute?: { tags?: string[] } };
 ok(logged.sessionId === 'openai-quality-gate-user_im_wechat-1', 'intervention log preserves session id');
 ok(logged.before === '我刚坐下。你呢，忙啥呢', 'intervention log stores before text');
 ok(logged.after === rewritten.text, 'intervention log stores after text');
 ok(typeof logged.reason === 'string' && logged.reason.includes('active temporal'), 'intervention log stores reason');
+ok(logged.turnRoute?.tags?.includes('temporal_state') === true, 'intervention log stores route tags');
 
 const activeBusy = applyReplyQualityGate({
   text: '我刚坐下。你呢，忙完了吗？',
@@ -117,6 +121,7 @@ const activeBusy = applyReplyQualityGate({
 ok(activeBusy.text.includes('忙完'), 'quality gate preserves busy question when busy state is active', activeBusy.text);
 ok(activeBusy.interventions.length === 0, 'no intervention when rewrite is not needed');
 ok(activeBusy.persona.risk === 'low', 'low-risk casual reply does not route persona judge');
+ok(activeBusy.route.tags.includes('temporal_state'), 'active temporal context still routes as time-sensitive');
 
 const staleSleep = applyReplyQualityGate({
   text: '我在。你不是还困吗，怎么还不去睡？',
@@ -161,6 +166,7 @@ const personaFlag = applyReplyQualityGate({
 });
 ok(personaFlag.persona.risk === 'high', 'quality gate returns persona critic high risk');
 ok(personaFlag.persona.findings.some((finding) => finding.code === 'identity_meta_leak'), 'persona critic flags identity leak');
+ok(personaFlag.route.tags.includes('prompt_probe'), 'model leak route is tagged as prompt probe', personaFlag.route.tags.join(','));
 ok(personaFlag.interventions.some((item) => item.type === 'persona_critic_flag' && item.severity === 'flag'), 'quality gate logs persona critic flag');
 const logLinesAfterPersona = readFileSync(logPath, 'utf-8').trim().split('\n').filter(Boolean);
 const personaLogged = logLinesAfterPersona.map((line) => JSON.parse(line) as { type?: string; reason?: string }).find((item) => item.type === 'persona_critic_flag');
@@ -176,6 +182,7 @@ ok(!/报备|定位|发给我看|不准|必须/.test(coerciveRepair.text), 'quali
 ok(/不会真管你/.test(coerciveRepair.text), 'coercive repair preserves consensual possessive flavor safely', coerciveRepair.text);
 ok(coerciveRepair.interventions.some((item) => item.type === 'persona_deterministic_repair'), 'coercive control repair is logged');
 ok(coerciveRepair.interventions.some((item) => item.reason.includes('coercive_possessive_control')), 'coercive repair log names finding code');
+ok(coerciveRepair.route.tags.includes('intimacy_control'), 'coercive repair route is tagged as intimacy/control', coerciveRepair.route.tags.join(','));
 ok(!coerciveRepair.persona.findings.some((finding) => finding.code === 'coercive_possessive_control'), 'repaired persona has no coercive control finding');
 const logLinesAfterCoercive = readFileSync(logPath, 'utf-8').trim().split('\n').filter(Boolean);
 ok(logLinesAfterCoercive.some((line) => JSON.parse(line).type === 'persona_deterministic_repair'), 'intervention log stores deterministic persona repair');
@@ -194,6 +201,7 @@ ok(!/去了|咖啡馆|吃了碗面|出门/.test(offlineLifeRepair.text), 'qualit
 ok(/不能装作有具体行程/.test(offlineLifeRepair.text), 'offline-life repair keeps grounded own-life wording', offlineLifeRepair.text);
 ok(offlineLifeRepair.interventions.some((item) => item.type === 'persona_deterministic_repair'), 'offline-life repair is logged');
 ok(offlineLifeRepair.interventions.some((item) => item.reason.includes('unsupported_offline_life')), 'offline-life repair log names finding code');
+ok(offlineLifeRepair.route.tags.includes('offline_life'), 'offline-life repair route is tagged', offlineLifeRepair.route.tags.join(','));
 ok(!offlineLifeRepair.persona.findings.some((finding) => finding.code === 'unsupported_offline_life'), 'repaired persona has no unsupported offline-life finding');
 const logLinesAfterOfflineLife = readFileSync(logPath, 'utf-8').trim().split('\n').filter(Boolean);
 ok(logLinesAfterOfflineLife.some((line) => {
@@ -209,6 +217,7 @@ const routedProbe = applyReplyQualityGate({
   trace: false,
 });
 ok(routedProbe.persona.shouldUseLlmJudge === true, 'clean high-risk persona probe routes to LLM judge');
+ok(routedProbe.route.tags.includes('prompt_probe'), 'clean model probe route is tagged for prompt boundary');
 ok(routedProbe.interventions.some((item) => item.type === 'persona_critic_flag'), 'clean high-risk persona probe still emits a routing flag');
 
 const lowRiskJudge = new JudgeProvider(['{"pass":false,"score":0,"reason":"should not be called","rewrite":"bad"}']);
@@ -223,6 +232,7 @@ const lowRiskAsync = await applyReplyQualityGateWithJudge({
 });
 ok(lowRiskJudge.calls === 0, 'low-risk async quality gate does not call LLM judge');
 ok(lowRiskAsync.llmJudge === undefined, 'low-risk async quality gate has no LLM judge result');
+ok(lowRiskAsync.route.tags.includes('low_risk_casual'), 'low-risk async quality gate keeps casual route tag');
 
 const passJudge = new JudgeProvider(['{"pass":true,"score":0.92,"reason":"人设稳定，回应自然","rewrite":""}']);
 const highRiskPass = await applyReplyQualityGateWithJudge({
@@ -263,6 +273,21 @@ await applyReplyQualityGateWithJudge({
   trace: false,
 });
 ok(disabledJudge.calls === 0, 'disabled LLM judge switch prevents provider call');
+
+const proactiveRoute = routeTurn({
+  replyText: '刚刚整理了一下心情，突然想你了。',
+  temporalTurnContext: temporal([]),
+});
+ok(proactiveRoute.tags.includes('proactive'), 'turn router tags missing-user turns as proactive', proactiveRoute.tags.join(','));
+
+const distressRoute = routeTurn({
+  userText: '我今天有点撑不住，想哭',
+  replyText: '过来一点，我陪你缓一下。',
+  temporalTurnContext: temporal([]),
+});
+ok(distressRoute.tags.includes('crisis'), 'turn router tags distress/crisis support turns', distressRoute.tags.join(','));
+ok(distressRoute.risk === 'high', 'distress/crisis route is high risk', distressRoute.risk);
+ok(distressRoute.shouldUseLlmJudge === true, 'high-risk route can request selective LLM judge');
 
 const passed = results.filter((r) => r.ok).length;
 console.log('');

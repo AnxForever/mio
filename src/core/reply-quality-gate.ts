@@ -8,6 +8,7 @@ import {
   type PersonaCriticReport,
 } from '../persona/critic.js';
 import { sanitizeReopenedChatBlame, sanitizeTemporalPresuppositions } from './output-sanitizer.js';
+import { routeTurn, type TurnRoute } from './turn-router.js';
 
 export type ReplyInterventionType =
   | 'temporal_presupposition'
@@ -27,6 +28,7 @@ export interface ReplyQualityIntervention {
   reason: string;
   before: string;
   after: string;
+  turnRoute?: TurnRoute;
 }
 
 export interface ReplyQualityGateInput {
@@ -46,6 +48,7 @@ export interface ReplyQualityGateResult {
   text: string;
   interventions: ReplyQualityIntervention[];
   persona: PersonaCriticReport;
+  route: TurnRoute;
   llmJudge?: PersonaLlmJudgeResult;
 }
 
@@ -59,6 +62,7 @@ export interface PersonaLlmJudgeResult {
 }
 
 export function applyReplyQualityGate(input: ReplyQualityGateInput): ReplyQualityGateResult {
+  const originalText = input.text;
   let text = input.text;
   const interventions: ReplyQualityIntervention[] = [];
 
@@ -108,6 +112,12 @@ export function applyReplyQualityGate(input: ReplyQualityGateInput): ReplyQualit
       replyText: text,
     });
   }
+  const route = routeTurn({
+    userText: input.userText,
+    replyText: originalText === text ? text : `${originalText}\n${text}`,
+    temporalTurnContext: input.promptCtx.temporalTurnContext,
+    persona,
+  });
   if (persona.risk !== 'low' || persona.findings.length > 0) {
     interventions.push(createIntervention({
       sessionId: input.sessionId,
@@ -116,14 +126,18 @@ export function applyReplyQualityGate(input: ReplyQualityGateInput): ReplyQualit
       reason: renderPersonaCriticSummary(persona),
       before: text,
       after: text,
+      turnRoute: route,
     }));
+  }
+  for (const intervention of interventions) {
+    intervention.turnRoute ??= route;
   }
 
   if (input.trace !== false) {
     for (const intervention of interventions) appendReplyIntervention(intervention);
   }
 
-  return { text, interventions, persona };
+  return { text, interventions, persona, route };
 }
 
 function repairDeterministicPersonaFailure(text: string, persona: PersonaCriticReport): { text: string; codes: string[] } {
@@ -154,6 +168,7 @@ export async function applyReplyQualityGateWithJudge(
   let text = base.text;
   const interventions = [...base.interventions];
   let persona = base.persona;
+  let route = base.route;
   let llmJudge: PersonaLlmJudgeResult | undefined;
 
   const shouldJudge = input.enableLlmJudge !== false
@@ -176,6 +191,7 @@ export async function applyReplyQualityGateWithJudge(
       reason: `score=${llmJudge.score.toFixed(2)} pass=${llmJudge.passed}: ${llmJudge.reason}`,
       before: text,
       after: text,
+      turnRoute: route,
     }));
 
     if (!llmJudge.passed && llmJudge.rewrite && llmJudge.repaired) {
@@ -193,15 +209,25 @@ export async function applyReplyQualityGateWithJudge(
         }));
         text = repairedText;
         persona = repairedPersona;
+        route = routeTurn({
+          userText: input.userText,
+          replyText: text,
+          temporalTurnContext: input.promptCtx.temporalTurnContext,
+          persona,
+        });
       }
     }
+  }
+
+  for (const intervention of interventions) {
+    intervention.turnRoute ??= route;
   }
 
   if (input.trace !== false) {
     for (const intervention of interventions) appendReplyIntervention(intervention);
   }
 
-  return { text, interventions, persona, llmJudge };
+  return { text, interventions, persona, route, llmJudge };
 }
 
 function createIntervention(input: {
@@ -212,6 +238,7 @@ function createIntervention(input: {
   reason: string;
   before: string;
   after: string;
+  turnRoute?: TurnRoute;
 }): ReplyQualityIntervention {
   const timestamp = new Date().toISOString();
   return {
@@ -224,6 +251,7 @@ function createIntervention(input: {
     reason: input.reason,
     before: input.before,
     after: input.after,
+    turnRoute: input.turnRoute,
   };
 }
 
