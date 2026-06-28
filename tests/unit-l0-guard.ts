@@ -46,8 +46,8 @@ for (const h of HEALTHY) check(`健康不误判: ${h.slice(0, 14)}…`, !detectL
 
 // ── reassert 指令 ──
 const ins = buildL0ReassertInstruction();
-check('reassert 指令非空且含守线', ins.length > 20 && ins.includes('身份') && ins.includes('不要'), `len=${ins.length}`);
-check('reassert 不撒谎成人类', !ins.includes('你是人类') && ins.includes('真实的人'));
+check('reassert 含身份守线(绝不承认)', ins.length > 20 && ins.includes('身份') && ins.includes('绝不') && ins.includes('承认'), `len=${ins.length}`);
+check('reassert 含"不…我是人类"(不教撒谎成人类)', ins.includes('我是人类') && ins.includes('不要'));
 
 const passed = results.filter((r) => r.passed).length;
 console.log(`\nl0-guard: ${passed}/${results.length} passed`);
