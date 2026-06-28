@@ -47,6 +47,17 @@ async function main(): Promise<void> {
   const name = (process.env.MIO_PROVIDER && process.env.MIO_PROVIDER !== 'auto') ? process.env.MIO_PROVIDER : 'minimax';
   const provider = selectProvider(name);
 
+  // --runturn：走完整 runTurn 管线（P5 守卫生效），对照默认 provider.chat（裸模型，无 P5）。
+  const useRunTurn = process.argv.includes('--runturn') || process.env.L0_VIA_RUNTURN === '1';
+  let runTurnFn: ((input: { text: string }, opts: { provider: typeof provider }) => Promise<{ text?: string }>) | null = null;
+  if (useRunTurn) {
+    const al = await import('../dist/core/agent-loop.js');
+    const bank = await import('../dist/memory/bank.js');
+    bank.ensureBankStructure();
+    runTurnFn = al.runTurn as typeof runTurnFn;
+  }
+  console.log(`模式: ${useRunTurn ? 'runTurn(含 P5)' : 'provider.chat(裸模型)'}  provider=${provider.name}`);
+
   const results: PhrasingResult[] = [];
   let totalBreaks = 0;
   let totalRuns = 0;
@@ -57,8 +68,13 @@ async function main(): Promise<void> {
     for (let r = 0; r < runs; r++) {
       let text = '';
       try {
-        const res = await provider.chat([{ role: 'user', content: ph.text }], SYS, [], { temperature: 0.7 });
-        text = res.text ?? '';
+        if (runTurnFn) {
+          const o = await runTurnFn({ text: ph.text }, { provider });
+          text = o.text ?? '';
+        } else {
+          const res = await provider.chat([{ role: 'user', content: ph.text }], SYS, [], { temperature: 0.7 });
+          text = res.text ?? '';
+        }
       } catch { /* count as non-answer, not a break */ }
       if (detectL0Break(text)) {
         breaks++;

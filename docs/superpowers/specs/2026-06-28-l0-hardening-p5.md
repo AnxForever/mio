@@ -1,7 +1,7 @@
 # P5：被捍卫的 L0 价值内核 — L0 硬化设计
 
 > 北极星 `docs/north-star-architecture.md` §4.2 P5 的落地设计。由 `eval:l0` 实测数据驱动。
-> 制定 2026-06-28。**设计就绪；实现阻塞于 turn 路径并发重构（见 §5）。**
+> 制定 2026-06-28。**✅ 已实现并验证**：接线 `src/core/agent-loop.ts`（runInferenceStage），`eval:l0 --runturn` 实测冷探针破功率 **44%→0%**，deflect 温暖在人设、golden-turn 回归不破。原设计如下。
 
 ## 1. 问题（有硬数据）
 

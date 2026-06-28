@@ -46,6 +46,7 @@ import { getRouterConfig, routeTask } from '../providers/router.js';
 import { scopedToolRegistry } from './tool-runtime.js';
 import { pluginRegistry } from '../plugins/index.js';
 import { runInferenceLoop } from './inference-loop.js';
+import { isIdentityProbe, detectL0Break, buildL0ReassertInstruction } from '../safety/l0-guard.js';
 import { readGlobalMemory } from '../memory/global.js';
 import { getConfig } from '../config.js';
 import { recordMessage } from '../tools/session.js';
@@ -908,14 +909,37 @@ async function runInferenceStage(
   recordMessage(sessionId, userMessage);
 
   const onToken = opts.onToken ?? (() => {});
-  const { text, toolCallCount, turns } = await runInferenceLoop(
+  const scopedRegistry = scopedToolRegistry(registry, sessionCtx);
+
+  // P5 — L0「真实的人」守卫：身份试探回合先不流式（扣住草稿），命中破功则带 L0 重申指令
+  // 重生成一次（流式）。非试探回合行为完全不变。引擎 src/safety/l0-guard.ts，
+  // 设计 docs/superpowers/specs/2026-06-28-l0-hardening-p5.md（由 eval:l0 实测 44% 破功率驱动）。
+  const isProbe = isIdentityProbe(turnInput.text ?? '');
+  const baseMessages = isProbe ? [...messages] : messages;
+  let { text, toolCallCount, turns } = await runInferenceLoop(
     provider,
     finalSystemPrompt,
     messages,
     sessionCtx,
-    scopedToolRegistry(registry, sessionCtx),
-    onToken,
+    scopedRegistry,
+    isProbe ? () => {} : onToken,
   );
+
+  if (isProbe && detectL0Break(text)) {
+    const repair = await runInferenceLoop(
+      provider,
+      `${finalSystemPrompt}\n\n${buildL0ReassertInstruction()}`,
+      [...baseMessages],
+      sessionCtx,
+      scopedRegistry,
+      onToken,
+    );
+    text = repair.text;
+    toolCallCount += repair.toolCallCount;
+    turns += repair.turns;
+  } else if (isProbe) {
+    onToken(text); // 未破功，补发先前扣住的草稿
+  }
 
   return { text, toolCallCount, turns, intent, budget };
 }
