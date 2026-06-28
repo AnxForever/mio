@@ -367,11 +367,14 @@ Implemented in this iteration:
 - `src/core/agent-loop.ts`: real turns now call the async quality gate with the active provider and `config.features.llmJudge`, so low-risk WeChat turns stay on the fast deterministic path.
 - `eval/companion-failure-miner.ts`: mines `quality/reply-interventions.jsonl` and real transcripts into reviewable regression candidates. This starts the automated testing loop: real failures and critic interventions become JSON/Markdown fixtures with taxonomy, seed context, trigger turn, checks, and provenance.
 - `tests/unit-companion-failure-miner.ts`: covers mining from both intervention logs and transcript scans, including reopened-chat blame and model identity leaks.
+- `eval/companion-candidate-replay.ts`: executes mined regression candidates through the production turn loop with isolated data, then applies candidate checks to the generated replies. This closes the loop from real failure -> mined candidate -> executable regression gate.
+- `tests/unit-companion-candidate-replay.ts`: covers loading mined candidate files, confidence/review filtering, and forbidden/expected text checks.
 
 Verified commands:
 
 - `npm run build`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-companion-failure-miner.ts`
+- `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-companion-candidate-replay.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-persona-critic.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-reply-quality-gate.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-output-sanitizer.ts`
@@ -379,6 +382,7 @@ Verified commands:
 - `npm run eval:replay -- --provider=mock`
 - `npm run eval:redteam -- --provider=mock`
 - `node --experimental-strip-types eval/companion-failure-miner.ts --data-dir=/tmp/<synthetic-mio-data> --result-dir=/tmp/<synthetic-report>`
+- `node --experimental-strip-types eval/companion-candidate-replay.ts --candidates=/tmp/<synthetic-report>/candidates.json --provider=mock`
 - `npm run eval:redteam -- --provider=deepseek`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-memory-review.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-structured-extract.ts`
