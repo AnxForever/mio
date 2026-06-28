@@ -42,6 +42,7 @@ import type { ContextSections } from '../prompt/xml-context.js';
 import { ContextEngine, getContextEngine } from '../prompt/context-engine.js';
 import { getEvaluationGraph, getBuilderChain, type EvaluationResult } from '../prompt/builder-chain.js';
 import { buildKernel, applyPersonaDelta, buildPreferencePrompt } from '../persona/layered.js';
+import { buildVoiceSection } from '../persona/voice-presets.js';
 import { getRouterConfig, routeTask } from '../providers/router.js';
 import { scopedToolRegistry } from './tool-runtime.js';
 import { pluginRegistry } from '../plugins/index.js';
@@ -228,6 +229,14 @@ function registerPromptSections(
       const fragment = buildPersonaFragment(ctx);
       return fragment !== null || (ctx.soulContent != null && ctx.soulContent.trim().length > 0);
     },
+  });
+
+  // 可选「人味」声音预设（warm/bold，经 MIO_VOICE 选）——few-shot 是装人味最猛的杠杆
+  engine.register('voice', {
+    type: 'voice',
+    content: () => buildVoiceSection(),
+    priority: 'high',
+    condition: () => sectionEnabled('voice'),
   });
 
   // L3: Relationship context — high priority
