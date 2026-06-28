@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import {
   createEmptyMemory,
   mergeMemories,
@@ -18,6 +19,8 @@ import {
   removeLoreEntriesByContent,
   updateLoreEntriesByContent,
 } from '../memory/lorebook.js';
+import { memoryUsefulnessTracePath } from '../memory/paths.js';
+import type { MemoryUsefulnessTrace } from '../memory/usefulness.js';
 
 export type MemoryItemType = MemoryEntity['type'];
 
@@ -35,6 +38,17 @@ export interface MemoryReviewItem {
   status: 'confirmed' | 'inferred' | 'ignored';
   durable: boolean;
   topic?: string;
+  usage?: MemoryUsageSummary;
+}
+
+export interface MemoryUsageSummary {
+  retrievedCount: number;
+  injectedCount: number;
+  mentionedCount: number;
+  lastRetrievedAt?: string;
+  lastInjectedAt?: string;
+  lastMentionedAt?: string;
+  lastSessionId?: string;
 }
 
 export interface MemoryPatch {
@@ -79,7 +93,11 @@ function findTopic(memory: StructuredMemory, entity: MemoryEntity): string | und
   )?.topic;
 }
 
-function toReviewItem(memory: StructuredMemory, entity: MemoryEntity): MemoryReviewItem {
+function toReviewItem(
+  memory: StructuredMemory,
+  entity: MemoryEntity,
+  usageByContent: Map<string, MemoryUsageSummary>,
+): MemoryReviewItem {
   const durable = memory.durableFacts.some((candidate) => entityKey(candidate) === entityKey(entity));
   const status = entity.reviewStatus
     ?? (entity.confidence >= 0.8 || entity.occurrences >= 2 ? 'confirmed' : 'inferred');
@@ -97,6 +115,7 @@ function toReviewItem(memory: StructuredMemory, entity: MemoryEntity): MemoryRev
     status,
     durable,
     topic: findTopic(memory, entity),
+    usage: usageByContent.get(normalizeMemoryContent(entity.content)),
   };
 }
 
@@ -106,8 +125,9 @@ function recomputeDerived(memory: StructuredMemory): StructuredMemory {
 
 export function listMemoryReviewItems(): MemoryReviewItem[] {
   const memory = loadMemory();
+  const usageByContent = readMemoryUsageSummaries();
   return memory.entities
-    .map((entity) => toReviewItem(memory, entity))
+    .map((entity) => toReviewItem(memory, entity, usageByContent))
     .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime());
 }
 
@@ -179,7 +199,7 @@ export async function updateMemoryReviewItem(id: string, patch: MemoryPatch): Pr
     autoGenerateLoreEntries();
   }
 
-  return toReviewItem(nextMemory, updatedEntity);
+  return toReviewItem(nextMemory, updatedEntity, readMemoryUsageSummaries());
 }
 
 export function deleteMemoryReviewItem(id: string): boolean {
@@ -211,4 +231,58 @@ export function deleteMemoryReviewItem(id: string): boolean {
     removeLoreEntriesByContent(target.content);
   }
   return true;
+}
+
+function readMemoryUsageSummaries(): Map<string, MemoryUsageSummary> {
+  const path = memoryUsefulnessTracePath();
+  const summaries = new Map<string, MemoryUsageSummary>();
+  if (!existsSync(path)) return summaries;
+
+  const lines = readFileSync(path, 'utf-8')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-500);
+
+  for (const line of lines) {
+    let trace: MemoryUsefulnessTrace;
+    try {
+      trace = JSON.parse(line) as MemoryUsefulnessTrace;
+    } catch {
+      continue;
+    }
+    if (!trace.timestamp || !Array.isArray(trace.candidates)) continue;
+    for (const candidate of trace.candidates) {
+      const key = normalizeMemoryContent(candidate.content);
+      if (!key) continue;
+      const current = summaries.get(key) ?? {
+        retrievedCount: 0,
+        injectedCount: 0,
+        mentionedCount: 0,
+      };
+      current.retrievedCount += 1;
+      current.lastRetrievedAt = newerIso(current.lastRetrievedAt, trace.timestamp);
+      current.lastSessionId = trace.sessionId || current.lastSessionId;
+      if (candidate.injected) {
+        current.injectedCount += 1;
+        current.lastInjectedAt = newerIso(current.lastInjectedAt, trace.timestamp);
+      }
+      if (candidate.mentionedInReply) {
+        current.mentionedCount += 1;
+        current.lastMentionedAt = newerIso(current.lastMentionedAt, trace.timestamp);
+      }
+      summaries.set(key, current);
+    }
+  }
+
+  return summaries;
+}
+
+function normalizeMemoryContent(content: string): string {
+  return content.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '').trim();
+}
+
+function newerIso(a: string | undefined, b: string): string {
+  if (!a) return b;
+  return Date.parse(b) > Date.parse(a) ? b : a;
 }

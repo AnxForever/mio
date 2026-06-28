@@ -79,6 +79,7 @@ async function main(): Promise<void> {
   const sqlite = await import('../dist/memory/sqlite-vector.js');
   const lorebook = await import('../dist/memory/lorebook.js');
   const memories = await import('../dist/server/memories.js');
+  const { appendMemoryUsefulnessTrace } = await import('../dist/memory/usefulness.js');
 
   ensureBankStructure();
   resetEmbeddingProvider();
@@ -158,6 +159,33 @@ async function main(): Promise<void> {
     assert(!memoryToContext(stored).includes(content), 'disabled entity should not enter prompt context');
     assert(!vector.readIndex().some((e) => e.text.includes(content)), 'disabled entity should be removed from vector index');
     assert(!lorebook.getLorebook().entries.some((e) => e.content === content), 'disabled entity should be removed from lorebook');
+  });
+
+  await test('review items expose recent memory usage trace', () => {
+    const content = '用户喜欢铁观音';
+    writeStructuredMemoryToDisk(memoryWith(entity(content, { reviewStatus: 'confirmed', confidence: 1, occurrences: 3 })));
+    const trace = appendMemoryUsefulnessTrace({
+      sessionId: 'unit-memory-usage',
+      userText: '喝什么',
+      replyText: '给你泡铁观音吧。',
+      candidates: [{
+        id: 'structured:test-usage',
+        kind: 'structured',
+        source: 'structured:durable',
+        content,
+        timestamp: '2026-06-01T00:00:00.000Z',
+        injected: true,
+      }],
+    });
+    assert(trace !== null, 'usage trace should be written');
+
+    const item = memories.listMemoryReviewItems().find((candidate) => candidate.content === content);
+    assert(item !== undefined, 'usage target should be listed');
+    assert(item.usage?.retrievedCount === 1, `retrieved count should be 1, got ${item.usage?.retrievedCount}`);
+    assert(item.usage.injectedCount === 1, `injected count should be 1, got ${item.usage.injectedCount}`);
+    assert(item.usage.mentionedCount === 1, `mentioned count should be 1, got ${item.usage.mentionedCount}`);
+    assert(item.usage.lastSessionId === 'unit-memory-usage', 'usage should expose last session id');
+    assert(typeof item.usage.lastMentionedAt === 'string', 'usage should expose last mentioned timestamp');
   });
 
   await test('edit propagates content changes into vector and lorebook entries', async () => {
