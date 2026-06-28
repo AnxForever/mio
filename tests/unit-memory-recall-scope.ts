@@ -36,10 +36,12 @@ class EchoFactProvider {
   readonly name = 'echo-fact';
   calls = 0;
   lastUserContent = '';
+  userContents: string[] = [];
 
   async chat(messages: Array<{ content?: unknown }>): Promise<{ text: string }> {
     this.calls++;
     this.lastUserContent = String(messages.at(-1)?.content ?? '');
+    this.userContents.push(this.lastUserContent);
     const fact = this.lastUserContent.includes('只新增第二条')
       ? '用户只新增第二条'
       : '用户喜欢第一条';
@@ -104,9 +106,13 @@ async function main(): Promise<void> {
 
     const second = `${first}\n- <time=2026-06-02 10:00 +0800> 只新增第二条：用户只新增第二条`;
     const mem3 = await extractStructuredMemoryLLM(second, mem2, { provider: provider as never });
-    assert(provider.calls === 2, `dirty extraction should call provider once more; calls=${provider.calls}`);
-    assert(!provider.lastUserContent.includes('第一条：用户喜欢第一条'), 'dirty prompt included already processed line');
-    assert(provider.lastUserContent.includes('只新增第二条'), 'dirty prompt did not include new line');
+    // B-1 矛盾消解在脏合并后会多调一次 provider（矛盾判定），故 calls 由 2→3。
+    assert(provider.calls === 3, `dirty extraction + B-1 contradiction judge; calls=${provider.calls}`);
+    // 增量提取的 prompt 只应含新增行、不含已处理行——校验"提取那一次调用"（非最后的矛盾判定调用）。
+    const dirtyExtractCall = provider.userContents.find((c) => c.startsWith('- ') && c.includes('只新增第二条'));
+    assert(dirtyExtractCall !== undefined, 'dirty extraction call not captured');
+    assert(!dirtyExtractCall!.includes('第一条：用户喜欢第一条'), 'dirty prompt included already processed line');
+    assert(dirtyExtractCall!.includes('只新增第二条'), 'dirty prompt did not include new line');
     assert(mem3.entities.some((e) => e.content === '用户喜欢第一条'), 'existing entity lost after dirty merge');
     assert(mem3.entities.some((e) => e.content === '用户只新增第二条'), 'new dirty entity missing');
   });
