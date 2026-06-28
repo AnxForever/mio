@@ -32,6 +32,22 @@ This matches the strongest external guidance: start simple, add workflows before
 - Character.AI memory update: separates Story Memory, Facts, pinned moments, memory usage visualization, editable/disable-able facts, and automatic long-chat tidying.
 - Persona/role-play research: recent persona work separates stable identity from adaptive short-term state and uses persona critics/case repositories/drift suppressors rather than treating persona as one static prompt.
 
+Reference links:
+
+- Anthropic, "Building effective agents": https://www.anthropic.com/research/building-effective-agents
+- Anthropic, "Effective context engineering for AI agents": https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents
+- Anthropic, "How we built our multi-agent research system": https://www.anthropic.com/engineering/multi-agent-research-system
+- OpenAI Agents SDK orchestration: https://developers.openai.com/api/docs/guides/agents/orchestration
+- OpenAI Agents SDK multi-agent docs: https://openai.github.io/openai-agents-python/multi_agent/
+- LangGraph supervisor docs: https://reference.langchain.com/python/langgraph-supervisor
+- Microsoft Azure Architecture Center, "AI Agent Orchestration Patterns": https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/ai-agent-design-patterns
+- Park et al., "Generative Agents: Interactive Simulacra of Human Behavior": https://arxiv.org/abs/2304.03442
+- Packer et al., "MemGPT: Towards LLMs as Operating Systems": https://arxiv.org/abs/2310.08560
+- Zheng et al., "Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena": https://arxiv.org/abs/2306.05685
+- Alonso et al., "Toward Conversational Agents with Context and Time Sensitive Long-term Memory": https://arxiv.org/abs/2406.00057
+- Replika memory help: https://help.replika.com/hc/en-us/articles/37208679176077-How-does-Replika-s-memory-work
+- Character.AI memory update: https://blog.character.ai/memory/
+
 ## What Good Chatbots Appear To Be Doing
 
 ### 1. They are not "one prompt"
@@ -328,6 +344,18 @@ Exit criteria:
 5. Move broad testing offline: scenario actors, time-tag mutation, replay, redteam, pairwise prompt comparison, and regression mining.
 6. Add product-facing memory governance: users must be able to see, disable, correct, and pin what Mio believes.
 
+## Next Engineering Route
+
+The route should be sequence-first, not prompt-first:
+
+1. Lock the failure loop: run scenario actors, replay mined candidates, redteam, and intervention-log mining as one repeatable command before changing persona text.
+2. Expand the eval corpus: add 40+ probes around time drift, stale state, no-interrupt promises, consensual possessiveness, interrogation, offline-life fabrication, prompt leakage, and service tone.
+3. Add the persona case repository: store good/bad examples with labels, then use them both for few-shot prompt context and LLM judge rubrics.
+4. Make temporal state authoritative: each short-term state needs observedAt, validUntil or resolvedAt, source transcript id, and a state transition reason. Old states may be mentioned as past, but cannot be assumed current.
+5. Make memory user-governed: expose durable facts, inferred preferences, disabled memories, pinned/story memories, and retrieved prompt context with provenance.
+6. Add pairwise prompt experiments: compare current persona prompt against a candidate prompt with position-swapped LLM judges before accepting broad style changes.
+7. Put the loop on a schedule: run mock gates cheaply on every change, run real-provider gates nightly or before restarting the WeChat bridge.
+
 ## Architecture Decision
 
 Use a modular monolith with workflow-style orchestration.
@@ -371,6 +399,8 @@ Implemented in this iteration:
 - `tests/unit-companion-candidate-replay.ts`: covers loading mined candidate files, confidence/review filtering, and forbidden/expected text checks.
 - `eval/companion-scenario-actors.ts`: generates executable candidate files from deterministic scenario actors: long-gap returns, stale tired state, consented possessiveness, boundary setting, prompt probes, offline-life probes, and distress support. This gives Mio an offline self-testing loop even before real users hit a bug.
 - `tests/unit-companion-scenario-actors.ts`: verifies actor coverage, stable candidate shape, filtering, timestamped seed context, and check coverage.
+- `eval/companion-loop.ts`: orchestrates the offline companion eval loop: build, scenario actor generation, actor candidate replay, real transcript/intervention mining, mined candidate replay, and one aggregate report. It is the manual/nightly entry point for "simulate chat -> find problems -> preserve regressions".
+- `tests/unit-companion-loop.ts`: covers loop step planning and aggregate pass/fail summaries.
 
 Verified commands:
 
@@ -378,6 +408,7 @@ Verified commands:
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-companion-failure-miner.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-companion-candidate-replay.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-companion-scenario-actors.ts`
+- `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-companion-loop.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-persona-critic.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-reply-quality-gate.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-output-sanitizer.ts`
@@ -387,6 +418,7 @@ Verified commands:
 - `node --experimental-strip-types eval/companion-failure-miner.ts --data-dir=/tmp/<synthetic-mio-data> --result-dir=/tmp/<synthetic-report>`
 - `node --experimental-strip-types eval/companion-candidate-replay.ts --candidates=/tmp/<synthetic-report>/candidates.json --provider=mock`
 - `node --experimental-strip-types eval/companion-scenario-actors.ts --result-dir=/tmp/<actor-candidates>`
+- `node --experimental-strip-types eval/companion-loop.ts --skip-build --provider=mock --actor-count-per-actor=1 --actor-max-candidates=2 --mined-limit=2 --mined-max-candidates=2`
 - `npm run eval:redteam -- --provider=deepseek`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-memory-review.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-structured-extract.ts`
