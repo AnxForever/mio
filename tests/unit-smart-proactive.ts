@@ -5,7 +5,7 @@
  * Verifies that proactive cooldowns are scoped per user/contact. This keeps one
  * WeChat contact's opt-in outreach from blocking another contact.
  */
-import { mkdtempSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -25,7 +25,9 @@ console.log('\n\x1b[1mMio — smart proactive isolation tests\x1b[0m\n');
 
 const {
   decideProactiveMessage,
+  isExternalIMSession,
   recordProactiveMessage,
+  updateActivityPattern,
   updateSmartProactiveConfig,
   _resetCache,
 } = await import('../dist/scheduler/smart-proactive.js');
@@ -40,6 +42,26 @@ try {
     baseRate: 10,
     responseThreshold: 0,
   });
+
+  const externalSessions = [
+    'openai-wx_user_1_im_wechat-abc123',
+    'onebot-private-10001-deadbeef',
+    'onebot-group-20002-deadbeef',
+    'wechat-native-bot_1-user_1',
+  ];
+  for (const sessionId of externalSessions) {
+    ok(isExternalIMSession(sessionId), `recognizes external IM session: ${sessionId}`);
+    updateActivityPattern(sessionId);
+    ok(
+      existsSync(join(dir, 'users', sessionId, 'user-activity.json')),
+      `external IM activity is stored under contact user directory: ${sessionId}`,
+    );
+  }
+  ok(!existsSync(join(dir, 'user-activity.json')), 'external IM activity does not update global aggregate');
+  ok(!isExternalIMSession('local-web-session'), 'local web session is not treated as external IM');
+
+  updateActivityPattern('local-web-session');
+  ok(existsSync(join(dir, 'user-activity.json')), 'local sessions still update the global activity aggregate');
 
   const longAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
 

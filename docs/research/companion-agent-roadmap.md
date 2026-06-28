@@ -404,8 +404,9 @@ Implemented in this iteration:
 - `eval/persona-pairwise-experiment.ts`: compares two persona/prompt reply sets against the persona case repository with position-swapped pairwise judging. It supports offline deterministic mock judging for local gates and real provider judging for candidate prompt experiments.
 - `tests/unit-persona-pairwise-experiment.ts`: verifies deterministic scoring, position-swap winner mapping, label-filtered experiments, default good-vs-bad sanity checks, and reply-set file loading.
 - `src/scheduler/proactive-quality.ts`: proactive delivery now rejects waiting/blame arcs and concrete fabricated offline-life claims before notification delivery, while still allowing consented/dominant comfort wording that does not pressure the user to reply.
+- `src/scheduler/smart-proactive.ts`: external IM sessions (`openai-*`, `onebot-private-*`, `onebot-group-*`, and `wechat-native-*`) now write activity/cooldown state only under `data/users/<sessionId>/user-activity.json`, so one WeChat/IM contact's activity model does not pollute the global local-session aggregate.
 - `src/persona/own-life.ts`: the own-life prompt now uses abstract internal/creative states instead of concrete physical activities, and explicitly tells Mio not to present locations, outings, meals, or "passed by a place" details as facts.
-- `tests/unit-proactive-quality.ts` and `tests/unit-own-life.ts`: cover waiting/blame rejection, fake offline-life rejection, abstract own-life acceptance, and source prompt hygiene.
+- `tests/unit-proactive-quality.ts`, `tests/unit-own-life.ts`, and `tests/unit-smart-proactive.ts`: cover waiting/blame rejection, fake offline-life rejection, abstract own-life acceptance, source prompt hygiene, and per-contact smart proactive isolation.
 - `eval/quality-gate.ts`: adds proactive-quality regression probes for waiting/blame, fake offline-life, and abstract own-life messages.
 - `eval/companion-loop.ts`: orchestrates the offline companion eval loop: build, scenario actor generation, actor candidate replay, persona case generation/replay, real transcript/intervention mining, mined candidate replay, and one aggregate report. It is the manual/nightly entry point for "simulate chat -> find problems -> preserve regressions".
 - `tests/unit-companion-loop.ts`: covers loop step planning and aggregate pass/fail summaries.
@@ -421,6 +422,7 @@ Verified commands:
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-companion-loop.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-proactive-quality.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-own-life.ts`
+- `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-smart-proactive.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-persona-critic.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-reply-quality-gate.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-output-sanitizer.ts`

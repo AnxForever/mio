@@ -6,7 +6,8 @@
  * - Bayesian updates for "whether" (user response probability per hour)
  * - Topic hints scavenged from recent bookmarks
  *
- * All persistence to `data/user-activity.json`.
+ * Persistence is global for local single-user sessions and per-contact under
+ * `data/users/<sessionId>/user-activity.json` for external IM sessions.
  */
 
 import { globalUserActivityPath, smartProactiveConfigPath, userActivityPath } from '../memory/paths.js';
@@ -211,8 +212,14 @@ function persistSmartConfig(): void {
  * Lightweight — call this after every user message in the agent loop.
  */
 export function updateActivityPattern(sessionId: string): void {
-  updateActivityScope(sessionId);
+  if (!isExternalIMSession(sessionId)) updateActivityScope(sessionId);
   if (sessionId.trim()) updateActivityScope(sessionId, sessionId);
+}
+
+export function isExternalIMSession(sessionId: string): boolean {
+  return /^openai-/.test(sessionId)
+    || /^onebot-(?:private|group)-/.test(sessionId)
+    || /^wechat-native-/.test(sessionId);
 }
 
 function updateActivityScope(sessionId: string, userId?: string): void {
