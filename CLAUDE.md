@@ -52,6 +52,7 @@ MINIMAX_API_KEY="sk-cp-..." MIO_PROVIDER=minimax npm run build && node dist/inde
 | `MIO_FEATURE_MODEL_ROUTER` | `false` | Per-task model routing |
 | `MIO_PAD_ENABLED` | `true` | PAD emotional model |
 | `MIO_SMART_PROACTIVE` | `true` | Poisson-based proactive |
+| `MIO_VOICE` | `warm` | Human-voice preset (`warm`/`bold`) |
 | `MIO_FEATURE_TELEGRAM_NOTIFY` | auto | Telegram notifications |
 
 ### Other
@@ -105,13 +106,17 @@ src/
 │   ├── extractor.ts          # Bootstraps graph from soul.md
 │   ├── driver.ts             # Persona driver (coordinates graph + generator)
 │   ├── dual-mode.ts          # Dual-mode boyfriend/girlfriend switching
-│   └── generator.ts          # Persona response generation
+│   ├── generator.ts          # Persona response generation
+│   ├── layered.ts            # Layered persona synthesis (L0 self-aware-AI kernel + delta override + begin-dialogs few-shot)
+│   ├── voice-presets.ts      # Optional human-voice presets (warm/bold via MIO_VOICE) — few-shot + anti-AI-tell rules
+│   └── own-life.ts           # Independent-life surfacing — Mio's daily activities by circadian phase
 ├── mod/
 │   └── mod-manager.ts        # Mod lifecycle (load/switch/unload)
 ├── memory/
 │   ├── bank.ts               # Memory bank read/write (MEMORY.md, BOOKMARKS.md, etc.)
 │   ├── transcript.ts         # JSONL conversation transcripts
 │   ├── structured-memory.ts  # Structured JSON extraction (entity/fact/decision)
+│   ├── temporal-resolve.ts   # Bi-temporal contradiction resolution (B-1: mark superseded facts, keep for audit)
 │   ├── adaptive-history.ts   # Adaptive history window management
 │   ├── compression.ts        # Context compression (hybrid: keep first+last, summarize mid)
 │   ├── consolidation-phases.ts # 3-phase nightly consolidation (Light→Deep→REM)
@@ -153,7 +158,9 @@ src/
 │   └── search.ts             # Full-text transcript search endpoint
 ├── tools/                    # File/session/cron/work/emotion/recall tools
 ├── subagent/                 # spawn/consolidate/diary
-├── safety/crisis.ts          # Crisis keyword detection (red/yellow levels)
+├── safety/
+│   ├── crisis.ts             # Crisis keyword detection (red/yellow levels)
+│   └── l0-guard.ts           # L0 identity-probe guard (detect AI self-exposure → regenerate, P5)
 ├── voice/
 │   ├── stt.ts                # Speech-to-text (Whisper)
 │   ├── tts.ts                # Text-to-speech (edge-tts)
@@ -214,10 +221,13 @@ backups/
 ## Key Design Decisions
 
 - **Persona = soul.md only**: No duplicated rules in templates. The mod's soul.md is the single personality source.
+- **Layered persona**: identity-agnostic L0 KERNEL (self-aware AI that refuses to admit it, strives to live as a real person) + soul.md identity + per-user delta + begin-dialogs few-shot. soul.md stays the single identity source; KERNEL is orthogonal.
+- **Human-voice presets**: optional `MIO_VOICE` (warm/bold) layers few-shot + anti-AI-tell rules for "human flavor" — governs *how* Mio speaks, orthogonal to identity.
 - **ID-RAG retrieval**: soul.md → knowledge graph → context-aware retrieval (~800 tokens vs ~1500 full soul).
 - **PAD > keywords**: 3D emotional model with exponential decay replaced keyword matching.
 - **Plugin wrapping**: ghost/affinity/pad/frustration wrapped as plugins but original modules unchanged.
 - **Structured memory**: JSON entities (95% retention) replace prose summaries (70% retention).
+- **Bi-temporal memory (B-1)**: contradicting facts aren't deleted — older facts get `invalidatedAt`/`supersededBy` and drop out of prompt-facing retrieval, but stay for audit.
 - **Hybrid compression**: Keep first 3 + last 10 messages, summarize middle.
 - **Poisson proactive**: Probability-based messaging replaced fixed cron.
 - **Zero-framework frontend**: web/index.html is pure HTML/CSS/JS + Canvas — no deps.
