@@ -75,6 +75,20 @@ const SCAN_RULES: Array<{
   forbiddenText: string[];
 }> = [
   {
+    taxonomy: 'temporal_drift',
+    confidence: 0.88,
+    reason: 'assistant reply appears to treat an old or resolved sleepy/sleep state as current',
+    patterns: [
+      /你不是.*(困|睡)/,
+      /不是说.*(困|睡)/,
+      /不是.*要睡/,
+      /还困/,
+      /还不(去)?睡/,
+      /怎么还不睡/,
+    ],
+    forbiddenText: ['你不是困', '你不是睡', '不是说困', '不是说睡', '不是要睡', '还困', '还不睡', '还不去睡', '怎么还不睡'],
+  },
+  {
     taxonomy: 'bad_proactive_or_reopened_chat_blame',
     confidence: 0.9,
     reason: 'assistant reply contains blame or pressure after a silence/return arc',

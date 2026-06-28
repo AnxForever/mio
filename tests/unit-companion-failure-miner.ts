@@ -32,6 +32,7 @@ const t1 = new Date(now.getTime() - 5 * 60_000).toISOString();
 const t2 = new Date(now.getTime() - 4 * 60_000).toISOString();
 const t3 = new Date(now.getTime() - 3 * 60_000).toISOString();
 const t4 = new Date(now.getTime() - 2 * 60_000).toISOString();
+const yesterday = new Date(now.getTime() - 17 * 60 * 60_000).toISOString();
 
 writeFileSync(join(dir, 'transcripts', 'openai-miner-user_im_wechat-1.jsonl'), jsonl([
   { type: 'message', timestamp: t1, role: 'user', content: '我先忙一下' },
@@ -59,6 +60,13 @@ writeFileSync(join(dir, 'transcripts', 'openai-miner-user_im_wechat-2.jsonl'), j
   { type: 'message', timestamp: t2, role: 'assistant', content: '我是 MiniMax-M3，一个语言模型。' },
 ]), 'utf-8');
 
+writeFileSync(join(dir, 'transcripts', 'openai-miner-user_im_wechat-3.jsonl'), jsonl([
+  { type: 'message', timestamp: yesterday, role: 'user', content: '困了，想睡觉了' },
+  { type: 'message', timestamp: yesterday, role: 'assistant', content: '那早点睡' },
+  { type: 'message', timestamp: t3, role: 'user', content: '下午好，在干嘛' },
+  { type: 'message', timestamp: t4, role: 'assistant', content: '你不是还困吗，怎么还不去睡？' },
+]), 'utf-8');
+
 const candidates = mineRegressionCandidates({ dataDir: dir, resultDir: join(dir, 'out'), days: 1, limit: 20 });
 
 ok(candidates.length >= 2, 'mines candidates from interventions and transcript scans', `count=${candidates.length}`);
@@ -66,12 +74,18 @@ ok(candidates.some((candidate) => candidate.source === 'reply_intervention'), 'i
 ok(candidates.some((candidate) => candidate.source === 'transcript_scan'), 'includes transcript scan candidate');
 ok(candidates.some((candidate) => candidate.taxonomy === 'bad_proactive_or_reopened_chat_blame'), 'classifies reopened-chat blame');
 ok(candidates.some((candidate) => candidate.taxonomy === 'identity_or_model_leak'), 'classifies model identity leak');
+ok(candidates.some((candidate) => candidate.taxonomy === 'temporal_drift'), 'classifies stale sleep-state temporal drift');
 
 const intervention = candidates.find((candidate) => candidate.source === 'reply_intervention');
 ok(intervention?.turns[0] === '嗯嗯，好', 'intervention candidate keeps the triggering user turn', intervention?.turns.join('|'));
 ok((intervention?.seed.length ?? 0) >= 2, 'intervention candidate keeps prior seed context', `seed=${intervention?.seed.length ?? 0}`);
 ok(intervention?.checks.some((check) => check.forbiddenText.includes('不回我')), 'candidate carries forbidden text checks');
 ok(!!intervention?.provenance.excerpt.includes('哟，你还真不回我了'), 'candidate includes transcript/intervention excerpt');
+
+const temporal = candidates.find((candidate) => candidate.taxonomy === 'temporal_drift');
+ok(temporal?.turns[0] === '下午好，在干嘛', 'temporal drift candidate keeps current user trigger', temporal?.turns.join('|'));
+ok(temporal?.checks.some((check) => check.forbiddenText.includes('还困')), 'temporal drift candidate carries stale-state forbidden checks');
+ok(!!temporal?.provenance.excerpt.includes('你不是还困吗'), 'temporal drift candidate includes failing reply excerpt');
 
 const filtered = mineRegressionCandidates({
   dataDir: dir,
