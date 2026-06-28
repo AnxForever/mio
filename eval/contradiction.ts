@@ -59,17 +59,21 @@ await runSession('Day2 (改口更新)', [
 ]);
 writeStructuredMemoryToDisk(await extractStructuredMemoryLLM(readBookmarks(), readStructuredMemoryFromDisk() ?? undefined));
 
-// 检视记忆：新旧是否并存
+// 检视记忆：B-1 应把矛盾旧事实标失效(invalidatedAt)；失效项留存(审计)但不入活跃检索
 const disk = readStructuredMemoryFromDisk();
-const blob = JSON.stringify((disk?.entities ?? []));
+const all = (disk?.entities ?? []) as Array<{ content?: string; invalidatedAt?: string }>;
+const active = all.filter((e) => !e.invalidatedAt);
+const invalidated = all.filter((e) => e.invalidatedAt);
+const activeBlob = JSON.stringify(active);
 const mem = {
-  oldCity: blob.includes(OLD.city), newCity: blob.includes(NEW.city),
-  oldDrink: blob.includes(OLD.drink), newDrink: blob.includes(NEW.drink),
+  oldCity: activeBlob.includes(OLD.city), newCity: activeBlob.includes(NEW.city),
+  oldDrink: activeBlob.includes(OLD.drink), newDrink: activeBlob.includes(NEW.drink),
 };
-console.log(`\n=== 记忆检视（Day2 固化后）===`);
-console.log(`城市：旧(杭州)=${mem.oldCity} 新(上海)=${mem.newCity}  |  饮品：旧(美式)=${mem.oldDrink} 新(拿铁)=${mem.newDrink}`);
-console.log(`矛盾并存？城市=${mem.oldCity && mem.newCity ? '是⚠️' : '否'} 饮品=${mem.oldDrink && mem.newDrink ? '是⚠️' : '否'}`);
-for (const e of (disk?.entities ?? []).slice(0, 10) as Array<{ content?: string }>) console.log(`  · ${(e.content ?? '').slice(0, 50)}`);
+console.log(`\n=== 记忆检视（Day2 固化后，B-1 消解）===`);
+console.log(`B-1 标记失效: ${invalidated.length} 条`);
+for (const e of invalidated) console.log(`  ✗失效 ${(e.content ?? '').slice(0, 40)}`);
+console.log(`活跃记忆：城市 旧(杭州)=${mem.oldCity} 新(上海)=${mem.newCity}  |  饮品 旧(美式)=${mem.oldDrink} 新(拿铁)=${mem.newDrink}`);
+console.log(`活跃中矛盾并存？城市=${mem.oldCity && mem.newCity ? '是⚠️' : '否✅'} 饮品=${mem.oldDrink && mem.newDrink ? '是⚠️' : '否✅'}`);
 
 // Day3：全新会话探召回
 console.log(`\n=== Day3 (全新会话，探召回) ===`);

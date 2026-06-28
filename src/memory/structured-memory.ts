@@ -21,6 +21,7 @@ import {
   midTermTopicPath,
 } from './paths.js';
 import type { AIProvider, Message } from '../types.js';
+import { resolveContradictions, makeLLMContradicts } from './temporal-resolve.js';
 
 // ─── Types ───
 
@@ -366,8 +367,20 @@ function assembleMemory(
   // Decay confidence for old unconfirmed entities
   merged = decayOldEntities(merged, now);
 
-  // Cluster active entities by topic. Ignored entities stay in `entities` for
-  // user review/audit, but are excluded from prompt-facing derived state.
+  return deriveStructuredState(merged, now, extractionState);
+}
+
+/**
+ * 从(已合并/已消解的)实体集派生 prompt-facing 状态(topics + durableFacts)。
+ * 从 assembleMemory 抽出，以便 B-1 矛盾消解后能重新派生（失效项经 activeEntities 排除）。
+ */
+function deriveStructuredState(
+  merged: MemoryEntity[],
+  now: string,
+  extractionState?: StructuredMemoryExtractionState,
+): StructuredMemory {
+  // Cluster active entities by topic. Ignored/invalidated entities stay in
+  // `entities` for audit, but are excluded from prompt-facing derived state.
   const topicMap = new Map<string, MemoryEntity[]>();
   for (const entity of activeEntities(merged)) {
     const topic = classifyTopic(entity.content);
@@ -529,6 +542,24 @@ function parseLLMEntities(rawText: string, now: string): MemoryEntity[] | null {
  * @returns  Parsed entities, or `null` if extraction is unavailable/unparseable
  *           (e.g. the MockProvider, an offline run, or malformed output).
  */
+/**
+ * 解析用于"summarize"类任务的 provider/model：显式 opts.provider 优先，否则回退到配置
+ * provider 经 router 路由（与 LLM 提取同一套，保证 B-1 矛盾消解在生产里也能用上同一 provider）。
+ */
+async function resolveSummarizeProvider(
+  opts?: { provider?: AIProvider; model?: string },
+): Promise<{ provider: AIProvider; model?: string }> {
+  if (opts?.provider) return { provider: opts.provider, model: opts.model };
+  const { selectProvider } = await import('../providers/index.js');
+  const { getRouterConfig, routeTask, getTaskModel } = await import('../providers/router.js');
+  const { getConfig } = await import('../config.js');
+  const config = getConfig();
+  const base = selectProvider(config.provider, config.model);
+  const routerCfg = getRouterConfig();
+  const provider = await routeTask('summarize', base, routerCfg);
+  return { provider, model: opts?.model ?? getTaskModel('summarize', routerCfg) ?? undefined };
+}
+
 async function extractEntitiesViaLLM(
   bookmarksContent: string,
   now: string,
@@ -537,24 +568,7 @@ async function extractEntitiesViaLLM(
   const entries = parseBookmarkEntries(bookmarksContent);
   if (entries.length === 0) return [];
 
-  let provider: AIProvider;
-  let model: string | undefined = opts?.model;
-
-  if (opts?.provider) {
-    provider = opts.provider;
-  } else {
-    // Lazy-load the provider stack so this module stays lightweight in the
-    // many sync contexts that import it (matches router.ts's dynamic-import
-    // pattern and avoids any load-time cycle).
-    const { selectProvider } = await import('../providers/index.js');
-    const { getRouterConfig, routeTask, getTaskModel } = await import('../providers/router.js');
-    const { getConfig } = await import('../config.js');
-    const config = getConfig();
-    const base = selectProvider(config.provider, config.model);
-    const routerCfg = getRouterConfig();
-    provider = await routeTask('summarize', base, routerCfg);
-    if (!model) model = getTaskModel('summarize', routerCfg) || undefined;
-  }
+  const { provider, model } = await resolveSummarizeProvider(opts);
 
   const userText = entries.map((e) => `- ${e.content}`).join('\n');
   const messages: Message[] = [{ role: 'user', content: userText, timestamp: now }];
@@ -598,10 +612,37 @@ export async function extractStructuredMemoryLLM(
       logger.warn('[structured-memory] LLM extraction unavailable/unparseable; using regex fallback');
       return extractStructuredMemory(bookmarksContent, existingMemory);
     }
-    return assembleMemory(newEntities, existingMemory, now, extractionState);
+    const assembled = assembleMemory(newEntities, existingMemory, now, extractionState);
+    return await resolveMemoryContradictions(assembled, now, opts);
   } catch (err) {
     logger.warn('[structured-memory] LLM extraction failed; using regex fallback', { error: String(err) });
     return extractStructuredMemory(bookmarksContent, existingMemory);
+  }
+}
+
+/**
+ * B-1：LLM 提取后对合并实体跑 bi-temporal 矛盾消解，标记被取代的旧事实并重新派生状态。
+ * 仅在有 provider 时启用；实体数 > 60 时跳过(控 O(n²) LLM 成本，留人工/夜间专项)；失败保守保留原记忆。
+ */
+async function resolveMemoryContradictions(
+  memory: StructuredMemory,
+  now: string,
+  opts?: { provider?: AIProvider; model?: string },
+): Promise<StructuredMemory> {
+  if (memory.entities.length > 60) return memory; // 控 O(n²) LLM 成本
+  try {
+    const { provider, model } = await resolveSummarizeProvider(opts);
+    const { entities, supersededCount } = await resolveContradictions(
+      memory.entities,
+      makeLLMContradicts(provider, model),
+      now,
+    );
+    if (supersededCount === 0) return memory;
+    logger.info('[structured-memory] B-1 矛盾消解', { supersededCount });
+    return deriveStructuredState(entities, now, memory.extractionState);
+  } catch (err) {
+    logger.warn('[structured-memory] 矛盾消解失败，保留原记忆', { error: String(err) });
+    return memory;
   }
 }
 
