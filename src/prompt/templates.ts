@@ -92,6 +92,7 @@ import {
 import { getConfig } from '../config.js';
 import { getTraitStateContext as getTraitCtx } from '../emotion/trait-state.js';
 import { getProceduralContext } from '../memory/procedural-memory.js';
+import { memoryToContext } from '../memory/structured-memory.js';
 
 /**
  * Build relationship context: stage description, nicknames, shared memories,
@@ -373,47 +374,7 @@ export function buildStructuredMemoryContext(
   structuredMemory: import('../memory/structured-memory.js').StructuredMemory | null,
 ): string | null {
   if (!structuredMemory || structuredMemory.entities.length === 0) return null;
-
-  const parts: string[] = [];
-
-  // Durable facts (most important for long-term memory)
-  if (structuredMemory.durableFacts.length > 0) {
-    const factLines = structuredMemory.durableFacts
-      .map((f) => `- ${f.content}`)
-      .slice(0, 8);
-    parts.push(`## 长期记忆\n${factLines.join('\n')}`);
-  }
-
-  // Active topics (top 3 by entity count)
-  const activeTopics = structuredMemory.topics
-    .filter((t) => t.entities.length >= 2)
-    .slice(0, 3);
-
-  if (activeTopics.length > 0) {
-    const topicLines: string[] = [];
-    for (const topic of activeTopics) {
-      const summary = topic.summary.length > 120
-        ? topic.summary.slice(0, 120) + '…'
-        : topic.summary;
-      topicLines.push(`- ${topic.topic}: ${summary}`);
-    }
-    if (topicLines.length > 0) {
-      parts.push(`## 话题\n${topicLines.join('\n')}`);
-    }
-  }
-
-  // Recent emotions (top 5, high confidence)
-  const recentEmotions = structuredMemory.entities
-    .filter((e) => e.enabled !== false && e.reviewStatus !== 'ignored' && !e.invalidatedAt)
-    .filter((e) => e.type === 'emotion' && e.confidence >= 0.5)
-    .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime())
-    .slice(0, 5);
-
-  if (recentEmotions.length > 0) {
-    parts.push(`## 近期情绪\n${recentEmotions.map((e) => `- ${e.content}`).join('\n')}`);
-  }
-
-  return parts.join('\n\n');
+  return memoryToContext(structuredMemory) || null;
 }
 
 // ─── Subagent prompts (unchanged from original) ───
