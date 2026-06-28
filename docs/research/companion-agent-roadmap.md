@@ -365,16 +365,20 @@ Implemented in this iteration:
 - `tests/unit-persona-critic.ts`: covers persona rubric behavior, consent-aware possessive style, and selective LLM judge routing.
 - `src/core/reply-quality-gate.ts`: adds `applyReplyQualityGateWithJudge()`, an async selective judge/repair path. It calls an LLM judge only when deterministic routing marks a high-risk clean persona turn, skips `mock` and disabled `llmJudge`, logs `persona_llm_judge`, and applies a one-shot `persona_llm_repair` only when the judge returns a direct safe rewrite.
 - `src/core/agent-loop.ts`: real turns now call the async quality gate with the active provider and `config.features.llmJudge`, so low-risk WeChat turns stay on the fast deterministic path.
+- `eval/companion-failure-miner.ts`: mines `quality/reply-interventions.jsonl` and real transcripts into reviewable regression candidates. This starts the automated testing loop: real failures and critic interventions become JSON/Markdown fixtures with taxonomy, seed context, trigger turn, checks, and provenance.
+- `tests/unit-companion-failure-miner.ts`: covers mining from both intervention logs and transcript scans, including reopened-chat blame and model identity leaks.
 
 Verified commands:
 
 - `npm run build`
+- `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-companion-failure-miner.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-persona-critic.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-reply-quality-gate.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-output-sanitizer.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-temporal-state.ts`
 - `npm run eval:replay -- --provider=mock`
 - `npm run eval:redteam -- --provider=mock`
+- `node --experimental-strip-types eval/companion-failure-miner.ts --data-dir=/tmp/<synthetic-mio-data> --result-dir=/tmp/<synthetic-report>`
 - `npm run eval:redteam -- --provider=deepseek`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-memory-review.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-structured-extract.ts`
