@@ -11,7 +11,8 @@ type Category =
   | 'emotional_support'
   | 'persona_consistency'
   | 'relationship_boundary'
-  | 'proactive_quality';
+  | 'proactive_quality'
+  | 'cardboard';
 
 interface TurnCase {
   kind: 'turn';
@@ -25,6 +26,10 @@ interface TurnCase {
   forbiddenResponse: string[];
   minScore: number;
   mockResponse?: string;
+  /** 纸板上限：assessDepth(probe,response) 必须 ≤ 此值（深回复应低）。 */
+  maxCardboard?: number;
+  /** 纸板下限：assessDepth(probe,response) 必须 ≥ 此值（浅回复应被检出，防 detector 退化）。 */
+  minCardboard?: number;
 }
 
 interface ProactiveCase {
@@ -291,6 +296,34 @@ const CASES: QualityCase[] = [
     mockResponse: '边界不是冷漠。你不用马上解释，更不用把聊天记录交出去证明什么。',
   },
   {
+    kind: 'turn',
+    id: 'cardboard-deep-reply-stays-low',
+    category: 'cardboard',
+    description: 'A grounded, specific empathetic reply scores low on the cardboard detector.',
+    setup: 'emotion',
+    probe: '我今天心里堵得慌，又说不上来为什么。',
+    expectedPrompt: [],
+    expectedResponse: ['陪你'],
+    forbiddenResponse: [],
+    minScore: 1,
+    maxCardboard: 0.4,
+    mockResponse: '堵着又说不上来的时候最难熬。不用急着找原因，我先陪你坐一会儿，等你想说了再说，我都在。',
+  },
+  {
+    kind: 'turn',
+    id: 'cardboard-detects-flat-reply',
+    category: 'cardboard',
+    description: 'Two-sided sanity: the detector fires high on a shallow acknowledgment exchange.',
+    setup: 'emotion',
+    probe: '嗯',
+    expectedPrompt: [],
+    expectedResponse: [],
+    forbiddenResponse: [],
+    minScore: 1,
+    minCardboard: 0.5,
+    mockResponse: '嗯嗯',
+  },
+  {
     kind: 'proactive',
     id: 'proactive-rejects-pressure',
     category: 'proactive_quality',
@@ -541,6 +574,7 @@ async function runTurnCase(testCase: TurnCase, rootDir: string, providerRun: Pro
     relationship,
     agentLoop,
     providers,
+    ritual,
   ] = await Promise.all([
     import('../dist/config.js'),
     import('../dist/memory/bank.js'),
@@ -553,6 +587,7 @@ async function runTurnCase(testCase: TurnCase, rootDir: string, providerRun: Pro
     import('../dist/relationship/progression.js'),
     import('../dist/core/agent-loop.js'),
     import('../dist/providers/index.js'),
+    import('../dist/emotion/ritual.js'),
   ]);
 
   sqlite.closeDb();
@@ -637,6 +672,14 @@ async function runTurnCase(testCase: TurnCase, rootDir: string, providerRun: Pro
     { ...containsAll(response, testCase.expectedResponse), name: 'response_expected_terms' },
     { ...containsNone(response, testCase.forbiddenResponse), name: 'response_forbidden_terms' },
   ];
+  if (testCase.maxCardboard !== undefined) {
+    const cb = ritual.assessDepth(testCase.probe, response);
+    checks.push({ name: 'cardboard_below_max', ok: cb <= testCase.maxCardboard, detail: `cardboard=${cb.toFixed(3)} <= ${testCase.maxCardboard}` });
+  }
+  if (testCase.minCardboard !== undefined) {
+    const cb = ritual.assessDepth(testCase.probe, response);
+    checks.push({ name: 'cardboard_above_min', ok: cb >= testCase.minCardboard, detail: `cardboard=${cb.toFixed(3)} >= ${testCase.minCardboard}` });
+  }
   const score = scoreChecks(checks);
   return {
     provider: providerRun.provider,
