@@ -30,6 +30,8 @@ export interface MemoryReviewItem {
   lastSeen: string;
   occurrences: number;
   source: string;
+  enabled: boolean;
+  provenance?: MemoryEntity['provenance'];
   status: 'confirmed' | 'inferred' | 'ignored';
   durable: boolean;
   topic?: string;
@@ -39,6 +41,7 @@ export interface MemoryPatch {
   type?: MemoryItemType;
   content?: string;
   confidence?: number;
+  enabled?: boolean;
   reviewStatus?: MemoryReviewItem['status'];
 }
 
@@ -89,6 +92,8 @@ function toReviewItem(memory: StructuredMemory, entity: MemoryEntity): MemoryRev
     lastSeen: entity.lastSeen,
     occurrences: entity.occurrences,
     source: entity.source,
+    enabled: entity.enabled !== false && status !== 'ignored',
+    provenance: entity.provenance,
     status,
     durable,
     topic: findTopic(memory, entity),
@@ -123,6 +128,7 @@ function updateMatchingEntities(
 
 async function maybeIndexConfirmed(entity: MemoryEntity): Promise<void> {
   if (entity.reviewStatus !== 'confirmed') return;
+  if (entity.enabled === false) return;
   await indexEntryWithProvider({
     id: `structured:${memoryId(entity)}`,
     text: entity.content,
@@ -146,6 +152,7 @@ export async function updateMemoryReviewItem(id: string, patch: MemoryPatch): Pr
     content: patch.content?.trim() ?? target.content,
     confidence: reviewStatus === 'confirmed' ? 1 : reviewStatus === 'ignored' ? 0 : patch.confidence ?? target.confidence,
     occurrences: reviewStatus === 'confirmed' ? Math.max(target.occurrences, 3) : target.occurrences,
+    enabled: reviewStatus === 'ignored' ? false : patch.enabled ?? target.enabled ?? true,
     reviewStatus,
     reviewedAt: patch.reviewStatus ? now : target.reviewedAt,
     lastSeen: now,
@@ -164,7 +171,7 @@ export async function updateMemoryReviewItem(id: string, patch: MemoryPatch): Pr
     updateLoreEntriesByContent(oldContent, updatedEntity.content);
   }
 
-  if (updatedEntity.reviewStatus === 'ignored') {
+  if (updatedEntity.reviewStatus === 'ignored' || updatedEntity.enabled === false) {
     deleteEntriesMatchingText(updatedEntity.content);
     removeLoreEntriesByContent(updatedEntity.content);
   } else if (updatedEntity.reviewStatus === 'confirmed') {

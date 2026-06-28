@@ -48,6 +48,29 @@ Reference links:
 - Replika memory help: https://help.replika.com/hc/en-us/articles/37208679176077-How-does-Replika-s-memory-work
 - Character.AI memory update: https://blog.character.ai/memory/
 
+## 2026-06-28 Research Refresh
+
+Additional material reviewed:
+
+- Tan et al., "In Prospect and Retrospect: Reflective Memory Management for Long-term Personalized Dialogue Agents": topic-based prospective reflection plus retrospective retrieval refinement from cited evidence.
+- LUFY, "Enhancing Long-term RAG Chatbots with Psychological Models of Memory Importance and Forgetting": memory usefulness improves when importance, emotion, recency, and forgetting are modeled instead of keeping everything.
+- APEX-MEM: append-only semi-structured property graph, temporally grounded events, and query-time conflict resolution.
+- TiMem: temporal-hierarchical memory tree that consolidates raw observations into progressively abstracted persona representations and recalls by query complexity.
+- Chronos: timestamped event extraction plus raw-turn retrieval, focusing structure exactly where LLMs struggle: dates, deltas, state transitions, and cross-session temporal reasoning.
+- MARCO: real-time multi-agent chat orchestration with intent routing, parallel RAG/action paths, deterministic task procedures, reflection guardrails, latency/cost measurement, and low-temperature task agents.
+- Microsoft Azure AI agent orchestration patterns: direct call, single agent with tools, sequential, concurrent, group chat, handoff, and magentic orchestration; use the lowest complexity that reliably works.
+
+Research implications for Mio:
+
+1. Memory should be organized around topics, events, and state transitions, not only raw turns or session summaries.
+2. Every retrieved memory needs evidence and usefulness feedback. If a response uses a memory, log the cited memory ids; if it was retrieved but unused, reduce its future priority.
+3. Temporal state must be append-only at the event layer. Derived "current state" is a view over events, not the source of truth.
+4. Retrieval should be complexity-aware. A casual "想你了" does not need the same memory path as "你昨晚不是说过吗".
+5. Forgetting is part of quality. Low-importance old details should fade from prompt context even if the transcript remains stored.
+6. Multi-agent should be used as orchestration patterns, not as visible personalities. For Mio, the useful patterns are routing, sequential state preparation, selective evaluator-optimizer, and offline concurrent evaluation.
+7. Real-time WeChat latency should be protected by risk routing: deterministic checks first, small classifiers second, LLM judge only when the turn is ambiguous and high-risk.
+8. Companion memory must be user-governed. Replika and Character.AI expose memory surfaces because hidden memory errors are product bugs, not just model limitations.
+
 ## What Good Chatbots Appear To Be Doing
 
 ### 1. They are not "one prompt"
@@ -355,6 +378,108 @@ The route should be sequence-first, not prompt-first:
 5. Make memory user-governed: expose durable facts, inferred preferences, disabled memories, pinned/story memories, and retrieved prompt context with provenance.
 6. Add pairwise prompt experiments: compare current persona prompt against a candidate prompt with position-swapped LLM judges before accepting broad style changes.
 7. Put the loop on a schedule: run mock gates cheaply on every change, run real-provider gates nightly or before restarting the WeChat bridge.
+
+## Revised Route After Research Refresh
+
+The next route should now be organized as four workstreams that feed each other:
+
+### A. Evidence-Backed Memory And Time
+
+Borrowed from RMM, APEX-MEM, TiMem, Chronos, MemGPT, and LUFY.
+
+Tasks:
+
+- Treat transcripts as immutable recall storage and temporal events as the authoritative state log.
+- Add memory/event provenance everywhere: transcript id, turn id, observedAt, source excerpt, confidence, and whether the item is user-pinned, model-inferred, or system-derived.
+- Add validity windows for short-term states: `observedAt`, `validUntil`, `resolvedAt`, `resolutionEventId`, and `status`.
+- Add topic/session memory entries that keep both a compact summary and raw source turns.
+- Add a memory usefulness ledger: retrieved memory ids, cited/used memory ids, unused retrieved ids, and downstream quality outcome.
+- Add forgetting/priority scores using recency, importance, emotional salience, user pinning, contradiction, and prior usefulness.
+
+Acceptance:
+
+- The stale sleep bug is impossible by construction: "sleepy last night" can only be used as past context unless a current active state supports it.
+- A memory can be disabled without deleting the transcript.
+- A debug trace can explain why a memory entered the prompt.
+
+### B. Backstage Multi-Agent Workflow
+
+Borrowed from Anthropic agent patterns, Azure orchestration patterns, OpenAI agents-as-tools, LangGraph supervisor style, and MARCO.
+
+Tasks:
+
+- Keep one user-facing `ReplyAgent`.
+- Add a deterministic `TurnRouter` that tags risk: low-risk casual, temporal, memory-sensitive, intimacy/control, proactive, crisis, prompt probe.
+- Add typed backstage workers as code modules first:
+  - `StateExtractor`
+  - `MemoryRetriever`
+  - `TemporalResolver`
+  - `PersonaCritic`
+  - `HumanLikenessCritic`
+  - `ProactivePlanner`
+  - `EvalMiner`
+- Use LLM workers only behind typed interfaces and only where rules are insufficient.
+- Cap any evaluator-optimizer loop to one repair in real-time chat; more iterations belong offline.
+
+Acceptance:
+
+- Low-risk WeChat turns stay on the fast path.
+- High-risk turns get traceable critic decisions.
+- The user never sees a committee voice.
+
+### C. Human-Likeness And Persona Evaluation
+
+Borrowed from MT-Bench, Chatbot Arena, MARCO evals, and persona/role-play research.
+
+Tasks:
+
+- Expand the persona case repository into good/bad examples for:
+  - no-interrupt promise then user returns
+  - stale night-to-afternoon state
+  - consented possessiveness without real-world control
+  - logistics interrogation
+  - unsupported offline-life claims
+  - service/checklist tone
+  - prompt/model identity probes
+  - emotional mismatch
+- Add pairwise A/B prompt experiments with position-swap judging.
+- Add single-answer rubric judges for "logic", "human-likeness", "persona coherence", "memory grounding", and "relationship boundary".
+- Keep deterministic checks for crisp failures and LLM judges for ambiguous style failures.
+- Calibrate with user-approved examples from real WeChat transcripts.
+
+Acceptance:
+
+- Prompt/persona changes cannot ship on vibes only.
+- "霸道/占有欲" is evaluated by consent and behavior, not banned words.
+- Reports show exact failing examples, not only pass rates.
+
+### D. Product Memory Surface
+
+Borrowed from Replika and Character.AI memory surfaces.
+
+Tasks:
+
+- Show visible memory categories: pinned/story memory, durable facts, preferences, relationship facts, active short-term states, resolved recent states, inferred profile candidates.
+- Allow edit, disable, pin, mark wrong, and explain-source actions.
+- Show "used in last reply" and "retrieved but unused" metadata where available.
+- Add a compact "why Mio said this" debug panel for local development.
+
+Acceptance:
+
+- The user can fix Mio's belief without editing raw files.
+- Memory problems become inspectable product state instead of invisible prompt behavior.
+- Real failures can be converted into eval cases directly from the UI/debug trace.
+
+## Concrete Next Implementation Order
+
+1. Finish and commit memory governance: enabled/disabled memories, provenance, and prompt exclusion for disabled memories.
+2. Add `memory-usefulness` tracing to the prompt builder and reply quality gate.
+3. Extend temporal events with validity windows and query helpers for "current", "recently resolved", and "historical only".
+4. Add `TurnRouter` risk tags and include them in intervention logs.
+5. Expand persona case repository to at least 40 probes and wire it into `eval/companion-loop.ts`.
+6. Add pairwise prompt experiment reports to the companion loop output.
+7. Add the local memory/debug UI affordances for provenance, disable, pin, and "used in prompt".
+8. Run the full loop with mock provider on every code change and a real provider before restarting the WeChat bridge.
 
 ## Architecture Decision
 

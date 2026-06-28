@@ -163,6 +163,7 @@ export const memoryPatchBody = z.object({
   type: z.enum(['fact', 'preference', 'event', 'decision', 'intention', 'emotion']).optional(),
   content: z.string().trim().min(1).max(500).optional(),
   confidence: z.number().min(0).max(1).optional(),
+  enabled: z.boolean().optional(),
   reviewStatus: z.enum(['inferred', 'confirmed', 'ignored']).optional(),
 }).refine((body) => Object.keys(body).length > 0, {
   message: 'At least one field is required',

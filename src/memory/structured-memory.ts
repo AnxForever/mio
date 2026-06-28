@@ -33,12 +33,23 @@ export interface MemoryEntity {
   lastSeen: string;       // ISO timestamp
   occurrences: number;    // how many times confirmed
   source: string;         // which bookmark/transcript line
+  /** Whether this memory is allowed into prompt-facing derived state. */
+  enabled?: boolean;
+  /** Structured source metadata for audit/review UI. Legacy `source` remains as display fallback. */
+  provenance?: MemoryProvenance;
   reviewStatus?: 'inferred' | 'confirmed' | 'ignored';
   reviewedAt?: string;
   /** B-1 bi-temporal：被更新事实取代时打上(ISO)；不删除，留审计；activeEntities 据此排除。 */
   invalidatedAt?: string;
   /** 取代它的新事实 content（溯源）。 */
   supersededBy?: string;
+}
+
+export interface MemoryProvenance {
+  sourceType: 'bookmark' | 'transcript' | 'llm_extraction' | 'manual' | 'unknown';
+  sourceId?: string;
+  observedAt: string;
+  excerpt: string;
 }
 
 export interface TopicSegment {
@@ -149,19 +160,18 @@ function extractEntitiesFromLine(
 ): MemoryEntity[] {
   const entities: MemoryEntity[] = [];
   const text = line;
+  const base = entityBase(source, timestamp);
 
   // Fact extraction
   for (const pattern of FACT_PATTERNS) {
     const match = text.match(pattern);
     if (match) {
       entities.push({
+        ...base,
         type: 'fact',
         content: match[0].slice(0, 100),
         confidence: 0.5,
-        firstSeen: timestamp,
-        lastSeen: timestamp,
         occurrences: 1,
-        source,
       });
     }
   }
@@ -171,13 +181,11 @@ function extractEntitiesFromLine(
     const match = text.match(pattern);
     if (match) {
       entities.push({
+        ...base,
         type: 'preference',
         content: match[0].slice(0, 100),
         confidence: 0.6,
-        firstSeen: timestamp,
-        lastSeen: timestamp,
         occurrences: 1,
-        source,
       });
     }
   }
@@ -187,13 +195,11 @@ function extractEntitiesFromLine(
     const match = text.match(pattern);
     if (match) {
       entities.push({
+        ...base,
         type: 'event',
         content: match[0].slice(0, 100),
         confidence: 0.7,
-        firstSeen: timestamp,
-        lastSeen: timestamp,
         occurrences: 1,
-        source,
       });
     }
   }
@@ -203,13 +209,11 @@ function extractEntitiesFromLine(
     const match = text.match(pattern);
     if (match) {
       entities.push({
+        ...base,
         type: 'decision',
         content: match[0].slice(0, 100),
         confidence: 0.6,
-        firstSeen: timestamp,
-        lastSeen: timestamp,
         occurrences: 1,
-        source,
       });
     }
   }
@@ -219,13 +223,11 @@ function extractEntitiesFromLine(
     const match = text.match(pattern);
     if (match) {
       entities.push({
+        ...base,
         type: 'intention',
         content: match[0].slice(0, 100),
         confidence: 0.5,
-        firstSeen: timestamp,
-        lastSeen: timestamp,
         occurrences: 1,
-        source,
       });
     }
   }
@@ -235,18 +237,31 @@ function extractEntitiesFromLine(
     const match = text.match(pattern);
     if (match) {
       entities.push({
+        ...base,
         type: 'emotion',
         content: match[0].slice(0, 100),
         confidence: 0.7,
-        firstSeen: timestamp,
-        lastSeen: timestamp,
         occurrences: 1,
-        source,
       });
     }
   }
 
   return entities;
+}
+
+function entityBase(source: string, timestamp: string): Pick<MemoryEntity, 'firstSeen' | 'lastSeen' | 'source' | 'enabled' | 'provenance'> {
+  return {
+    firstSeen: timestamp,
+    lastSeen: timestamp,
+    source,
+    enabled: true,
+    provenance: {
+      sourceType: 'bookmark',
+      sourceId: hashText(source),
+      observedAt: timestamp,
+      excerpt: source.slice(0, 240),
+    },
+  };
 }
 
 /**
@@ -261,7 +276,7 @@ function entitiesSimilar(a: string, b: string): boolean {
 
 function activeEntities(entities: MemoryEntity[]): MemoryEntity[] {
   // B-1：排除被取代的矛盾旧事实（invalidatedAt 已设）。无人 set 之前行为不变。
-  return entities.filter((entity) => entity.reviewStatus !== 'ignored' && !entity.invalidatedAt);
+  return entities.filter((entity) => entity.enabled !== false && entity.reviewStatus !== 'ignored' && !entity.invalidatedAt);
 }
 
 // ─── Main API ───
@@ -525,6 +540,13 @@ function parseLLMEntities(rawText: string, now: string): MemoryEntity[] | null {
       lastSeen: now,
       occurrences: 1,
       source: 'llm-extraction',
+      enabled: true,
+      provenance: {
+        sourceType: 'llm_extraction',
+        sourceId: hashText(content.trim()),
+        observedAt: now,
+        excerpt: content.trim().slice(0, 240),
+      },
     });
     if (entities.length >= 50) break; // guard against pathological output
   }
@@ -671,6 +693,8 @@ function mergeEntities(
         merged[i].occurrences += 1;
         merged[i].confidence = Math.min(1, merged[i].confidence + 0.1);
         merged[i].source = newEntity.source;
+        merged[i].enabled = merged[i].enabled !== false;
+        merged[i].provenance = newEntity.provenance ?? merged[i].provenance;
         usedIndices.add(i);
         found = true;
         break;

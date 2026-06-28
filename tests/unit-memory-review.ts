@@ -85,10 +85,19 @@ async function main(): Promise<void> {
 
   await test('confirm promotes memory into durable facts, vector and lorebook', async () => {
     const content = '用户喜欢乌龙茶';
-    writeStructuredMemoryToDisk(memoryWith(entity(content)));
+    writeStructuredMemoryToDisk(memoryWith(entity(content, {
+      provenance: {
+        sourceType: 'bookmark',
+        sourceId: 'unit-source',
+        observedAt: '2026-06-01T00:00:00.000Z',
+        excerpt: '- <time=2026-06-01T00:00:00.000Z> 用户喜欢乌龙茶',
+      },
+    })));
 
     const item = memories.listMemoryReviewItems()[0];
     assert(item?.status === 'inferred', 'seed memory should start inferred');
+    assert(item.enabled === true, 'seed memory should be enabled by default');
+    assert(item.provenance?.sourceId === 'unit-source', 'review item should expose provenance');
 
     const confirmed = await memories.updateMemoryReviewItem(item.id, { reviewStatus: 'confirmed' });
     assert(confirmed?.status === 'confirmed', 'confirm should return confirmed status');
@@ -120,6 +129,35 @@ async function main(): Promise<void> {
     assert(!memoryToContext(stored).includes(content), 'ignored entity should not enter prompt context');
     assert(!vector.readIndex().some((e) => e.text.includes(content)), 'ignored entity should be removed from vector index');
     assert(!lorebook.getLorebook().entries.some((e) => e.content === content), 'ignored entity should be removed from lorebook');
+  });
+
+  await test('disable keeps memory reviewable but removes it from prompt-facing context', async () => {
+    const content = '用户喜欢普洱茶';
+    writeStructuredMemoryToDisk(memoryWith(entity(content, { reviewStatus: 'confirmed', confidence: 1, occurrences: 3 })));
+    vector.indexEntry({ id: 'manual-puer', text: `偏好: ${content}`, source: 'manual', timestamp: '2026-06-01T00:00:00.000Z' });
+    lorebook.addLoreEntry({
+      id: 'manual-puer',
+      triggers: ['普洱茶'],
+      content,
+      category: 'preference',
+      priority: 60,
+      scanDepth: 5,
+      cooldown: 3,
+      permanent: false,
+    });
+
+    const item = memories.listMemoryReviewItems().find((candidate) => candidate.content === content);
+    assert(item !== undefined, 'disable target should be listed');
+
+    const disabled = await memories.updateMemoryReviewItem(item.id, { enabled: false });
+    assert(disabled?.enabled === false, 'disabled item should report enabled=false');
+
+    const stored = readStructuredMemoryFromDisk();
+    assert(stored !== null, 'structured memory should exist');
+    assert(stored.entities.some((e) => e.content === content && e.enabled === false), 'disabled entity should remain stored');
+    assert(!memoryToContext(stored).includes(content), 'disabled entity should not enter prompt context');
+    assert(!vector.readIndex().some((e) => e.text.includes(content)), 'disabled entity should be removed from vector index');
+    assert(!lorebook.getLorebook().entries.some((e) => e.content === content), 'disabled entity should be removed from lorebook');
   });
 
   await test('edit propagates content changes into vector and lorebook entries', async () => {
