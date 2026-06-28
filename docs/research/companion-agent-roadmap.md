@@ -24,6 +24,10 @@ This matches the strongest external guidance: start simple, add workflows before
 - Park et al., "Generative Agents": believable behavior comes from memory stream, retrieval by relevance/recency/importance, reflection, and planning.
 - MemGPT: long-running conversation needs hierarchical memory, with main context and external archival memory managed explicitly.
 - Zheng et al., "Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena": LLM judges can approximate human preference, but need bias handling such as position swap, reference guidance, and human calibration.
+- Alonso et al., "Toward Conversational Agents with Context and Time Sensitive Long-term Memory": conversational memory fails when it relies on semantic retrieval alone; time/event metadata and ambiguous follow-up resolution need explicit retrieval paths.
+- Recent temporal-memory work such as Chronos, TiMem, APEX-MEM, and Temporal Semantic Memory: long-horizon chat memory is moving toward timestamped events, temporal hierarchy, append-only provenance, duration-aware states, and query-time conflict resolution.
+- MARCO, "Multi-Agent Real-time Chat Orchestration": real-time chat benefits from intent routing, shared memory, deterministic task graphs, guardrail reflection, and evaluation, but only when orchestration is constrained and latency-aware.
+- Microsoft Azure Architecture Center, "AI Agent Orchestration Patterns": use the lowest complexity that reliably works; multi-agent orchestration adds coordination overhead, latency, and failure modes. Maker-checker/evaluator-optimizer loops are appropriate when acceptance criteria and iteration caps are explicit.
 - Replika public help docs: memory is layered; some memories are user-visible, some are deeper inferred patterns; user affirmation and manual memory edits affect personalization.
 - Character.AI memory update: separates Story Memory, Facts, pinned moments, memory usage visualization, editable/disable-able facts, and automatic long-chat tidying.
 - Persona/role-play research: recent persona work separates stable identity from adaptive short-term state and uses persona critics/case repositories/drift suppressors rather than treating persona as one static prompt.
@@ -74,6 +78,22 @@ For companion chat, exact-match tests are weak. Better evals combine:
 - occasional human review for calibration
 
 LLM judges are useful but biased. Use strict rubrics, JSON output, multiple judges for important decisions, and position-swapped pairwise tests when comparing variants.
+
+### 5. They treat time as structured state, not just prose
+
+The strongest memory papers converge on the same point: a chatbot needs both raw conversation turns and structured temporal events. Semantic similarity can retrieve "sleep" because it is textually related, but it cannot know whether "I am sleepy" was true last night, resolved this morning, or still active now unless the system stores validity windows and state transitions.
+
+For Mio, this means temporal memory should answer:
+
+- what happened
+- when it happened
+- whether it is still active
+- what later event resolved or contradicted it
+- which transcript lines support it
+
+### 6. Multi-agent should be backstage, not visible
+
+For intimate chat, the final response should sound like one person. Multi-agent value should appear as backstage specialization: state extraction, memory retrieval, persona critic, proactive planner, and eval miner. The main failure to avoid is a "committee voice" where the reply feels over-coordinated, over-explained, or emotionally inconsistent.
 
 ## Recommended Mio Architecture
 
@@ -292,12 +312,21 @@ Exit criteria:
 
 ## Immediate Next Issues
 
-1. Build `eval/companion-replay.ts`: replay real or synthetic WeChat sessions with adjustable timestamps.
-2. Add `replyQualityGate()` as a first-class module and move the current sanitizer into it.
-3. Add intervention trace logging for output guards.
-4. Add memory review/provenance fields to structured memory and temporal state.
-5. Expand redteam from 13 probes to 40 probes across the failure taxonomy.
-6. Add pairwise judge mode for prompt/persona experiments.
+1. Expand redteam/replay from seed probes to 40+ probes across the failure taxonomy: temporal drift, fabricated memory, meta/service tone, coercive intimacy, interrogation, stale relationship state, and bad proactive messages.
+2. Add a transcript mining command that converts real WeChat failures into reviewed regression fixtures.
+3. Add pairwise judge mode for prompt/persona experiments, with position swapping to reduce judge bias.
+4. Add temporal-memory evals that query by time, elapsed duration, session order, and ambiguous follow-up pronouns.
+5. Add a persona case repository for good/bad examples, including consented possessiveness vs real-world control.
+6. Add latency/cost reporting for the selective critic path, so high-risk repair never silently makes WeChat feel slow.
+
+## Updated Route From The Research
+
+1. Keep one user-facing chat agent.
+2. Make state preparation stronger than prompt rules: temporal validity, memory provenance, relationship stage, and explicit user preferences should enter the prompt as structured context.
+3. Use deterministic critics for crisp bugs: stale time assumptions, "I promised not to interrupt" contradictions, prompt/model leaks, fabricated offline details.
+4. Use LLM judge only for ambiguous high-risk turns: persona probes, intimacy/control style, proactive messages, and subtle human-likeness failures.
+5. Move broad testing offline: scenario actors, time-tag mutation, replay, redteam, pairwise prompt comparison, and regression mining.
+6. Add product-facing memory governance: users must be able to see, disable, correct, and pin what Mio believes.
 
 ## Architecture Decision
 
@@ -334,6 +363,8 @@ Implemented in this iteration:
 - `src/persona/critic.ts`: standalone persona critic rubric with risk routing for identity/meta probes, unsupported offline-life claims, service/checklist tone, fabricated user memory, coercive possessiveness, and logistics interrogation. It distinguishes consented playful possessive style from real-world control.
 - `src/core/reply-quality-gate.ts`: quality gate now returns a persona critic report and emits typed `persona_critic_flag` trace rows for high-risk persona turns or deterministic persona findings. Clean high-risk turns are marked for future LLM judge routing; deterministic failures do not require an LLM to know they failed.
 - `tests/unit-persona-critic.ts`: covers persona rubric behavior, consent-aware possessive style, and selective LLM judge routing.
+- `src/core/reply-quality-gate.ts`: adds `applyReplyQualityGateWithJudge()`, an async selective judge/repair path. It calls an LLM judge only when deterministic routing marks a high-risk clean persona turn, skips `mock` and disabled `llmJudge`, logs `persona_llm_judge`, and applies a one-shot `persona_llm_repair` only when the judge returns a direct safe rewrite.
+- `src/core/agent-loop.ts`: real turns now call the async quality gate with the active provider and `config.features.llmJudge`, so low-risk WeChat turns stay on the fast deterministic path.
 
 Verified commands:
 

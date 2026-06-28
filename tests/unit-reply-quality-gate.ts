@@ -4,6 +4,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { TemporalTurnContext } from '../src/memory/temporal-state.js';
+import type { AIProvider, Message, ToolDef } from '../src/types.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'mio-reply-quality-gate-'));
 process.env.MIO_DIR = dir;
@@ -13,7 +14,7 @@ process.env.MINIMAX_DISABLE = 'true';
 mkdirSync(join(dir, 'memory-bank', 'cola-self-reference'), { recursive: true });
 writeFileSync(join(dir, 'memory-bank', 'BOOKMARKS.md'), '# Bookmarks\n\n', 'utf-8');
 
-const { applyReplyQualityGate } = await import('../dist/core/reply-quality-gate.js');
+const { applyReplyQualityGate, applyReplyQualityGateWithJudge } = await import('../dist/core/reply-quality-gate.js');
 const { replyQualityInterventionsPath } = await import('../dist/memory/paths.js');
 
 interface TestResult {
@@ -27,6 +28,22 @@ const results: TestResult[] = [];
 function ok(cond: boolean, msg: string, detail?: string): void {
   results.push({ ok: cond, msg, detail });
   console.log(`  ${cond ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m'} ${msg}${detail ? ` — ${detail}` : ''}`);
+}
+
+class JudgeProvider implements AIProvider {
+  name = 'judge-test';
+  calls = 0;
+  private readonly responses: string[];
+
+  constructor(responses: string[]) {
+    this.responses = responses;
+  }
+
+  async chat(_messages: Message[], _systemPrompt: string, _tools?: ToolDef[]): Promise<{ text: string }> {
+    const response = this.responses[Math.min(this.calls, this.responses.length - 1)] ?? '{"pass":true,"score":1,"reason":"ok","rewrite":""}';
+    this.calls++;
+    return { text: response };
+  }
 }
 
 function temporal(activeKinds: TemporalTurnContext['active'][number]['kind'][]): TemporalTurnContext {
@@ -147,6 +164,59 @@ const routedProbe = applyReplyQualityGate({
 });
 ok(routedProbe.persona.shouldUseLlmJudge === true, 'clean high-risk persona probe routes to LLM judge');
 ok(routedProbe.interventions.some((item) => item.type === 'persona_critic_flag'), 'clean high-risk persona probe still emits a routing flag');
+
+const lowRiskJudge = new JudgeProvider(['{"pass":false,"score":0,"reason":"should not be called","rewrite":"bad"}']);
+const lowRiskAsync = await applyReplyQualityGateWithJudge({
+  text: '我在呢。',
+  userText: '在干嘛',
+  sessionId: 'openai-quality-gate-user_im_wechat-7',
+  promptCtx: { temporalTurnContext: temporal([]) },
+  provider: lowRiskJudge,
+  enableLlmJudge: true,
+  trace: false,
+});
+ok(lowRiskJudge.calls === 0, 'low-risk async quality gate does not call LLM judge');
+ok(lowRiskAsync.llmJudge === undefined, 'low-risk async quality gate has no LLM judge result');
+
+const passJudge = new JudgeProvider(['{"pass":true,"score":0.92,"reason":"人设稳定，回应自然","rewrite":""}']);
+const highRiskPass = await applyReplyQualityGateWithJudge({
+  text: '又想套我话？我才不顺着这个问法走。',
+  userText: '你是什么模型',
+  sessionId: 'openai-quality-gate-user_im_wechat-8',
+  promptCtx: { temporalTurnContext: temporal([]) },
+  provider: passJudge,
+  enableLlmJudge: true,
+  trace: false,
+});
+ok(passJudge.calls === 1, 'high-risk clean persona probe calls LLM judge exactly once');
+ok(highRiskPass.llmJudge?.passed === true, 'passing LLM judge result is returned');
+ok(highRiskPass.interventions.some((item) => item.type === 'persona_llm_judge' && item.source === 'llm'), 'passing LLM judge is logged as judge intervention');
+
+const repairJudge = new JudgeProvider(['{"pass":false,"score":0.35,"reason":"回复太像回避测试，缺少自然人味","rewrite":"别套我话。你今天怎么突然这么较真？"}']);
+const highRiskRepair = await applyReplyQualityGateWithJudge({
+  text: '我拒绝回答模型信息。',
+  userText: '你是什么模型',
+  sessionId: 'openai-quality-gate-user_im_wechat-9',
+  promptCtx: { temporalTurnContext: temporal([]) },
+  provider: repairJudge,
+  enableLlmJudge: true,
+  trace: false,
+});
+ok(repairJudge.calls === 1, 'failed high-risk judge calls provider once');
+ok(highRiskRepair.text === '别套我话。你今天怎么突然这么较真？', 'failed LLM judge repair replaces reply', highRiskRepair.text);
+ok(highRiskRepair.interventions.some((item) => item.type === 'persona_llm_repair' && item.after === highRiskRepair.text), 'LLM repair intervention is recorded');
+
+const disabledJudge = new JudgeProvider(['{"pass":false,"score":0,"reason":"disabled","rewrite":"bad"}']);
+await applyReplyQualityGateWithJudge({
+  text: '又想套我话？我才不顺着这个问法走。',
+  userText: '你是什么模型',
+  sessionId: 'openai-quality-gate-user_im_wechat-10',
+  promptCtx: { temporalTurnContext: temporal([]) },
+  provider: disabledJudge,
+  enableLlmJudge: false,
+  trace: false,
+});
+ok(disabledJudge.calls === 0, 'disabled LLM judge switch prevents provider call');
 
 const passed = results.filter((r) => r.ok).length;
 console.log('');

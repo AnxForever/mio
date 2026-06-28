@@ -107,7 +107,7 @@ import type {
 } from '../types.js';
 import { prepareTurnContext } from './turn-prepare.js';
 import { maybeHandleEarlyTurnExit } from './turn-silence.js';
-import { applyReplyQualityGate } from './reply-quality-gate.js';
+import { applyReplyQualityGateWithJudge } from './reply-quality-gate.js';
 import { applyPostTurnSideEffects } from './turn-post-effects.js';
 import { getTurnCounter } from './turn-counter.js';
 import { buildConversationMessages } from './turn-conversation.js';
@@ -999,6 +999,7 @@ export async function runTurn(
   const prepared = await prepareTurnContext(input, opts);
   const {
     config,
+    provider,
     turnInput,
     sessionId,
     capturedDirectiveCount,
@@ -1010,11 +1011,13 @@ export async function runTurn(
   if (earlyExit) return earlyExit;
 
   const inference = await runInferenceStage(prepared, opts);
-  const quality = applyReplyQualityGate({
+  const quality = await applyReplyQualityGateWithJudge({
     text: inference.text,
     userText: turnInput.text,
     sessionId,
     promptCtx: prepared.promptCtx,
+    provider,
+    enableLlmJudge: config.features.llmJudge,
   });
   const text = quality.text;
 
