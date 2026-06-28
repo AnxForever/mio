@@ -43,6 +43,7 @@ import { ContextEngine, getContextEngine } from '../prompt/context-engine.js';
 import { getEvaluationGraph, getBuilderChain, type EvaluationResult } from '../prompt/builder-chain.js';
 import { buildKernel, applyPersonaDelta, buildPreferencePrompt } from '../persona/layered.js';
 import { buildVoiceSection } from '../persona/voice-presets.js';
+import { buildOwnLifeSection } from '../persona/own-life.js';
 import { getRouterConfig, routeTask } from '../providers/router.js';
 import { scopedToolRegistry } from './tool-runtime.js';
 import { pluginRegistry } from '../plugins/index.js';
@@ -320,6 +321,14 @@ function registerPromptSections(
     content: () => buildTimeContext(ctx.isolatedMemory ? null : ctx.emotionState.lastInteraction || null),
     priority: 'high',
     condition: () => sectionEnabled('time'),
+  });
+
+  // 独立生活流露 — medium：让 Mio 偶尔自然带一句自己的近况（人味研究最强调的"有自己的生活"）
+  engine.register('own-life', {
+    type: 'own-life',
+    content: () => buildOwnLifeSection(),
+    priority: 'medium',
+    condition: () => sectionEnabled('own-life'),
   });
 
   // L7: Emotional context — high priority

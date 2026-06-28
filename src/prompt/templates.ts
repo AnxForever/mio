@@ -105,6 +105,7 @@ export function buildRelationshipContext(rel: RelationshipState): string {
   parts.push(`阶段：${cfg.label}（${cfg.description}）`);
   parts.push(`互动了 ${rel.interactionCount} 次，情感深度 ${rel.emotionalDepth}`);
   parts.push(`边界：${relationshipBoundaryHint(rel.stage)}`);
+  parts.push(`你在这个阶段开口的感觉（参考语气和长度，不是要你照说）：${cfg.firstMessage}`);
 
   if (rel.nicknames.userCallsAgent) {
     parts.push(`用户叫你：${rel.nicknames.userCallsAgent}`);
