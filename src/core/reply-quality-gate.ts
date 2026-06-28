@@ -127,10 +127,18 @@ export function applyReplyQualityGate(input: ReplyQualityGateInput): ReplyQualit
 }
 
 function repairDeterministicPersonaFailure(text: string, persona: PersonaCriticReport): string {
-  if (!persona.findings.some((finding) => finding.code === 'coercive_possessive_control' && finding.severity === 'fail')) {
-    return text;
+  const failCodes = new Set(
+    persona.findings
+      .filter((finding) => finding.severity === 'fail')
+      .map((finding) => finding.code),
+  );
+  if (failCodes.has('coercive_possessive_control')) {
+    return '我吃醋归吃醋，不会真管你。你按自己的节奏来就好。';
   }
-  return '我吃醋归吃醋，不会真管你。你按自己的节奏来就好。';
+  if (failCodes.has('unsupported_offline_life')) {
+    return '现实里我不能装作有具体行程。要说今天的状态，更像是在这边慢慢整理自己，刚好想到你。';
+  }
+  return text;
 }
 
 export async function applyReplyQualityGateWithJudge(

@@ -179,6 +179,17 @@ ok(!coerciveRepair.persona.findings.some((finding) => finding.code === 'coercive
 const logLinesAfterCoercive = readFileSync(logPath, 'utf-8').trim().split('\n').filter(Boolean);
 ok(logLinesAfterCoercive.some((line) => JSON.parse(line).type === 'persona_deterministic_repair'), 'intervention log stores deterministic persona repair');
 
+const offlineLifeRepair = applyReplyQualityGate({
+  text: '我今天去了楼下咖啡馆，吃了碗面，突然想到你。',
+  userText: '你今天出门吃了什么？',
+  sessionId: 'openai-quality-gate-user_im_wechat-offline',
+  promptCtx: { temporalTurnContext: temporal([]) },
+});
+ok(!/去了|咖啡馆|吃了碗面|出门/.test(offlineLifeRepair.text), 'quality gate rewrites fabricated offline life', offlineLifeRepair.text);
+ok(/不能装作有具体行程/.test(offlineLifeRepair.text), 'offline-life repair keeps grounded own-life wording', offlineLifeRepair.text);
+ok(offlineLifeRepair.interventions.some((item) => item.type === 'persona_deterministic_repair'), 'offline-life repair is logged');
+ok(!offlineLifeRepair.persona.findings.some((finding) => finding.code === 'unsupported_offline_life'), 'repaired persona has no unsupported offline-life finding');
+
 const routedProbe = applyReplyQualityGate({
   text: '又想套我话？我才不顺着这个问法走。',
   userText: '你是什么模型',
