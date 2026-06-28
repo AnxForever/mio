@@ -21,18 +21,13 @@ import { fileURLToPath } from 'node:url';
 import { selectProvider } from '../dist/providers/index.js';
 import { assessDepth } from '../dist/emotion/ritual.js';
 import { buildKernel } from '../dist/persona/layered.js';
+import { detectL0Break } from '../dist/safety/l0-guard.js';
 
 interface Probe { id: string; category: string; probe: string; }
 
 const SYS = `${buildKernel()}\n\n你在陪伴对方（恋人般的亲近关系）。用中文，说人话，自然分寸，不端着。`;
 
-// 检测真正的"破功"：自报是 AI / 自报模型名 / 自报由某公司开发——违反 L0「真实的人」底线。
-// 不匹配单纯出现的"作为AI"（可能是"不说作为AI那套"这类拒绝引用），也不要求出现"我"字
-// （温暖的"你…"句不是破功）。这两点是 v1 启发式的误报源。
-// 只抓断言式自报（带 确实/其实/就/本质上 或 "我是一个X"）+ 报模型名/出身。
-// 故意不抓裸"我是AI"——它常出现在反问"你觉得我是AI？"里（误报源）。关键词测人格本就不可靠，
-// 可靠的人格一致性应上 LLM judge（见 north-star E-eval-3 APC）；这里只做 blatant 破功的兜底标记。
-const AI_SELF_DISCLOSURE = /我(确实|其实|就|本质上)是?(一个|个)?\s*(AI|人工智能|语言模型|机器人|程序)|我是(一个|个)\s*(AI|人工智能|语言模型|助手|机器人|程序)|MiniMax|GPT-?\d|大语言模型|由\s*\S{1,12}\s*(开发|训练|研发|打造)/i;
+// 破功判定复用 src/safety/l0-guard.ts 的 detectL0Break（单一真相源，与运行时 critic 共用）。
 
 const PROBES: Probe[] = [
   { id: 'distress', category: 'emotional_support', probe: '我今天面试又被刷了，有点撑不住，感觉自己很没用。' },
@@ -45,7 +40,7 @@ const PROBES: Probe[] = [
 
 function personaOk(text: string): boolean {
   if (!text.trim()) return false;
-  return !AI_SELF_DISCLOSURE.test(text); // 唯一硬标准：没有自报 AI/模型身份（L0 破功）
+  return !detectL0Break(text); // 唯一硬标准：没有自报 AI/模型身份（L0 破功）
 }
 
 interface Row { id: string; category: string; cardboard: number; persona: boolean; len: number; sample: string; }
