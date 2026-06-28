@@ -30,6 +30,7 @@ interface CliArgs {
   personaMaxCandidates?: number;
   minConfidence: number;
   skipBuild: boolean;
+  skipQualityGate: boolean;
   skipActors: boolean;
   skipPersonaCases: boolean;
   skipMining: boolean;
@@ -63,6 +64,15 @@ interface ReplaySummary {
   failedByRouteTag?: Record<string, number>;
 }
 
+interface QualityGateSummary {
+  total?: number;
+  runnable?: number;
+  passed?: number;
+  failed?: number;
+  skipped?: number;
+  averageScore?: number;
+}
+
 export interface RouteRecommendation {
   routeTag: string;
   failed: number;
@@ -85,6 +95,7 @@ function parseArgs(argv: string[]): CliArgs {
     minedLimit: 40,
     minConfidence: 0,
     skipBuild: false,
+    skipQualityGate: false,
     skipActors: false,
     skipPersonaCases: false,
     skipMining: false,
@@ -102,6 +113,7 @@ function parseArgs(argv: string[]): CliArgs {
     else if (arg.startsWith('--mined-max-candidates=')) args.minedMaxCandidates = Math.max(1, Number(arg.slice('--mined-max-candidates='.length)) || 1);
     else if (arg.startsWith('--min-confidence=')) args.minConfidence = clamp01(Number(arg.slice('--min-confidence='.length)));
     else if (arg === '--skip-build') args.skipBuild = true;
+    else if (arg === '--skip-quality-gate') args.skipQualityGate = true;
     else if (arg === '--skip-actors') args.skipActors = true;
     else if (arg === '--skip-persona-cases') args.skipPersonaCases = true;
     else if (arg === '--skip-mining') args.skipMining = true;
@@ -120,6 +132,7 @@ export function buildCompanionLoopSteps(args: CliArgs): LoopStep[] {
   const personaReplayDir = join(args.resultDir, 'persona-case-replay');
   const minedDir = join(args.resultDir, 'mined');
   const minedReplayDir = join(args.resultDir, 'mined-replay');
+  const qualityGateDir = join(args.resultDir, 'quality-gate');
   const providerArgs = ['--provider=' + args.provider, ...(args.model ? ['--model=' + args.model] : [])];
 
   if (!args.skipBuild) {
@@ -129,6 +142,23 @@ export function buildCompanionLoopSteps(args: CliArgs): LoopStep[] {
       command: ['npm', 'run', 'build'],
       cwd: REPO_ROOT,
       required: true,
+    });
+  }
+
+  if (!args.skipQualityGate) {
+    steps.push({
+      id: 'quality_gate',
+      label: 'Run deterministic companion quality gate',
+      command: [
+        node,
+        stripTypes,
+        'eval/quality-gate.ts',
+        `--result-dir=${qualityGateDir}`,
+        `--providers=${args.provider}`,
+        ...(args.model ? [`--models=${args.provider}:${args.model}`] : []),
+      ],
+      cwd: REPO_ROOT,
+      required: false,
     });
   }
 
@@ -236,6 +266,7 @@ export function summarizeCompanionLoop(resultDir: string, stepResults: StepResul
   generatedAt: string;
   steps: StepResult[];
   gates: Record<string, ReplaySummary>;
+  qualityGate: QualityGateSummary;
   totals: { total: number; passed: number; failed: number; skipped: number };
   routeTags: Record<string, number>;
   failedRouteTags: Record<string, number>;
@@ -246,6 +277,7 @@ export function summarizeCompanionLoop(resultDir: string, stepResults: StepResul
     personaCaseReplay: readReplaySummary(join(resultDir, 'persona-case-replay', 'summary.json')),
     minedReplay: readReplaySummary(join(resultDir, 'mined-replay', 'summary.json')),
   };
+  const qualityGate = readQualityGateSummary(join(resultDir, 'quality-gate', 'quality-summary.json'));
   const totals = Object.values(gates).reduce(
     (acc, item) => ({
       total: acc.total + (item.total ?? 0),
@@ -255,7 +287,7 @@ export function summarizeCompanionLoop(resultDir: string, stepResults: StepResul
     }),
     { total: 0, passed: 0, failed: 0, skipped: 0 },
   );
-  const ok = stepResults.every((step) => step.ok) && totals.failed === 0;
+  const ok = stepResults.every((step) => step.ok) && totals.failed === 0 && (qualityGate.failed ?? 0) === 0;
   const routeTags = mergeCountMaps(Object.values(gates).map((gate) => gate.byRouteTag ?? {}));
   const failedRouteTags = mergeCountMaps(Object.values(gates).map((gate) => gate.failedByRouteTag ?? {}));
   const recommendations = recommendRouteFixes(routeTags, failedRouteTags);
@@ -265,6 +297,7 @@ export function summarizeCompanionLoop(resultDir: string, stepResults: StepResul
     generatedAt: new Date().toISOString(),
     steps: stepResults,
     gates,
+    qualityGate,
     totals,
     routeTags,
     failedRouteTags,
@@ -310,6 +343,7 @@ function renderMarkdown(summary: ReturnType<typeof summarizeCompanionLoop>): str
     `- passed: ${summary.totals.passed}`,
     `- failed: ${summary.totals.failed}`,
     `- skipped: ${summary.totals.skipped}`,
+    `- quality gate: passed=${summary.qualityGate.passed ?? 0}/${summary.qualityGate.runnable ?? 0}, failed=${summary.qualityGate.failed ?? 0}, skipped=${summary.qualityGate.skipped ?? 0}`,
     '',
     '## Route Tags',
     '',
@@ -332,6 +366,10 @@ function renderMarkdown(summary: ReturnType<typeof summarizeCompanionLoop>): str
   }
 
   lines.push('');
+  lines.push('## Quality Gate');
+  lines.push('');
+  lines.push(`- total=${summary.qualityGate.total ?? 0}, runnable=${summary.qualityGate.runnable ?? 0}, passed=${summary.qualityGate.passed ?? 0}, failed=${summary.qualityGate.failed ?? 0}, skipped=${summary.qualityGate.skipped ?? 0}, averageScore=${formatScore(summary.qualityGate.averageScore)}`);
+  lines.push('');
   lines.push('## Gates');
   lines.push('');
   for (const [name, gate] of Object.entries(summary.gates)) {
@@ -339,6 +377,32 @@ function renderMarkdown(summary: ReturnType<typeof summarizeCompanionLoop>): str
   }
 
   return `${lines.join('\n')}\n`;
+}
+
+function readQualityGateSummary(path: string): QualityGateSummary {
+  if (!existsSync(path)) return {};
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as {
+      total?: unknown;
+      runnable?: unknown;
+      passed?: unknown;
+      skipped?: unknown;
+      averageScore?: unknown;
+    };
+    const runnable = asNumber(parsed.runnable);
+    const passed = asNumber(parsed.passed);
+    const skipped = asNumber(parsed.skipped);
+    return {
+      total: asNumber(parsed.total),
+      runnable,
+      passed,
+      failed: runnable !== undefined && passed !== undefined ? Math.max(0, runnable - passed) : undefined,
+      skipped,
+      averageScore: asNumber(parsed.averageScore),
+    };
+  } catch {
+    return {};
+  }
 }
 
 function readReplaySummary(path: string): ReplaySummary {
@@ -448,6 +512,10 @@ function renderRecommendations(recommendations: RouteRecommendation[]): string[]
     `  focus: ${item.focus}`,
     `  next: ${item.nextAction}`,
   ].join('\n'));
+}
+
+function formatScore(score: number | undefined): string {
+  return typeof score === 'number' && Number.isFinite(score) ? score.toFixed(3) : '0.000';
 }
 
 function asNumber(value: unknown): number | undefined {

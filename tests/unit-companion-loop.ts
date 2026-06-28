@@ -33,13 +33,17 @@ const steps = buildCompanionLoopSteps({
   minedMaxCandidates: 2,
   minConfidence: 0.7,
   skipBuild: true,
+  skipQualityGate: false,
   skipActors: false,
   skipPersonaCases: false,
   skipMining: false,
 });
 
-ok(steps.length === 6, 'builds actor + persona case + mining loop without build step', `steps=${steps.map((step) => step.id).join(',')}`);
-ok(steps[0]?.id === 'actor_generate', 'first step generates actor candidates');
+ok(steps.length === 7, 'builds quality gate + actor + persona case + mining loop without build step', `steps=${steps.map((step) => step.id).join(',')}`);
+ok(steps[0]?.id === 'quality_gate', 'first step runs deterministic quality gate');
+ok(steps[0]?.command.includes('--providers=mock'), 'quality gate is scoped to selected provider');
+ok(steps[0]?.required === false, 'quality gate failures do not block later loop steps');
+ok(steps[1]?.id === 'actor_generate', 'second step generates actor candidates');
 ok(steps.some((step) => step.id === 'actor_replay' && step.command.includes('--max-candidates=3')), 'actor replay uses max candidate limit');
 ok(steps.some((step) => step.id === 'persona_case_generate'), 'loop generates persona case candidates');
 ok(steps.some((step) => step.id === 'persona_case_replay' && step.command.includes('--max-candidates=2')), 'persona case replay uses max candidate limit');
@@ -53,6 +57,7 @@ const buildSteps = buildCompanionLoopSteps({
   minedLimit: 1,
   minConfidence: 0,
   skipBuild: false,
+  skipQualityGate: true,
   skipActors: true,
   skipPersonaCases: true,
   skipMining: true,
@@ -62,6 +67,14 @@ ok(buildSteps.length === 1 && buildSteps[0]?.id === 'build', 'skip flags can lea
 mkdirSync(join(dir, 'actor-replay'), { recursive: true });
 mkdirSync(join(dir, 'persona-case-replay'), { recursive: true });
 mkdirSync(join(dir, 'mined-replay'), { recursive: true });
+mkdirSync(join(dir, 'quality-gate'), { recursive: true });
+writeFileSync(join(dir, 'quality-gate', 'quality-summary.json'), JSON.stringify({
+  total: 18,
+  runnable: 18,
+  skipped: 0,
+  passed: 18,
+  averageScore: 1,
+}), 'utf-8');
 writeFileSync(join(dir, 'actor-replay', 'summary.json'), JSON.stringify({
   total: 3,
   passed: 3,
@@ -114,6 +127,8 @@ ok(summary.totals.total === 9, 'summary totals replayed candidates', `total=${su
 ok(summary.totals.passed === 8, 'summary totals passed candidates', `passed=${summary.totals.passed}`);
 ok(summary.totals.failed === 1, 'summary totals failed candidates', `failed=${summary.totals.failed}`);
 ok(summary.ok === false, 'summary fails when any replay gate failed');
+ok(summary.qualityGate.runnable === 18, 'summary reads deterministic quality gate runnable count', `runnable=${summary.qualityGate.runnable}`);
+ok(summary.qualityGate.failed === 0, 'summary reads deterministic quality gate as clean', `failed=${summary.qualityGate.failed}`);
 ok(summary.routeTags.temporal_state === 3, 'summary aggregates route tags across replay gates', JSON.stringify(summary.routeTags));
 ok(summary.routeTags.prompt_probe === 2, 'summary includes persona prompt-probe route tags', JSON.stringify(summary.routeTags));
 ok(summary.failedRouteTags.offline_life === 1, 'summary aggregates failed route tags', JSON.stringify(summary.failedRouteTags));
@@ -129,8 +144,36 @@ writeFileSync(join(cleanDir, 'actor-replay', 'summary.json'), JSON.stringify({
   failed: 0,
   skipped: 0,
 }), 'utf-8');
+mkdirSync(join(cleanDir, 'quality-gate'), { recursive: true });
+writeFileSync(join(cleanDir, 'quality-gate', 'quality-summary.json'), JSON.stringify({
+  total: 2,
+  runnable: 2,
+  skipped: 0,
+  passed: 1,
+  averageScore: 0.5,
+}), 'utf-8');
 const cleanSummary = summarizeCompanionLoop(cleanDir, []);
-ok(cleanSummary.ok === true, 'summary passes when all available gates pass');
+ok(cleanSummary.ok === false, 'summary fails when deterministic quality gate fails');
+ok(cleanSummary.qualityGate.failed === 1, 'summary computes quality gate failures');
+
+const allCleanDir = mkdtempSync(join(tmpdir(), 'mio-companion-loop-all-clean-'));
+mkdirSync(join(allCleanDir, 'actor-replay'), { recursive: true });
+mkdirSync(join(allCleanDir, 'quality-gate'), { recursive: true });
+writeFileSync(join(allCleanDir, 'actor-replay', 'summary.json'), JSON.stringify({
+  total: 1,
+  passed: 1,
+  failed: 0,
+  skipped: 0,
+}), 'utf-8');
+writeFileSync(join(allCleanDir, 'quality-gate', 'quality-summary.json'), JSON.stringify({
+  total: 2,
+  runnable: 2,
+  skipped: 0,
+  passed: 2,
+  averageScore: 1,
+}), 'utf-8');
+const allCleanSummary = summarizeCompanionLoop(allCleanDir, []);
+ok(allCleanSummary.ok === true, 'summary passes when replay and quality gates pass');
 ok(cleanSummary.recommendations.length === 0, 'clean summary has no route recommendations');
 
 const passed = results.filter((result) => result.ok).length;
