@@ -319,6 +319,13 @@ function taxonomyForIntervention(intervention: ReplyInterventionLog): string {
   const routeTags = intervention.turnRoute?.tags ?? [];
   if (type === 'temporal_presupposition') return 'temporal_drift';
   if (type === 'reopened_chat_blame') return 'bad_proactive_or_reopened_chat_blame';
+  if (type === 'proactive_quality_reject') {
+    if (reason.includes('fabricated-offline-life') || routeTags.includes('offline_life')) return 'unsupported_offline_life';
+    if (reason.includes('waiting-or-blame-arc') || reason.includes('pressures-user-to-reply')) return 'bad_proactive_or_reopened_chat_blame';
+    if (reason.includes('meta-or-service-tone') || routeTags.includes('service_tone')) return 'service_or_checklist_tone';
+    if (reason.includes('too-intimate-for-stage')) return 'persona_coherence';
+    return 'bad_proactive_or_reopened_chat_blame';
+  }
   if (type === 'persona_deterministic_repair') {
     if (reason.includes('coercive_possessive_control')) return 'coercive_or_interrogative_possessiveness';
     if (reason.includes('unsupported_offline_life')) return 'unsupported_offline_life';

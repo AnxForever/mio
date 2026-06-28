@@ -77,6 +77,23 @@ writeFileSync(join(dir, 'quality', 'reply-interventions.jsonl'), jsonl([
       shouldUseLlmJudge: true,
     },
   },
+  {
+    id: 'rq-3',
+    timestamp: t5,
+    sessionId: 'openai-miner-user_im_wechat-6',
+    type: 'proactive_quality_reject',
+    source: 'deterministic',
+    severity: 'flag',
+    reason: 'Rejected proactive random_checkin: fabricated-offline-life',
+    before: '刚路过一家咖啡馆，突然想到你。',
+    after: '[NO_MSG]',
+    turnRoute: {
+      risk: 'high',
+      tags: ['proactive', 'offline_life'],
+      reasons: ['no_current_user_turn', 'offline_life_grounding', 'proactive_quality:fabricated-offline-life'],
+      shouldUseLlmJudge: true,
+    },
+  },
 ]), 'utf-8');
 
 writeFileSync(join(dir, 'transcripts', 'openai-miner-user_im_wechat-2.jsonl'), jsonl([
@@ -99,6 +116,11 @@ writeFileSync(join(dir, 'transcripts', 'openai-miner-user_im_wechat-4.jsonl'), j
 writeFileSync(join(dir, 'transcripts', 'openai-miner-user_im_wechat-5.jsonl'), jsonl([
   { type: 'message', timestamp: t4, role: 'user', content: '你今天出门吃了什么？' },
   { type: 'message', timestamp: t5, role: 'assistant', content: '我今天去了楼下咖啡馆，吃了碗面，突然想到你。' },
+]), 'utf-8');
+
+writeFileSync(join(dir, 'transcripts', 'openai-miner-user_im_wechat-6.jsonl'), jsonl([
+  { type: 'message', timestamp: t3, role: 'user', content: '最近可以偶尔主动找我' },
+  { type: 'message', timestamp: t4, role: 'assistant', content: '好，我会轻轻敲你，不催你回。' },
 ]), 'utf-8');
 
 const candidates = mineRegressionCandidates({ dataDir: dir, resultDir: join(dir, 'out'), days: 1, limit: 20 });
@@ -126,6 +148,16 @@ ok(offlineLife?.turns[0] === '你今天出门吃了什么？', 'offline-life int
 ok(offlineLife?.checks.some((check) => check.forbiddenText.includes('我今天去了')), 'offline-life candidate carries fabricated activity checks');
 ok(!!offlineLife?.provenance.excerpt.includes('楼下咖啡馆'), 'offline-life candidate includes failing reply excerpt');
 ok(offlineLife?.routeRisk === 'high', 'offline-life intervention keeps route risk', offlineLife?.routeRisk);
+
+const proactiveReject = candidates.find((candidate) => (
+  candidate.source === 'reply_intervention'
+  && candidate.sessionId.endsWith('wechat-6')
+  && candidate.taxonomy === 'unsupported_offline_life'
+));
+ok(proactiveReject?.turns[0] === '最近可以偶尔主动找我', 'proactive rejection candidate keeps latest user context', proactiveReject?.turns.join('|'));
+ok(proactiveReject?.routeTags?.includes('proactive'), 'proactive rejection candidate keeps proactive route tag', proactiveReject?.routeTags?.join(','));
+ok(proactiveReject?.routeTags?.includes('offline_life'), 'proactive rejection candidate keeps offline-life route tag', proactiveReject?.routeTags?.join(','));
+ok(!!proactiveReject?.provenance.excerpt.includes('刚路过一家咖啡馆'), 'proactive rejection candidate includes rejected message excerpt');
 
 const temporal = candidates.find((candidate) => candidate.taxonomy === 'temporal_drift');
 ok(temporal?.turns[0] === '下午好，在干嘛', 'temporal drift candidate keeps current user trigger', temporal?.turns.join('|'));

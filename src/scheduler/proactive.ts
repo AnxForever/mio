@@ -26,6 +26,9 @@ import type { StreamingProvider, SessionContext, EmotionState, RelationshipState
 import { assessProactiveMessage } from './proactive-quality.js';
 import { listUsersWithProactiveWeClawTargets, readPreferences } from '../memory/persona-delta.js';
 import { buildPreferencePrompt } from '../persona/layered.js';
+import { appendReplyIntervention } from '../core/reply-quality-gate.js';
+import { routeTurn, type TurnRiskTag } from '../core/turn-router.js';
+import type { PersonaRiskLevel } from '../persona/critic.js';
 
 /** 主动消息类型 */
 export type ProactiveMessageType = 'morning' | 'evening' | 'random_checkin' | 'emotional_support';
@@ -271,6 +274,7 @@ export class ProactiveScheduler {
     const quality = assessProactiveMessage(trimmed, type, relationshipState.stage);
     if (!quality.ok) {
       logger.info(`[proactive] quality gate rejected message: ${quality.reasons.join(', ')}`);
+      appendProactiveQualityReject(trimmed, quality.reasons, type, userId);
       if (recordSmartOutcome) recordProactiveMessage(false, undefined, userId);
       return null;
     }
@@ -399,6 +403,70 @@ async function dispatchToNotifyChannels(text: string, type: ProactiveMessageType
       logger.error(`[proactive]  ✗ ${r.channel}: ${r.error}`);
     }
   }
+}
+
+function appendProactiveQualityReject(
+  text: string,
+  reasons: string[],
+  type: ProactiveMessageType,
+  userId?: string,
+): void {
+  const timestamp = new Date().toISOString();
+  const sessionId = userId ?? 'global-proactive';
+  const route = routeTurn({ replyText: text });
+  enrichProactiveRejectRoute(route, reasons);
+  for (const reason of reasons) {
+    if (!route.reasons.includes(`proactive_quality:${reason}`)) {
+      route.reasons.push(`proactive_quality:${reason}`);
+    }
+  }
+  appendReplyIntervention({
+    id: `${timestamp}-proactive_quality_reject-${type}-${hashLite(`${sessionId}\n${text}`)}`,
+    timestamp,
+    sessionId,
+    type: 'proactive_quality_reject',
+    source: 'deterministic',
+    severity: 'flag',
+    reason: `Rejected proactive ${type}: ${reasons.join(', ')}`,
+    before: text,
+    after: '[NO_MSG]',
+    turnRoute: route,
+  });
+}
+
+function enrichProactiveRejectRoute(
+  route: ReturnType<typeof routeTurn>,
+  reasons: string[],
+): void {
+  if (!route.tags.includes('proactive')) route.tags.push('proactive');
+  if (reasons.includes('fabricated-offline-life')) {
+    addRouteTag(route.tags, 'offline_life');
+    route.risk = maxRisk(route.risk, 'high');
+    route.shouldUseLlmJudge = true;
+  }
+  if (reasons.includes('waiting-or-blame-arc') || reasons.includes('pressures-user-to-reply')) {
+    addRouteTag(route.tags, 'temporal_state');
+    route.risk = maxRisk(route.risk, 'medium');
+  }
+  if (reasons.includes('meta-or-service-tone')) {
+    addRouteTag(route.tags, 'service_tone');
+    route.risk = maxRisk(route.risk, 'medium');
+  }
+}
+
+function addRouteTag(tags: TurnRiskTag[], tag: TurnRiskTag): void {
+  if (!tags.includes(tag)) tags.push(tag);
+}
+
+function maxRisk(a: PersonaRiskLevel, b: PersonaRiskLevel): PersonaRiskLevel {
+  const rank: Record<PersonaRiskLevel, number> = { low: 0, medium: 1, high: 2 };
+  return rank[a] >= rank[b] ? a : b;
+}
+
+function hashLite(text: string): string {
+  let h = 0;
+  for (const ch of text) h = ((h << 5) - h + ch.charCodeAt(0)) | 0;
+  return Math.abs(h).toString(16).slice(0, 8);
 }
 
 /** 消息类型的中文标签 */

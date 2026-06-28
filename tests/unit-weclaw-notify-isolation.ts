@@ -5,7 +5,7 @@
  * Per-user proactive messages must be delivered only to that user's WeClaw
  * target and must not leak into global notification channels.
  */
-import { mkdtempSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -35,6 +35,7 @@ const { writeRelationshipState } = await import('../dist/relationship/progressio
 const { defaultEmotionState, writeEmotionState } = await import('../dist/emotion/state.js');
 const { readTranscript } = await import('../dist/memory/transcript.js');
 const { readBookmarks } = await import('../dist/memory/bank.js');
+const { replyQualityInterventionsPath } = await import('../dist/memory/paths.js');
 
 upsertPreference('主动找我聊天', 'unit', 'user-a');
 upsertWeClawTarget('user-a', 'wx-user-a@im.wechat', 'unit');
@@ -101,6 +102,34 @@ try {
     ok(readTranscript('user-a').some((entry) => entry.content === message), 'scheduled proactive message is stored in the user transcript');
     ok(!readBookmarks().includes(message), 'scheduled per-user proactive message is not stored in global bookmarks');
     ok(!proactivePrompt.includes('GLOBAL SECRET MEMORY'), 'scheduled per-user prompt omits global shared memories');
+
+    calls.length = 0;
+    const rejectedProvider = {
+      name: 'unit-proactive-reject-provider',
+      async chat() {
+        return { text: '刚路过一家咖啡馆，突然想到你。' };
+      },
+    };
+    const rejectingScheduler = new ProactiveScheduler(rejectedProvider as never);
+    const rejected = await rejectingScheduler.sendProactiveMessage('random_checkin', 'user-a', {
+      skipSmartGate: true,
+      recordSmartOutcome: false,
+    });
+    ok(rejected === null, 'scheduled proactive path rejects fabricated offline-life message');
+    ok(calls.length === 0, 'rejected proactive message is not dispatched');
+    ok(!readTranscript('user-a').some((entry) => entry.content === '刚路过一家咖啡馆，突然想到你。'), 'rejected proactive message is not stored in transcript');
+    const qualityLog = replyQualityInterventionsPath();
+    ok(existsSync(qualityLog), 'rejected proactive message writes quality intervention log');
+    const loggedRejects = readFileSync(qualityLog, 'utf-8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { type?: string; reason?: string; before?: string; turnRoute?: { tags?: string[] } });
+    ok(loggedRejects.some((row) => (
+      row.type === 'proactive_quality_reject'
+      && row.reason?.includes('fabricated-offline-life')
+      && row.before === '刚路过一家咖啡馆，突然想到你。'
+      && row.turnRoute?.tags?.includes('offline_life')
+    )), 'quality intervention log preserves proactive rejection reason and route tags');
 
     calls.length = 0;
     upsertPreference('不要主动联系我', 'unit', 'user-a');

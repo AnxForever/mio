@@ -13,6 +13,7 @@ import { routeTurn, type TurnRoute } from './turn-router.js';
 export type ReplyInterventionType =
   | 'temporal_presupposition'
   | 'reopened_chat_blame'
+  | 'proactive_quality_reject'
   | 'persona_critic_flag'
   | 'persona_deterministic_repair'
   | 'persona_llm_judge'
