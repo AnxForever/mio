@@ -21,6 +21,7 @@
     "eval:l0": "npm run build && node --experimental-strip-types eval/l0-probe.ts",
     "eval:live": "npm run build && node --experimental-strip-types eval/live-session.ts",
     "eval:memory": "npm run build && node --experimental-strip-types eval/memory-arc.ts",
+    "eval:contradiction": "npm run build && node --experimental-strip-types eval/contradiction.ts",
     "qq:configure": "node scripts/qq-bridge/configure.mjs",
     "qq:status": "bash scripts/qq-bridge/status.sh",
     "qq:verify": "npm run build && node scripts/qq-bridge/verify-local.mjs",
