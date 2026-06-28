@@ -544,8 +544,8 @@ Implemented in this iteration:
 - `src/persona/own-life.ts`: the own-life prompt now uses abstract internal/creative states instead of concrete physical activities, and explicitly tells Mio not to present locations, outings, meals, or "passed by a place" details as facts.
 - `tests/unit-proactive-quality.ts`, `tests/unit-own-life.ts`, and `tests/unit-smart-proactive.ts`: cover waiting/blame rejection, fake offline-life rejection, abstract own-life acceptance, source prompt hygiene, and per-contact smart proactive isolation.
 - `eval/quality-gate.ts`: adds proactive-quality regression probes for waiting/blame, fake offline-life, and abstract own-life messages.
-- `eval/companion-loop.ts`: orchestrates the offline companion eval loop: build, scenario actor generation, actor candidate replay, persona case generation/replay, real transcript/intervention mining, mined candidate replay, and one aggregate report. It is the manual/nightly entry point for "simulate chat -> find problems -> preserve regressions".
-- `tests/unit-companion-loop.ts`: covers loop step planning and aggregate pass/fail summaries.
+- `eval/companion-loop.ts`: orchestrates the offline companion eval loop: build, scenario actor generation, actor candidate replay, persona case generation/replay, real transcript/intervention mining, mined candidate replay, and one aggregate report. It is the manual/nightly entry point for "simulate chat -> find problems -> preserve regressions". The aggregate report now converts failed route tags into `recommendations` that point at the likely subsystem to inspect next.
+- `tests/unit-companion-loop.ts`: covers loop step planning, aggregate pass/fail summaries, route-tag aggregation, failed-route aggregation, and route-specific repair recommendations.
 
 Verified commands:
 

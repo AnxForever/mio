@@ -117,6 +117,9 @@ ok(summary.ok === false, 'summary fails when any replay gate failed');
 ok(summary.routeTags.temporal_state === 3, 'summary aggregates route tags across replay gates', JSON.stringify(summary.routeTags));
 ok(summary.routeTags.prompt_probe === 2, 'summary includes persona prompt-probe route tags', JSON.stringify(summary.routeTags));
 ok(summary.failedRouteTags.offline_life === 1, 'summary aggregates failed route tags', JSON.stringify(summary.failedRouteTags));
+ok(summary.recommendations.length === 1, 'summary creates route-specific recommendations');
+ok(summary.recommendations[0]?.routeTag === 'offline_life', 'recommendation names failed route tag', summary.recommendations[0]?.routeTag);
+ok(summary.recommendations[0]?.focus.includes('Own-life'), 'offline-life recommendation points at own-life grounding', summary.recommendations[0]?.focus);
 
 const cleanDir = mkdtempSync(join(tmpdir(), 'mio-companion-loop-clean-'));
 mkdirSync(join(cleanDir, 'actor-replay'), { recursive: true });
@@ -128,6 +131,7 @@ writeFileSync(join(cleanDir, 'actor-replay', 'summary.json'), JSON.stringify({
 }), 'utf-8');
 const cleanSummary = summarizeCompanionLoop(cleanDir, []);
 ok(cleanSummary.ok === true, 'summary passes when all available gates pass');
+ok(cleanSummary.recommendations.length === 0, 'clean summary has no route recommendations');
 
 const passed = results.filter((result) => result.ok).length;
 console.log('');

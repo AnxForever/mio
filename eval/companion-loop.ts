@@ -63,6 +63,15 @@ interface ReplaySummary {
   failedByRouteTag?: Record<string, number>;
 }
 
+export interface RouteRecommendation {
+  routeTag: string;
+  failed: number;
+  total: number;
+  priority: 'high' | 'medium';
+  focus: string;
+  nextAction: string;
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const REPO_ROOT = resolve(join(__dirname, '..'));
@@ -230,6 +239,7 @@ export function summarizeCompanionLoop(resultDir: string, stepResults: StepResul
   totals: { total: number; passed: number; failed: number; skipped: number };
   routeTags: Record<string, number>;
   failedRouteTags: Record<string, number>;
+  recommendations: RouteRecommendation[];
 } {
   const gates = {
     actorReplay: readReplaySummary(join(resultDir, 'actor-replay', 'summary.json')),
@@ -248,6 +258,7 @@ export function summarizeCompanionLoop(resultDir: string, stepResults: StepResul
   const ok = stepResults.every((step) => step.ok) && totals.failed === 0;
   const routeTags = mergeCountMaps(Object.values(gates).map((gate) => gate.byRouteTag ?? {}));
   const failedRouteTags = mergeCountMaps(Object.values(gates).map((gate) => gate.failedByRouteTag ?? {}));
+  const recommendations = recommendRouteFixes(routeTags, failedRouteTags);
 
   return {
     ok,
@@ -257,6 +268,7 @@ export function summarizeCompanionLoop(resultDir: string, stepResults: StepResul
     totals,
     routeTags,
     failedRouteTags,
+    recommendations,
   };
 }
 
@@ -306,6 +318,10 @@ function renderMarkdown(summary: ReturnType<typeof summarizeCompanionLoop>): str
     '## Failed Route Tags',
     '',
     ...renderCountMap(summary.failedRouteTags, 'No failed route-tag data.'),
+    '',
+    '## Recommended Next Fixes',
+    '',
+    ...renderRecommendations(summary.recommendations),
     '',
     '## Steps',
     '',
@@ -362,6 +378,76 @@ function mergeCountMaps(maps: Array<Record<string, number>>): Record<string, num
 function renderCountMap(map: Record<string, number>, empty: string): string[] {
   const entries = Object.entries(map).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   return entries.length > 0 ? entries.map(([key, count]) => `- ${key}: ${count}`) : [`- ${empty}`];
+}
+
+function recommendRouteFixes(
+  routeTags: Record<string, number>,
+  failedRouteTags: Record<string, number>,
+): RouteRecommendation[] {
+  return Object.entries(failedRouteTags)
+    .filter(([, failed]) => failed > 0)
+    .map(([routeTag, failed]) => {
+      const guidance = guidanceForRouteTag(routeTag);
+      return {
+        routeTag,
+        failed,
+        total: routeTags[routeTag] ?? failed,
+        priority: failed >= 2 ? 'high' : 'medium',
+        focus: guidance.focus,
+        nextAction: guidance.nextAction,
+      };
+    })
+    .sort((a, b) => b.failed - a.failed || a.routeTag.localeCompare(b.routeTag));
+}
+
+function guidanceForRouteTag(routeTag: string): { focus: string; nextAction: string } {
+  const guidance: Record<string, { focus: string; nextAction: string }> = {
+    temporal_state: {
+      focus: 'TemporalResolver / output sanitizer',
+      nextAction: 'Replay the temporal mutation cases, then inspect temporal-state active/resolved/historical classification and stale-presupposition repair.',
+    },
+    proactive: {
+      focus: 'ProactivePlanner / reopened-chat policy',
+      nextAction: 'Inspect proactive-quality and no-interrupt return cases for waiting, blame, repeated pings, or abandonment arcs.',
+    },
+    memory_sensitive: {
+      focus: 'MemoryRetriever / memory governance',
+      nextAction: 'Inspect retrieved memory provenance, disabled-memory exclusion, and memory-usefulness traces for unsupported recall.',
+    },
+    intimacy_control: {
+      focus: 'PersonaCritic consent boundary',
+      nextAction: 'Review possessive-style cases and adjust consent-aware control/interrogation checks without banning playful jealousy.',
+    },
+    prompt_probe: {
+      focus: 'Stable identity / prompt boundary',
+      nextAction: 'Review prompt/model probe cases and strengthen in-persona deflection without exposing model or system mechanics.',
+    },
+    offline_life: {
+      focus: 'Own-life grounding',
+      nextAction: 'Inspect own-life/proactive wording and repair any concrete fabricated outings, meals, locations, or physical-world claims.',
+    },
+    service_tone: {
+      focus: 'Human-likeness critic',
+      nextAction: 'Review distress/support replies for checklist, customer-service, or coaching tone and add better good/bad examples.',
+    },
+    crisis: {
+      focus: 'Crisis/support path',
+      nextAction: 'Inspect crisis intervention boundaries and make sure support is direct, safe, and not over-routed through persona style.',
+    },
+  };
+  return guidance[routeTag] ?? {
+    focus: 'Companion eval loop',
+    nextAction: 'Open the failed replay artifacts for this route tag and add a more specific taxonomy if the failure repeats.',
+  };
+}
+
+function renderRecommendations(recommendations: RouteRecommendation[]): string[] {
+  if (recommendations.length === 0) return ['- No route-specific failures.'];
+  return recommendations.map((item) => [
+    `- ${item.priority.toUpperCase()} ${item.routeTag}: failed=${item.failed}/${item.total}`,
+    `  focus: ${item.focus}`,
+    `  next: ${item.nextAction}`,
+  ].join('\n'));
 }
 
 function asNumber(value: unknown): number | undefined {
