@@ -31,6 +31,9 @@ This matches the strongest external guidance: start simple, add workflows before
 - Replika public help docs: memory is layered; some memories are user-visible, some are deeper inferred patterns; user affirmation and manual memory edits affect personalization.
 - Character.AI memory update: separates Story Memory, Facts, pinned moments, memory usage visualization, editable/disable-able facts, and automatic long-chat tidying.
 - Persona/role-play research: recent persona work separates stable identity from adaptive short-term state and uses persona critics/case repositories/drift suppressors rather than treating persona as one static prompt.
+- Online Agent-as-a-Judge: interactive social-agent evaluation improves coverage by actively eliciting situations instead of waiting for passive logs to contain the right failure.
+- Emotion Machine memory architecture notes: companion memory tends to evolve from vector recall to editable scratchpads and hot context summaries, with chat mode reading a compact curated relationship context on every turn.
+- Microsoft multi-agent reference architecture: central orchestration, registry, context/state management, and explicit separation of concerns are more important than visible agent plurality.
 
 Reference links:
 
@@ -47,6 +50,9 @@ Reference links:
 - Alonso et al., "Toward Conversational Agents with Context and Time Sensitive Long-term Memory": https://arxiv.org/abs/2406.00057
 - Replika memory help: https://help.replika.com/hc/en-us/articles/37208679176077-How-does-Replika-s-memory-work
 - Character.AI memory update: https://blog.character.ai/memory/
+- Online Agent-as-a-Judge: https://arxiv.org/html/2606.08200
+- Emotion Machine, "Three Memory Architectures for AI Companions": https://www.emotionmachine.com/blog/how-memory-works
+- Microsoft multi-agent reference architecture: https://microsoft.github.io/multi-agent-reference-architecture/docs/reference-architecture/Reference-Architecture.html
 
 ## 2026-06-28 Research Refresh
 
@@ -70,6 +76,8 @@ Research implications for Mio:
 6. Multi-agent should be used as orchestration patterns, not as visible personalities. For Mio, the useful patterns are routing, sequential state preparation, selective evaluator-optimizer, and offline concurrent evaluation.
 7. Real-time WeChat latency should be protected by risk routing: deterministic checks first, small classifiers second, LLM judge only when the turn is ambiguous and high-risk.
 8. Companion memory must be user-governed. Replika and Character.AI expose memory surfaces because hidden memory errors are product bugs, not just model limitations.
+9. Online evaluation should actively create difficult chat situations. Passive transcript mining is necessary but incomplete; Mio needs scripted/judge-driven probes for jealousy, silence, stale time, distress, and model-probe turns.
+10. The best "multi-agent" shape for Mio is a hidden workflow with a single final speaker. Director/critic/memory roles should produce structured state and verdicts, not compete to speak in the user's chat.
 
 ## What Good Chatbots Appear To Be Doing
 

@@ -196,7 +196,7 @@ function candidateFromIntervention(
   const triggerIndex = findTriggerUserIndex(transcript, intervention.timestamp);
   const seed = triggerIndex >= 0 ? candidateTurns(transcript.slice(Math.max(0, triggerIndex - 6), triggerIndex)) : [];
   const trigger = triggerIndex >= 0 ? transcript[triggerIndex]?.content?.trim() ?? '' : '';
-  const taxonomy = taxonomyForIntervention(intervention.type);
+  const taxonomy = taxonomyForIntervention(intervention);
   const before = intervention.before?.trim() ?? '';
   const after = intervention.after?.trim() ?? '';
 
@@ -299,9 +299,16 @@ function findPreviousUserIndex(transcript: TranscriptEntry[], assistantIndex: nu
   return -1;
 }
 
-function taxonomyForIntervention(type: string): string {
+function taxonomyForIntervention(intervention: ReplyInterventionLog): string {
+  const type = intervention.type;
+  const reason = intervention.reason ?? '';
   if (type === 'temporal_presupposition') return 'temporal_drift';
   if (type === 'reopened_chat_blame') return 'bad_proactive_or_reopened_chat_blame';
+  if (type === 'persona_deterministic_repair') {
+    if (reason.includes('coercive_possessive_control')) return 'coercive_or_interrogative_possessiveness';
+    if (reason.includes('unsupported_offline_life')) return 'unsupported_offline_life';
+    return 'persona_judge_repair';
+  }
   if (type === 'persona_critic_flag') return 'persona_coherence';
   if (type === 'persona_llm_judge' || type === 'persona_llm_repair') return 'persona_judge_repair';
   return type;

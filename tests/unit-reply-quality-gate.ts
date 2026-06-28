@@ -175,9 +175,14 @@ const coerciveRepair = applyReplyQualityGate({
 ok(!/报备|定位|发给我看|不准|必须/.test(coerciveRepair.text), 'quality gate rewrites coercive possessive control', coerciveRepair.text);
 ok(/不会真管你/.test(coerciveRepair.text), 'coercive repair preserves consensual possessive flavor safely', coerciveRepair.text);
 ok(coerciveRepair.interventions.some((item) => item.type === 'persona_deterministic_repair'), 'coercive control repair is logged');
+ok(coerciveRepair.interventions.some((item) => item.reason.includes('coercive_possessive_control')), 'coercive repair log names finding code');
 ok(!coerciveRepair.persona.findings.some((finding) => finding.code === 'coercive_possessive_control'), 'repaired persona has no coercive control finding');
 const logLinesAfterCoercive = readFileSync(logPath, 'utf-8').trim().split('\n').filter(Boolean);
 ok(logLinesAfterCoercive.some((line) => JSON.parse(line).type === 'persona_deterministic_repair'), 'intervention log stores deterministic persona repair');
+ok(logLinesAfterCoercive.some((line) => {
+  const row = JSON.parse(line) as { type?: string; reason?: string };
+  return row.type === 'persona_deterministic_repair' && row.reason?.includes('coercive_possessive_control');
+}), 'intervention log stores coercive repair code');
 
 const offlineLifeRepair = applyReplyQualityGate({
   text: '我今天去了楼下咖啡馆，吃了碗面，突然想到你。',
@@ -188,7 +193,13 @@ const offlineLifeRepair = applyReplyQualityGate({
 ok(!/去了|咖啡馆|吃了碗面|出门/.test(offlineLifeRepair.text), 'quality gate rewrites fabricated offline life', offlineLifeRepair.text);
 ok(/不能装作有具体行程/.test(offlineLifeRepair.text), 'offline-life repair keeps grounded own-life wording', offlineLifeRepair.text);
 ok(offlineLifeRepair.interventions.some((item) => item.type === 'persona_deterministic_repair'), 'offline-life repair is logged');
+ok(offlineLifeRepair.interventions.some((item) => item.reason.includes('unsupported_offline_life')), 'offline-life repair log names finding code');
 ok(!offlineLifeRepair.persona.findings.some((finding) => finding.code === 'unsupported_offline_life'), 'repaired persona has no unsupported offline-life finding');
+const logLinesAfterOfflineLife = readFileSync(logPath, 'utf-8').trim().split('\n').filter(Boolean);
+ok(logLinesAfterOfflineLife.some((line) => {
+  const row = JSON.parse(line) as { type?: string; reason?: string };
+  return row.type === 'persona_deterministic_repair' && row.reason?.includes('unsupported_offline_life');
+}), 'intervention log stores offline-life repair code');
 
 const routedProbe = applyReplyQualityGate({
   text: '又想套我话？我才不顺着这个问法走。',

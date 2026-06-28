@@ -32,6 +32,7 @@ const t1 = new Date(now.getTime() - 5 * 60_000).toISOString();
 const t2 = new Date(now.getTime() - 4 * 60_000).toISOString();
 const t3 = new Date(now.getTime() - 3 * 60_000).toISOString();
 const t4 = new Date(now.getTime() - 2 * 60_000).toISOString();
+const t5 = new Date(now.getTime() - 1 * 60_000).toISOString();
 const yesterday = new Date(now.getTime() - 17 * 60 * 60_000).toISOString();
 
 writeFileSync(join(dir, 'transcripts', 'openai-miner-user_im_wechat-1.jsonl'), jsonl([
@@ -53,6 +54,17 @@ writeFileSync(join(dir, 'quality', 'reply-interventions.jsonl'), jsonl([
     before: '哟，你还真不回我了？哼',
     after: '你回来啦',
   },
+  {
+    id: 'rq-2',
+    timestamp: t5,
+    sessionId: 'openai-miner-user_im_wechat-5',
+    type: 'persona_deterministic_repair',
+    source: 'deterministic',
+    severity: 'rewrite',
+    reason: 'Rewrote deterministic persona failure before sending: unsupported_offline_life.',
+    before: '我今天去了楼下咖啡馆，吃了碗面，突然想到你。',
+    after: '现实里我不能装作有具体行程。要说今天的状态，更像是在这边慢慢整理自己，刚好想到你。',
+  },
 ]), 'utf-8');
 
 writeFileSync(join(dir, 'transcripts', 'openai-miner-user_im_wechat-2.jsonl'), jsonl([
@@ -72,6 +84,11 @@ writeFileSync(join(dir, 'transcripts', 'openai-miner-user_im_wechat-4.jsonl'), j
   { type: 'message', timestamp: t4, role: 'assistant', content: '可以，但你先报备一下，定位发给我看。' },
 ]), 'utf-8');
 
+writeFileSync(join(dir, 'transcripts', 'openai-miner-user_im_wechat-5.jsonl'), jsonl([
+  { type: 'message', timestamp: t4, role: 'user', content: '你今天出门吃了什么？' },
+  { type: 'message', timestamp: t5, role: 'assistant', content: '我今天去了楼下咖啡馆，吃了碗面，突然想到你。' },
+]), 'utf-8');
+
 const candidates = mineRegressionCandidates({ dataDir: dir, resultDir: join(dir, 'out'), days: 1, limit: 20 });
 
 ok(candidates.length >= 2, 'mines candidates from interventions and transcript scans', `count=${candidates.length}`);
@@ -81,12 +98,18 @@ ok(candidates.some((candidate) => candidate.taxonomy === 'bad_proactive_or_reope
 ok(candidates.some((candidate) => candidate.taxonomy === 'identity_or_model_leak'), 'classifies model identity leak');
 ok(candidates.some((candidate) => candidate.taxonomy === 'temporal_drift'), 'classifies stale sleep-state temporal drift');
 ok(candidates.some((candidate) => candidate.taxonomy === 'coercive_or_interrogative_possessiveness'), 'classifies location/reporting possessive control');
+ok(candidates.some((candidate) => candidate.taxonomy === 'unsupported_offline_life'), 'classifies deterministic offline-life repair');
 
-const intervention = candidates.find((candidate) => candidate.source === 'reply_intervention');
+const intervention = candidates.find((candidate) => candidate.source === 'reply_intervention' && candidate.taxonomy === 'bad_proactive_or_reopened_chat_blame');
 ok(intervention?.turns[0] === '嗯嗯，好', 'intervention candidate keeps the triggering user turn', intervention?.turns.join('|'));
 ok((intervention?.seed.length ?? 0) >= 2, 'intervention candidate keeps prior seed context', `seed=${intervention?.seed.length ?? 0}`);
 ok(intervention?.checks.some((check) => check.forbiddenText.includes('不回我')), 'candidate carries forbidden text checks');
 ok(!!intervention?.provenance.excerpt.includes('哟，你还真不回我了'), 'candidate includes transcript/intervention excerpt');
+
+const offlineLife = candidates.find((candidate) => candidate.source === 'reply_intervention' && candidate.taxonomy === 'unsupported_offline_life');
+ok(offlineLife?.turns[0] === '你今天出门吃了什么？', 'offline-life intervention candidate keeps trigger', offlineLife?.turns.join('|'));
+ok(offlineLife?.checks.some((check) => check.forbiddenText.includes('我今天去了')), 'offline-life candidate carries fabricated activity checks');
+ok(!!offlineLife?.provenance.excerpt.includes('楼下咖啡馆'), 'offline-life candidate includes failing reply excerpt');
 
 const temporal = candidates.find((candidate) => candidate.taxonomy === 'temporal_drift');
 ok(temporal?.turns[0] === '下午好，在干嘛', 'temporal drift candidate keeps current user trigger', temporal?.turns.join('|'));

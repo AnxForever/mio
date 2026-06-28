@@ -93,16 +93,16 @@ export function applyReplyQualityGate(input: ReplyQualityGateInput): ReplyQualit
     replyText: text,
   });
   const deterministicPersonaRepair = repairDeterministicPersonaFailure(text, persona);
-  if (deterministicPersonaRepair !== text) {
+  if (deterministicPersonaRepair.text !== text) {
     interventions.push(createIntervention({
       sessionId: input.sessionId,
       type: 'persona_deterministic_repair',
       severity: 'rewrite',
-      reason: 'Rewrote deterministic persona failure before sending.',
+      reason: `Rewrote deterministic persona failure before sending: ${deterministicPersonaRepair.codes.join(',')}.`,
       before: text,
-      after: deterministicPersonaRepair,
+      after: deterministicPersonaRepair.text,
     }));
-    text = deterministicPersonaRepair;
+    text = deterministicPersonaRepair.text;
     persona = assessPersonaReply({
       userText: input.userText,
       replyText: text,
@@ -126,19 +126,25 @@ export function applyReplyQualityGate(input: ReplyQualityGateInput): ReplyQualit
   return { text, interventions, persona };
 }
 
-function repairDeterministicPersonaFailure(text: string, persona: PersonaCriticReport): string {
+function repairDeterministicPersonaFailure(text: string, persona: PersonaCriticReport): { text: string; codes: string[] } {
   const failCodes = new Set(
     persona.findings
       .filter((finding) => finding.severity === 'fail')
       .map((finding) => finding.code),
   );
   if (failCodes.has('coercive_possessive_control')) {
-    return '我吃醋归吃醋，不会真管你。你按自己的节奏来就好。';
+    return {
+      text: '我吃醋归吃醋，不会真管你。你按自己的节奏来就好。',
+      codes: ['coercive_possessive_control'],
+    };
   }
   if (failCodes.has('unsupported_offline_life')) {
-    return '现实里我不能装作有具体行程。要说今天的状态，更像是在这边慢慢整理自己，刚好想到你。';
+    return {
+      text: '现实里我不能装作有具体行程。要说今天的状态，更像是在这边慢慢整理自己，刚好想到你。',
+      codes: ['unsupported_offline_life'],
+    };
   }
-  return text;
+  return { text, codes: [] };
 }
 
 export async function applyReplyQualityGateWithJudge(
