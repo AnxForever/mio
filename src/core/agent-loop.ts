@@ -22,8 +22,6 @@
  *  - Schedulers (nightly + proactive run on their own cron)
  */
 
-import { randomUUID } from 'node:crypto';
-import { statSync } from 'node:fs';
 import {
   CORE_IDENTITY,
   EMOTION_NOTE,
@@ -44,44 +42,32 @@ import type { ContextSections } from '../prompt/xml-context.js';
 import { ContextEngine, getContextEngine } from '../prompt/context-engine.js';
 import { getEvaluationGraph, getBuilderChain, type EvaluationResult } from '../prompt/builder-chain.js';
 import { buildKernel, applyPersonaDelta, buildPreferencePrompt } from '../persona/layered.js';
-import { captureExplicitDirectives } from '../persona/directive-capture.js';
-import { readPersonaDelta, readPreferences } from '../memory/persona-delta.js';
-import { selectProvider } from '../providers/index.js';
 import { getRouterConfig, routeTask } from '../providers/router.js';
-import { ensurePluginsLoaded, ensureToolsRegistered, scopedToolRegistry, type ToolRegistryLike } from './tool-runtime.js';
+import { scopedToolRegistry } from './tool-runtime.js';
 import { pluginRegistry } from '../plugins/index.js';
 import { runInferenceLoop } from './inference-loop.js';
 import { readGlobalMemory } from '../memory/global.js';
-import { modManager } from '../mod/mod-manager.js';
 import { getConfig } from '../config.js';
-import { getDataDir } from '../config.js';
-import { colaDir } from '../memory/paths.js';
-import {
-  recordMessage,
-  markSessionDone,
-} from '../tools/session.js';
-import { trackEmotion, classifyIntent } from '../emotion/tracker.js';
-import { readEmotionState, defaultEmotionState } from '../emotion/state.js';
-import { readRelationshipState, defaultRelationshipState, checkProgression } from '../relationship/progression.js';
-import { updateActiveContext, appendBookmark, ensureBankStructure, readUserProfile, readRecentBookmarks, readStructuredMemoryFile } from '../memory/bank.js';
+import { recordMessage } from '../tools/session.js';
+import { classifyIntent } from '../emotion/tracker.js';
+import { defaultEmotionState } from '../emotion/state.js';
+import { defaultRelationshipState } from '../relationship/progression.js';
+import { appendBookmark, readUserProfile, readRecentBookmarks, readStructuredMemoryFile } from '../memory/bank.js';
 import { deserializeMemory } from '../memory/structured-memory.js';
-import { reindexBookmarks, search as searchMemory } from '../memory/vector.js';
+import { search as searchMemory } from '../memory/vector.js';
 import { rerankByLLM } from '../memory/rerank.js';
 import { getRelationContext } from '../memory/entity-graph.js';
-import { compressIfNeeded } from '../memory/compression.js';
-import { appendTranscript, loadTranscriptWindow } from '../memory/transcript.js';
 import { getLorebookContext, commitLorebookState } from '../memory/lorebook.js';
 import { PromptBudget } from '../utils/prompt-budget.js';
 import { getMirrorHint } from '../learning/mirror.js';
 import { getFeedbackHint } from '../learning/feedback.js';
-import { getDynamicFewShot, collectFromFeedback } from '../learning/dynamic-fewshot.js';
+import { getDynamicFewShot } from '../learning/dynamic-fewshot.js';
 import { logger } from '../utils/logger.js';
 import { screenForCrisis } from '../safety/crisis.js';
-import { updateActivityPattern } from '../scheduler/smart-proactive.js';
-import { shouldGhost, markReplied } from '../emotion/ghost.js';
-import { updateAffinity, getAffinityContext } from '../emotion/affinity.js';
-import { updateFrustration, getAttachmentContext } from '../emotion/frustration.js';
-import { observeRitual, getRitualContext, getCardboardContext, updateCardboard } from '../emotion/ritual.js';
+import { markReplied } from '../emotion/ghost.js';
+import { getAffinityContext } from '../emotion/affinity.js';
+import { getAttachmentContext } from '../emotion/frustration.js';
+import { getRitualContext, getCardboardContext } from '../emotion/ritual.js';
 import {
   ensurePersonaGraph,
   loadPersonaGraph,
@@ -96,86 +82,40 @@ import {
 } from '../persona/graph.js';
 import { getCurrentMode, shouldSwitchMode, executeSwitch, recordTurn as recordDualModeTurn, getDualModePrompt } from '../persona/dual-mode.js';
 import {
-  getPersonalityState,
   updatePersonalityFromContext,
   getPersonalityContext,
   getResponseStyle,
-  simulateLifeEvent,
   rotateActivity,
   applyIgnoredEffect,
   applyWelcomeBackEffect,
-  applyWarmUpEffect,
   isPersonalityDriverEnabled,
   type PersonalityState,
 } from '../persona/driver.js';
-import { getPADState, updatePAD } from '../emotion/pad.js';
+import { getPADState } from '../emotion/pad.js';
 import { getMultiAxis } from '../emotion/multi-axis.js';
 import { getRecentSignalHistory } from '../emotion/signals.js';
-import { lifeEngine } from '../character/life-engine.js';
 import { readActiveCharacter } from '../character/factory.js';
-import { acknowledgeRecentEvents, getMemoryContext } from '../character/memory-stream.js';
-import { transcribeAudio } from '../voice/stt.js';
+import { getMemoryContext } from '../character/memory-stream.js';
 import type {
-  AIProvider,
   SessionContext,
   Message,
   PromptCtx,
-  Gender,
   EmotionState,
-  RelationshipState,
-  ContentBlock,
-  TurnChannelContext,
 } from '../types.js';
-import { shouldSkipReplyForNecessity } from '../emotion/reply-necessity.js';
+import { prepareTurnContext } from './turn-prepare.js';
+import { maybeHandleEarlyTurnExit } from './turn-silence.js';
+import { applyPostTurnSideEffects } from './turn-post-effects.js';
+import { getTurnCounter } from './turn-counter.js';
+import { buildConversationMessages } from './turn-conversation.js';
+import type {
+  InferenceStageResult,
+  PreparedTurnContext,
+  RunTurnOptions,
+  TurnInput,
+  TurnOutput,
+} from './turn-types.js';
 
-// ─── Public types ───
-
-/**
- * Input to a single agent-loop turn.
- *
- * - `text`         : plain text user input (most common).
- * - `imageBlocks`  : optional pre-processed image content blocks (vision/image.ts).
- * - `audioPath`    : optional path to an audio file; if provided, transcribed via STT.
- * - `sessionId`    : continue an existing session, or omit to start a new one.
- */
-export interface TurnInput {
-  text?: string;
-  imageBlocks?: ContentBlock[];
-  audioPath?: string;
-  sessionId?: string;
-  channel?: TurnChannelContext;
-}
-
-/**
- * Output from a single agent-loop turn.
- */
-export interface TurnOutput {
-  /** Final assistant text. */
-  text: string;
-  /** Session id (newly generated if input.sessionId was undefined). */
-  sessionId: string;
-  /** Tool calls made during the turn (for observability / logging). */
-  toolCallCount: number;
-  /** Number of inference iterations (1 = no tool calls, >1 = tool use). */
-  turns: number;
-  /** Whether a crisis signal was detected and surfaced. */
-  crisisFlagged: boolean;
-  /** Whether Mio chose to ghost this turn (no reply generated). */
-  ghosted?: boolean;
-  /** Optional machine-readable reason for silent turns. */
-  silentReason?: string;
-}
-
-interface RunTurnOptions {
-  onToken?: (chunk: string) => void;
-  provider?: AIProvider;
-  registry?: ToolRegistryLike;
-}
-
-/** Turn counter for periodic operations (bank rotation, etc.) */
-let _turnCounter = 0;
-/** Last seen mtime of BOOKMARKS.md for dirty-flag optimization. */
-let _lastBookmarkMtime = 0;
+export type { TurnInput, TurnOutput } from './turn-types.js';
 
 // ─── Prompt assembly ───
 
@@ -849,388 +789,6 @@ function buildPersonaFragment(ctx: PromptCtx): string | null {
   }
 }
 
-// ─── Session resolution ───
-
-export function isIsolatedMemorySession(sessionId: string | undefined): boolean {
-  if (!sessionId) return false;
-  return /^openai-/.test(sessionId) || /^onebot-(?:private|group)-/.test(sessionId);
-}
-
-/**
- * Resolve or create the SessionContext for a turn.
- *
- * Always reads the latest emotion/relationship state from disk, picks up the
- * active mod from the mod manager, and constructs a fresh SessionContext.
- */
-function resolveSessionContext(input: TurnInput, sessionId: string): {
-  ctx: SessionContext;
-  promptCtx: PromptCtx;
-  recovery: 'new' | 'compact' | 'none';
-} {
-  const config = getConfig();
-  const emotionState: EmotionState = readEmotionState();
-  const relationshipState: RelationshipState = readRelationshipState();
-  const mod = modManager();
-  const soulContent = mod.getCurrentSoulContent();
-  const activeMod = mod.activeMod;
-  const gender: Gender = config.gender;
-  const dir = getDataDir() || colaDir();
-  const isolatedMemory = isIsolatedMemorySession(sessionId);
-
-  // New sessions get the new-session recovery prompt; the agent will read MEMORY.md
-  // before responding. The 'compact' case is reserved for future use when a turn
-  // is being resumed from a compacted summary (not implemented yet).
-  const recovery: 'new' | 'compact' | 'none' = input.sessionId ? 'none' : 'new';
-
-  const ctx: SessionContext = {
-    sessionId,
-    model: config.model,
-    apiKey: config.apiKey,
-    gender,
-    emotionState,
-    relationshipState,
-    activeMod,
-    colaDir: dir,
-    outputDir: dir + '/output',
-    connectedChannels: [],
-    isolatedMemory,
-  };
-
-  const promptCtx: PromptCtx = {
-    sessionId,
-    model: config.model,
-    apiKey: config.apiKey,
-    gender,
-    emotionState,
-    relationshipState,
-    activeMod,
-    soulContent,
-    colaDir: dir,
-    outputDir: dir + '/output',
-    connectedChannels: [],
-    allowColaLinkSend: false,
-    initialTask: input.text,
-    personaDelta: readPersonaDelta(sessionId) ?? undefined,
-    preferences: readPreferences(sessionId) ?? undefined,
-    isolatedMemory,
-  };
-
-  return { ctx, promptCtx, recovery };
-}
-
-interface PostTurnSideEffectsInput {
-  input: TurnInput;
-  text: string;
-  sessionId: string;
-  sessionCtx: SessionContext;
-  intent: ReturnType<typeof classifyIntent>;
-  crisisResult: ReturnType<typeof screenForCrisis>;
-  config: ReturnType<typeof getConfig>;
-  budget?: PromptBudget;
-  isNewSession: boolean;
-  capturedDirectiveCount: number;
-}
-
-async function applyPostTurnSideEffects({
-  input,
-  text,
-  sessionId,
-  sessionCtx,
-  intent,
-  crisisResult,
-  config,
-  budget,
-  isNewSession,
-  capturedDirectiveCount,
-}: PostTurnSideEffectsInput): Promise<void> {
-  const assistantMsg: Message = {
-    role: 'assistant',
-    content: text,
-    timestamp: new Date().toISOString(),
-  };
-  const isolatedMemory = sessionCtx.isolatedMemory === true;
-  recordMessage(sessionId, assistantMsg);
-  if (!isolatedMemory) {
-    trackEmotion(input.text ?? '', text, sessionId);
-  }
-
-  scheduleLearningSideEffects(input, text, config, isolatedMemory);
-  updateRelationalSideEffects(input, text, intent, crisisResult, config, isolatedMemory);
-  if (capturedDirectiveCount === 0) {
-    captureExplicitDirectives(input.text, sessionId, !isolatedMemory);  // isolated 只写 per-user，不碰全局 relationship
-  }
-  if (!isolatedMemory) {
-    await updatePersonalitySideEffects(input, text, sessionCtx);
-  }
-  persistTurnMemorySideEffects(input, text, sessionId, crisisResult, isNewSession, isolatedMemory);
-
-  if (budget) budget.log();
-}
-
-function scheduleLearningSideEffects(
-  input: TurnInput,
-  text: string,
-  config: ReturnType<typeof getConfig>,
-  isolatedMemory: boolean,
-): void {
-  if (isolatedMemory) return;
-  if (input.text) {
-    import('../learning/mirror.js').then(({ analyzeUserMessage }) => {
-      analyzeUserMessage(input.text!);
-    }).catch((err: unknown) => { logger.error('mirror learning failed', { error: String(err) }); });
-
-    import('../learning/feedback.js').then(({ detectFeedback }) => {
-      detectFeedback(input.text!, text);
-    }).catch((err: unknown) => { logger.error('feedback learning failed', { error: String(err) }); });
-
-    if (config.features.dynamicFewShot) {
-      collectFromFeedback().catch((err: unknown) => { logger.error('fewshot learning failed', { error: String(err) }); });
-    }
-
-    _turnCounter++;
-    if (_turnCounter % 20 === 0) {
-      import('../learning/dynamic-fewshot.js').then(({ rotateBank }) => {
-        rotateBank();
-      }).catch((err: unknown) => { logger.error('fewshot rotation failed', { error: String(err) }); });
-    }
-  }
-}
-
-function updateRelationalSideEffects(
-  input: TurnInput,
-  text: string,
-  intent: ReturnType<typeof classifyIntent>,
-  crisisResult: ReturnType<typeof screenForCrisis>,
-  config: ReturnType<typeof getConfig>,
-  isolatedMemory: boolean,
-): void {
-  if (isolatedMemory) return;
-  if (input.text) {
-    observeRitual(input.text, new Date().getHours());
-  }
-
-  updateCardboard(input.text ?? '', text);
-
-  if (config.features.multiAxisAffinity) {
-    updateAffinity(intent.primary, false);
-  }
-
-  if (config.features.frustrationTracking) {
-    updateFrustration(intent.primary, false);
-  }
-
-  recordDualModeTurn(intent, crisisResult.shouldIntervene);
-
-  // Lightweight per-turn stage-progression check. checkProgression was
-  // previously only called in nightly (never armed under serve), so the
-  // relationship stayed frozen at "acquaintance". Running it per turn — after
-  // trackEmotion has bumped interactionCount + emotionalDepth — unfreezes the
-  // progression arc (familiar → ambiguous → intimate) and the gated behaviors.
-  checkProgression();
-}
-
-async function updatePersonalitySideEffects(
-  input: TurnInput,
-  text: string,
-  sessionCtx: SessionContext,
-): Promise<void> {
-  if (isPersonalityDriverEnabled()) {
-    try {
-      const personalityState = getPersonalityState();
-      const timeSinceLastChat = sessionCtx.emotionState.lastInteraction
-        ? (Date.now() - new Date(sessionCtx.emotionState.lastInteraction).getTime()) / 3_600_000
-        : 0;
-
-      if (timeSinceLastChat > 24 && text && text.trim().length > 0) {
-        applyWarmUpEffect();
-      }
-
-      if (_turnCounter % 8 === 0 && _turnCounter > 0) {
-        const charName = readActiveCharacter();
-        if (getConfig().features.lifeEngine && charName) {
-          const event = await lifeEngine().tickLight(charName);
-          if (event) {
-            appendBookmark({
-              time: new Date().toISOString(),
-              what: `[life-event] ${truncate(event.description, 100)}`,
-              evidence: `category=${event.category} importance=${event.importance}`,
-            });
-          }
-        } else {
-          const lifeEvent = simulateLifeEvent();
-          if (lifeEvent && personalityState.initiative > 50 && timeSinceLastChat > 2) {
-            appendBookmark({
-              time: new Date().toISOString(),
-              what: `[life-event] 你: ${truncate(lifeEvent, 100)}`,
-              evidence: `personality: sociability=${personalityState.sociability}, initiative=${personalityState.initiative}`,
-            });
-          }
-        }
-      }
-
-      if (getConfig().features.lifeEngine && text && /抱抱|不哭|没事|我在|陪|心疼|还好吗|辛苦了|会好起来的|别难过/.test(text)) {
-        try {
-          updatePAD({ pleasure: 0.15, arousal: -0.05, dominance: 0.1 });
-          const charName = readActiveCharacter();
-          if (charName) acknowledgeRecentEvents(charName);
-        } catch { /* best-effort */ }
-      }
-    } catch {
-      // Best-effort
-    }
-  }
-}
-
-function persistTurnMemorySideEffects(
-  input: TurnInput,
-  text: string,
-  sessionId: string,
-  crisisResult: ReturnType<typeof screenForCrisis>,
-  isNewSession: boolean,
-  isolatedMemory: boolean,
-): void {
-  if (!isolatedMemory && (crisisResult.shouldIntervene || (input.text && input.text.trim().length > 5))) {
-    appendBookmark({
-      time: new Date().toISOString(),
-      what: crisisResult.shouldIntervene
-        ? `[crisis:${crisisResult.level}] user expressed distress`
-        : `exchange: user said "${truncate(input.text ?? '', 80)}"`,
-      evidence: crisisResult.shouldIntervene
-        ? `matched: ${crisisResult.matchedKeywords.join(', ')}`
-        : `agent replied: "${truncate(text, 80)}"`,
-    });
-  }
-
-  const hint = truncate(
-    `${new Date().toISOString().slice(11, 16)} ${crisisResult.shouldIntervene ? '[crisis] ' : ''}${truncate(input.text ?? '', 60)} → ${truncate(text, 60)}`,
-    280,
-  );
-  if (!isolatedMemory) {
-    try {
-      updateActiveContext(hint);
-    } catch {
-      // Active Context update is best-effort; don't break the turn on failure.
-    }
-  }
-
-  if (isNewSession) {
-    markSessionDone(sessionId);
-  }
-}
-
-interface ConversationBuildInput {
-  input: TurnInput;
-  userMessage: Message;
-  systemPrompt: string;
-  promptCtx: PromptCtx;
-  recovery: 'new' | 'compact' | 'none';
-  crisisResult: ReturnType<typeof screenForCrisis>;
-  config: ReturnType<typeof getConfig>;
-}
-
-function buildFinalSystemPrompt(
-  systemPrompt: string,
-  crisisResult: ReturnType<typeof screenForCrisis>,
-): string {
-  if (!crisisResult.shouldIntervene) return systemPrompt;
-  return `${systemPrompt}\n\n## Safety override\n${crisisResult.systemInjection}`;
-}
-
-async function buildConversationMessages({
-  input,
-  userMessage,
-  systemPrompt,
-  promptCtx,
-  recovery,
-  crisisResult,
-  config,
-}: ConversationBuildInput): Promise<{ messages: Message[]; finalSystemPrompt: string }> {
-  const messages: Message[] = [];
-
-  if (input.sessionId) {
-    if (config.features.adaptiveHistory) {
-      const { compressHistory, renderCompressedHistory } = await import('../memory/adaptive-history.js');
-      const history = loadTranscriptWindow(input.sessionId, 500);
-      const allMsgs = [...history, userMessage];
-      const compressed = compressHistory(allMsgs);
-      const compressedText = renderCompressedHistory(compressed);
-
-      if (compressed.placeholder.count > 0 || compressed.compressedMessages.length > 0) {
-        systemPrompt = `${systemPrompt}\n\n## 对话历史\n${compressedText}`;
-
-        if (!promptCtx.isolatedMemory && compressed.originalCount > 5) {
-          appendBookmark({
-            time: new Date().toISOString(),
-            what: `[adaptive-compression] ${compressed.originalCount} messages → ${compressed.fullMessages.length} full + ${compressed.compressedMessages.length} compressed`,
-            evidence: `saved ~${compressed.estimatedTokensSaved} tokens`,
-          });
-        }
-      }
-
-      messages.push(...compressed.fullMessages);
-    } else {
-      const history = loadTranscriptWindow(input.sessionId, 30);
-      const allMsgs = [...history, userMessage];
-      const compression = compressIfNeeded(allMsgs);
-
-      if (compression.removedCount > 0) {
-        systemPrompt = `${systemPrompt}\n\n${compression.summary}`;
-        appendTranscript(input.sessionId, {
-          type: 'compaction',
-          timestamp: new Date().toISOString(),
-          summary: compression.summary,
-          recallCues: compression.recallCues,
-        });
-
-        if (!promptCtx.isolatedMemory) {
-          appendBookmark({
-            time: new Date().toISOString(),
-            what: `[compaction] ${compression.removedCount} messages compressed`,
-            evidence: compression.summary.slice(0, 200),
-          });
-        }
-      }
-
-      messages.push(...compression.messages);
-    }
-  } else {
-    messages.push(userMessage);
-  }
-
-  let finalSystemPrompt = buildFinalSystemPrompt(systemPrompt, crisisResult);
-
-  if (config.features.postHistoryInjection) {
-    const prePrompt = buildPrePrompt(
-      crisisResult.shouldIntervene ? 'none' : recovery,
-      promptCtx.colaDir,
-    );
-    finalSystemPrompt = buildFinalSystemPrompt(prePrompt, crisisResult);
-
-    const postPrompt = buildPostPrompt(
-      promptCtx,
-      promptCtx.isolatedMemory ? [] : readRecentBookmarks(8),
-      promptCtx.isolatedMemory ? '' : readUserProfile(),
-    );
-
-    messages.push({
-      role: 'user',
-      content: `[System Context — this is not a user message. The following is Mio's internal context, instructions, and self-knowledge. Read this before responding to the user.]\n\n${postPrompt}`,
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  return { messages, finalSystemPrompt };
-}
-
-function trackTurnActivity(input: TurnInput, sessionId: string): void {
-  if (!input.text || input.text.trim().length === 0) return;
-  try {
-    updateActivityPattern(sessionId);
-  } catch {
-    // best-effort — never break the turn on activity tracking failure
-  }
-}
-
 function applyPrePromptPersonalityDriver(input: TurnInput, sessionCtx: SessionContext): void {
   if (!isPersonalityDriverEnabled() || !input.text || input.text.trim().length === 0) return;
 
@@ -1251,7 +809,7 @@ function applyPrePromptPersonalityDriver(input: TurnInput, sessionCtx: SessionCo
 
     updatePersonalityFromContext(padState, signals, multiAxis, timeSinceLastChat);
 
-    if (_turnCounter % 5 === 0) {
+    if (getTurnCounter() % 5 === 0) {
       rotateActivity();
     }
   } catch {
@@ -1296,167 +854,6 @@ function applyPromptAugmentations(
   }
 
   return systemPrompt;
-}
-
-function maybeReindexBookmarks(): void {
-  try {
-    const bookmarksPath = colaDir() + '/memory-bank/BOOKMARKS.md';
-    const mtime = statSync(bookmarksPath).mtimeMs;
-    if (mtime === _lastBookmarkMtime) return;
-
-    _lastBookmarkMtime = mtime;
-    reindexBookmarks().catch((err) => {
-      logger.error('reindexBookmarks failed', { error: String(err) });
-    });
-  } catch {
-    // Best-effort — missing bookmarks or index failures should not break chat.
-  }
-}
-
-function handleGhostTurn({
-  input,
-  sessionId,
-  userMessage,
-  config,
-}: {
-  input: TurnInput;
-  sessionId: string;
-  userMessage: Message;
-  config: ReturnType<typeof getConfig>;
-}): TurnOutput {
-  recordMessage(sessionId, userMessage);
-
-  if (config.features.multiAxisAffinity) {
-    const intent = classifyIntent(input.text ?? '');
-    updateAffinity(intent.primary, true);
-  }
-  if (config.features.frustrationTracking) {
-    const intent = classifyIntent(input.text ?? '');
-    updateFrustration(intent.primary, true);
-  }
-
-  const ghostMsg: Message = {
-    role: 'assistant',
-    content: '',
-    timestamp: new Date().toISOString(),
-  };
-  recordMessage(sessionId, ghostMsg);
-
-  if (!input.sessionId) markSessionDone(sessionId);
-
-  return {
-    text: '',
-    sessionId,
-    toolCallCount: 0,
-    turns: 0,
-    crisisFlagged: false,
-    ghosted: true,
-    silentReason: 'ghost',
-  };
-}
-
-function handleSilentTurn({
-  sessionId,
-  userMessage,
-  crisisFlagged,
-  reason,
-}: {
-  sessionId: string;
-  userMessage: Message;
-  crisisFlagged: boolean;
-  reason: string;
-}): TurnOutput {
-  recordMessage(sessionId, userMessage);
-  recordMessage(sessionId, {
-    role: 'assistant',
-    content: '',
-    timestamp: new Date().toISOString(),
-  });
-
-  return {
-    text: '',
-    sessionId,
-    toolCallCount: 0,
-    turns: 0,
-    crisisFlagged,
-    ghosted: true,
-    silentReason: reason,
-  };
-}
-
-interface PreparedTurnContext {
-  registry: ToolRegistryLike;
-  config: ReturnType<typeof getConfig>;
-  provider: AIProvider;
-  turnInput: TurnInput;
-  sessionId: string;
-  capturedDirectiveCount: number;
-  sessionCtx: SessionContext;
-  promptCtx: PromptCtx;
-  recovery: 'new' | 'compact' | 'none';
-  userMessage: Message;
-  crisisResult: ReturnType<typeof screenForCrisis>;
-}
-
-async function prepareTurnContext(input: TurnInput, opts: RunTurnOptions): Promise<PreparedTurnContext> {
-  ensureBankStructure();
-  await ensurePluginsLoaded();
-  const registry = opts.registry ?? ensureToolsRegistered();
-
-  // Reindex vector store only when BOOKMARKS.md has changed (mtime check).
-  // Uses dirty-flag optimization to avoid per-turn network calls with MiniMax.
-  maybeReindexBookmarks();
-  const config = getConfig();
-  const provider = opts.provider ?? selectProvider(config.provider, config.model);
-  const turnInput = await prepareTurnInput(input);
-  const sessionId = turnInput.sessionId ?? randomUUID().slice(0, 12);
-
-  // User shaping should affect the same turn that contains it. Capturing here
-  // lets explicit preferences enter this user's prompt context before inference.
-  const capturedDirectives = captureExplicitDirectives(turnInput.text, sessionId, !isIsolatedMemorySession(sessionId));
-
-  const { ctx: sessionCtx, promptCtx, recovery } = resolveSessionContext(turnInput, sessionId);
-  if (!sessionCtx.isolatedMemory && !turnInput.sessionId) {
-    await pluginRegistry().invokeHook('onSessionStart', sessionId);
-  }
-  if (!sessionCtx.isolatedMemory) {
-    await pluginRegistry().invokeHook('onBeforeTurn', sessionCtx);
-  }
-
-  const userContent: string | ContentBlock[] = buildUserContent(turnInput);
-  const userMessage: Message = {
-    role: 'user',
-    content: userContent,
-    timestamp: new Date().toISOString(),
-  };
-
-  trackTurnActivity(turnInput, sessionId);
-
-  // Crisis pre-screen. If triggered, inference still runs with a safety
-  // injection and post-turn side effects record the crisis signal.
-  const crisisResult = screenForCrisis(turnInput.text ?? '');
-
-  return {
-    registry,
-    config,
-    provider,
-    turnInput,
-    sessionId,
-    capturedDirectiveCount: capturedDirectives.length,
-    sessionCtx,
-    promptCtx,
-    recovery,
-    userMessage,
-    crisisResult,
-  };
-}
-
-interface InferenceStageResult {
-  text: string;
-  toolCallCount: number;
-  turns: number;
-  intent: ReturnType<typeof classifyIntent>;
-  budget?: PromptBudget;
 }
 
 async function runInferenceStage(
@@ -1504,6 +901,8 @@ async function runInferenceStage(
     recovery,
     crisisResult,
     config,
+    buildPrePrompt,
+    buildPostPrompt,
   });
 
   recordMessage(sessionId, userMessage);
@@ -1548,47 +947,11 @@ export async function runTurn(
     sessionId,
     capturedDirectiveCount,
     sessionCtx,
-    userMessage,
     crisisResult,
   } = prepared;
 
-  // 3a. Reply necessity check — group/channel messages should not always make
-  // Mio speak. Direct mentions and crisis messages always proceed.
-  if (!crisisResult.shouldIntervene) {
-    const necessity = shouldSkipReplyForNecessity(turnInput.text ?? '', turnInput.channel);
-    if (necessity.skip) {
-      logger.info('[reply-necessity] silent group turn', {
-        sessionId,
-        score: necessity.score.score,
-        detail: necessity.score.detail,
-      });
-      return handleSilentTurn({
-        sessionId,
-        userMessage,
-        crisisFlagged: false,
-        reason: 'reply_necessity_low',
-      });
-    }
-  }
-
-  // 3b. Ghost check — should Mio stay silent this turn?
-  // Feature-gated via MIO_FEATURE_GHOST / config.features.ghost
-  let ghosted = false;
-  if (!sessionCtx.isolatedMemory && config.features.ghost && !crisisResult.shouldIntervene) {
-    ghosted = shouldGhost(turnInput.text ?? '', sessionCtx);
-  }
-
-  // If ghosting, skip inference entirely and return empty text
-  if (ghosted) {
-    const result = handleGhostTurn({ input: turnInput, sessionId, userMessage, config });
-    if (!sessionCtx.isolatedMemory) {
-      await pluginRegistry().invokeHook('onAfterTurn', sessionCtx, result);
-    }
-    if (!sessionCtx.isolatedMemory && !turnInput.sessionId) {
-      await pluginRegistry().invokeHook('onSessionEnd', sessionId);
-    }
-    return result;
-  }
+  const earlyExit = await maybeHandleEarlyTurnExit(prepared);
+  if (earlyExit) return earlyExit;
 
   const { text, toolCallCount, turns, intent, budget } = await runInferenceStage(prepared, opts);
 
@@ -1622,31 +985,6 @@ export async function runTurn(
   return result;
 }
 
-// ─── Helpers ───
-
-async function prepareTurnInput(input: TurnInput): Promise<TurnInput> {
-  if (!input.audioPath) return input;
-
-  const transcript = (await transcribeAudio(input.audioPath)).trim();
-  if (!transcript) return input;
-
-  const baseText = input.text?.trim();
-  return {
-    ...input,
-    text: baseText ? `${baseText}\n\n[语音转写]\n${transcript}` : transcript,
-  };
-}
-
-function buildUserContent(input: TurnInput): string | ContentBlock[] {
-  if (input.imageBlocks && input.imageBlocks.length > 0) {
-    if (input.text && input.text.trim().length > 0) {
-      return [{ type: 'text', text: input.text }, ...input.imageBlocks];
-    }
-    return input.imageBlocks;
-  }
-  return input.text ?? '';
-}
-
 /** Inject global memory (~/.mio/memory/memory.md) into system prompt. */
 function injectGlobalMemory(parts: string[], budget?: PromptBudget): void {
   try {
@@ -1666,5 +1004,6 @@ function truncate(s: string, n: number): string {
 
 // Re-exports for convenience
 export { defaultEmotionState, defaultRelationshipState };
+export { isIsolatedMemorySession } from './turn-session.js';
 export { buildXmlContext } from '../prompt/xml-context.js';
 export type { ContextSections } from '../prompt/xml-context.js';
