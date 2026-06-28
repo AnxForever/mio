@@ -59,6 +59,8 @@ interface ReplaySummary {
   passed?: number;
   failed?: number;
   skipped?: number;
+  byRouteTag?: Record<string, number>;
+  failedByRouteTag?: Record<string, number>;
 }
 
 const __filename = fileURLToPath(import.meta.url);
@@ -226,6 +228,8 @@ export function summarizeCompanionLoop(resultDir: string, stepResults: StepResul
   steps: StepResult[];
   gates: Record<string, ReplaySummary>;
   totals: { total: number; passed: number; failed: number; skipped: number };
+  routeTags: Record<string, number>;
+  failedRouteTags: Record<string, number>;
 } {
   const gates = {
     actorReplay: readReplaySummary(join(resultDir, 'actor-replay', 'summary.json')),
@@ -242,6 +246,8 @@ export function summarizeCompanionLoop(resultDir: string, stepResults: StepResul
     { total: 0, passed: 0, failed: 0, skipped: 0 },
   );
   const ok = stepResults.every((step) => step.ok) && totals.failed === 0;
+  const routeTags = mergeCountMaps(Object.values(gates).map((gate) => gate.byRouteTag ?? {}));
+  const failedRouteTags = mergeCountMaps(Object.values(gates).map((gate) => gate.failedByRouteTag ?? {}));
 
   return {
     ok,
@@ -249,6 +255,8 @@ export function summarizeCompanionLoop(resultDir: string, stepResults: StepResul
     steps: stepResults,
     gates,
     totals,
+    routeTags,
+    failedRouteTags,
   };
 }
 
@@ -291,6 +299,14 @@ function renderMarkdown(summary: ReturnType<typeof summarizeCompanionLoop>): str
     `- failed: ${summary.totals.failed}`,
     `- skipped: ${summary.totals.skipped}`,
     '',
+    '## Route Tags',
+    '',
+    ...renderCountMap(summary.routeTags, 'No route-tag data available.'),
+    '',
+    '## Failed Route Tags',
+    '',
+    ...renderCountMap(summary.failedRouteTags, 'No failed route-tag data.'),
+    '',
     '## Steps',
     '',
   ];
@@ -318,10 +334,34 @@ function readReplaySummary(path: string): ReplaySummary {
       passed: asNumber(parsed.passed),
       failed: asNumber(parsed.failed),
       skipped: asNumber(parsed.skipped),
+      byRouteTag: asCountMap(parsed.byRouteTag),
+      failedByRouteTag: asCountMap(parsed.failedByRouteTag),
     };
   } catch {
     return {};
   }
+}
+
+function asCountMap(value: unknown): Record<string, number> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const out: Record<string, number> = {};
+  for (const [key, count] of Object.entries(value)) {
+    if (typeof count === 'number' && Number.isFinite(count)) out[key] = count;
+  }
+  return out;
+}
+
+function mergeCountMaps(maps: Array<Record<string, number>>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const map of maps) {
+    for (const [key, count] of Object.entries(map)) out[key] = (out[key] ?? 0) + count;
+  }
+  return out;
+}
+
+function renderCountMap(map: Record<string, number>, empty: string): string[] {
+  const entries = Object.entries(map).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  return entries.length > 0 ? entries.map(([key, count]) => `- ${key}: ${count}`) : [`- ${empty}`];
 }
 
 function asNumber(value: unknown): number | undefined {

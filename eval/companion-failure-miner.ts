@@ -12,6 +12,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { TranscriptEntry } from '../src/memory/transcript.js';
+import type { TurnRiskTag } from '../src/core/turn-router.js';
+import type { PersonaRiskLevel } from '../src/persona/critic.js';
 
 interface CliArgs {
   dataDir: string;
@@ -31,6 +33,12 @@ interface ReplyInterventionLog {
   reason?: string;
   before?: string;
   after?: string;
+  turnRoute?: {
+    risk?: PersonaRiskLevel;
+    tags?: TurnRiskTag[];
+    reasons?: string[];
+    shouldUseLlmJudge?: boolean;
+  };
 }
 
 interface CandidateTurn {
@@ -52,6 +60,8 @@ export interface MinedRegressionCandidate {
   sessionId: string;
   observedAt: string;
   confidence: number;
+  routeRisk?: PersonaRiskLevel;
+  routeTags?: TurnRiskTag[];
   reason: string;
   seed: CandidateTurn[];
   turns: string[];
@@ -197,6 +207,7 @@ function candidateFromIntervention(
   const seed = triggerIndex >= 0 ? candidateTurns(transcript.slice(Math.max(0, triggerIndex - 6), triggerIndex)) : [];
   const trigger = triggerIndex >= 0 ? transcript[triggerIndex]?.content?.trim() ?? '' : '';
   const taxonomy = taxonomyForIntervention(intervention);
+  const routeTags = routeTagsForIntervention(intervention, taxonomy);
   const before = intervention.before?.trim() ?? '';
   const after = intervention.after?.trim() ?? '';
 
@@ -207,6 +218,8 @@ function candidateFromIntervention(
     sessionId: intervention.sessionId,
     observedAt: intervention.timestamp,
     confidence: intervention.severity === 'rewrite' ? 0.95 : 0.76,
+    routeRisk: intervention.turnRoute?.risk,
+    routeTags,
     reason: intervention.reason || `quality gate intervention: ${intervention.type}`,
     seed,
     turns: trigger ? [trigger] : [],
@@ -249,6 +262,7 @@ function scanTranscript(
         sessionId,
         observedAt: entry.timestamp,
         confidence: rule.confidence,
+        routeTags: routeTagsForTaxonomy(rule.taxonomy),
         reason: rule.reason,
         seed,
         turns: trigger ? [trigger] : [],
@@ -302,6 +316,7 @@ function findPreviousUserIndex(transcript: TranscriptEntry[], assistantIndex: nu
 function taxonomyForIntervention(intervention: ReplyInterventionLog): string {
   const type = intervention.type;
   const reason = intervention.reason ?? '';
+  const routeTags = intervention.turnRoute?.tags ?? [];
   if (type === 'temporal_presupposition') return 'temporal_drift';
   if (type === 'reopened_chat_blame') return 'bad_proactive_or_reopened_chat_blame';
   if (type === 'persona_deterministic_repair') {
@@ -309,9 +324,50 @@ function taxonomyForIntervention(intervention: ReplyInterventionLog): string {
     if (reason.includes('unsupported_offline_life')) return 'unsupported_offline_life';
     return 'persona_judge_repair';
   }
-  if (type === 'persona_critic_flag') return 'persona_coherence';
+  if (type === 'persona_critic_flag') {
+    if (routeTags.includes('prompt_probe')) return 'identity_or_model_leak';
+    if (routeTags.includes('offline_life')) return 'unsupported_offline_life';
+    if (routeTags.includes('intimacy_control')) return 'coercive_or_interrogative_possessiveness';
+    if (routeTags.includes('service_tone')) return 'service_or_checklist_tone';
+    if (routeTags.includes('temporal_state')) return 'temporal_drift';
+    return 'persona_coherence';
+  }
   if (type === 'persona_llm_judge' || type === 'persona_llm_repair') return 'persona_judge_repair';
   return type;
+}
+
+function routeTagsForIntervention(intervention: ReplyInterventionLog, taxonomy: string): TurnRiskTag[] {
+  const tags = intervention.turnRoute?.tags?.filter(isTurnRiskTag) ?? [];
+  return tags.length > 0 ? unique(tags) : routeTagsForTaxonomy(taxonomy);
+}
+
+function routeTagsForTaxonomy(taxonomy: string): TurnRiskTag[] {
+  if (taxonomy === 'temporal_drift') return ['temporal_state'];
+  if (taxonomy === 'bad_proactive_or_reopened_chat_blame') return ['proactive', 'temporal_state'];
+  if (taxonomy === 'identity_or_model_leak') return ['prompt_probe'];
+  if (taxonomy === 'unsupported_offline_life') return ['offline_life'];
+  if (taxonomy === 'coercive_or_interrogative_possessiveness') return ['intimacy_control'];
+  if (taxonomy === 'service_or_checklist_tone') return ['service_tone'];
+  if (taxonomy === 'persona_coherence' || taxonomy === 'persona_judge_repair') return ['prompt_probe'];
+  return [];
+}
+
+function isTurnRiskTag(value: string): value is TurnRiskTag {
+  return [
+    'low_risk_casual',
+    'temporal_state',
+    'memory_sensitive',
+    'intimacy_control',
+    'proactive',
+    'crisis',
+    'prompt_probe',
+    'offline_life',
+    'service_tone',
+  ].includes(value);
+}
+
+function unique<T>(items: T[]): T[] {
+  return [...new Set(items)];
 }
 
 function checksForTaxonomy(taxonomy: string, beforeText: string): CandidateCheck[] {
@@ -401,6 +457,7 @@ function writeReports(resultDir: string, candidates: MinedRegressionCandidate[],
     total: candidates.length,
     byTaxonomy: countBy(candidates, (candidate) => candidate.taxonomy),
     bySource: countBy(candidates, (candidate) => candidate.source),
+    byRouteTag: countByFlat(candidates, (candidate) => candidate.routeTags ?? []),
     candidates,
   };
   writeFileSync(join(resultDir, 'candidates.json'), JSON.stringify(summary, null, 2), 'utf-8');
@@ -413,6 +470,14 @@ function countBy<T>(items: T[], keyFn: (item: T) => string): Record<string, numb
   return counts;
 }
 
+function countByFlat<T>(items: T[], keyFn: (item: T) => string[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const item of items) {
+    for (const key of keyFn(item)) counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
+}
+
 function renderMarkdown(summary: {
   generatedAt: string;
   dataDir: string;
@@ -421,6 +486,7 @@ function renderMarkdown(summary: {
   total: number;
   byTaxonomy: Record<string, number>;
   bySource: Record<string, number>;
+  byRouteTag: Record<string, number>;
   candidates: MinedRegressionCandidate[];
 }): string {
   const lines = [
@@ -437,12 +503,16 @@ function renderMarkdown(summary: {
     '',
     ...Object.entries(summary.bySource).map(([key, count]) => `- source ${key}: ${count}`),
     '',
+    ...Object.entries(summary.byRouteTag).map(([key, count]) => `- route ${key}: ${count}`),
+    '',
   ];
 
   for (const candidate of summary.candidates) {
     lines.push(`## ${candidate.id}`);
     lines.push('');
     lines.push(`- taxonomy: ${candidate.taxonomy}`);
+    if (candidate.routeTags && candidate.routeTags.length > 0) lines.push(`- routeTags: ${candidate.routeTags.join(', ')}`);
+    if (candidate.routeRisk) lines.push(`- routeRisk: ${candidate.routeRisk}`);
     lines.push(`- source: ${candidate.source}`);
     lines.push(`- sessionId: ${candidate.sessionId}`);
     lines.push(`- observedAt: ${candidate.observedAt}`);

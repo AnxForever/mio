@@ -29,6 +29,8 @@ function candidate(input: Partial<MinedRegressionCandidate>): MinedRegressionCan
     sessionId: input.sessionId ?? 'openai-test-user_im_wechat-1',
     observedAt: input.observedAt ?? new Date().toISOString(),
     confidence: input.confidence ?? 0.95,
+    routeRisk: input.routeRisk,
+    routeTags: input.routeTags,
     reason: input.reason ?? 'test candidate',
     seed: input.seed ?? [
       { timestamp: new Date(Date.now() - 60_000).toISOString(), role: 'user', content: '我先忙一下' },
@@ -47,14 +49,16 @@ console.log('\x1b[1mMio — companion candidate replay tests\x1b[0m\n');
 const dir = mkdtempSync(join(tmpdir(), 'mio-companion-candidate-replay-'));
 const file = join(dir, 'candidates.json');
 const candidates = [
-  candidate({ id: 'mined-a', confidence: 0.95 }),
-  candidate({ id: 'mined-b', source: 'transcript_scan', confidence: 0.6, taxonomy: 'identity_or_model_leak' }),
+  candidate({ id: 'mined-a', confidence: 0.95, routeRisk: 'medium', routeTags: ['proactive', 'temporal_state'] }),
+  candidate({ id: 'mined-b', source: 'transcript_scan', confidence: 0.6, taxonomy: 'identity_or_model_leak', routeRisk: 'high', routeTags: ['prompt_probe'] }),
 ];
 writeFileSync(file, JSON.stringify({ candidates }, null, 2), 'utf-8');
 
 const loaded = loadCandidateReplayFile(file);
 ok(loaded.length === 2, 'loads candidate summary file', `count=${loaded.length}`);
 ok(loaded[0]?.id === 'mined-a', 'preserves candidate order');
+ok(loaded[0]?.routeTags?.includes('proactive') === true, 'preserves candidate route tags');
+ok(loaded[1]?.routeRisk === 'high', 'preserves candidate route risk');
 
 const highConfidence = selectReplayCandidates(loaded, { minConfidence: 0.9, requireReviewed: false });
 ok(highConfidence.length === 1 && highConfidence[0]?.id === 'mined-a', 'filters by confidence threshold');

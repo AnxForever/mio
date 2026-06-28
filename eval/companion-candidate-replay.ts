@@ -13,6 +13,8 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { MinedRegressionCandidate } from './companion-failure-miner.ts';
 import type { AIProvider } from '../dist/types.js';
+import type { TurnRiskTag } from '../src/core/turn-router.js';
+import type { PersonaRiskLevel } from '../src/persona/critic.js';
 
 interface CliArgs {
   candidatesPath: string;
@@ -31,6 +33,8 @@ interface CandidateReplayResult {
   source: MinedRegressionCandidate['source'];
   sessionId: string;
   confidence: number;
+  routeRisk?: PersonaRiskLevel;
+  routeTags?: TurnRiskTag[];
   passed: boolean;
   skipped: boolean;
   replies: string[];
@@ -115,6 +119,8 @@ async function runCandidate(candidate: MinedRegressionCandidate, provider: AIPro
       source: candidate.source,
       sessionId,
       confidence: candidate.confidence,
+      routeRisk: candidate.routeRisk,
+      routeTags: candidate.routeTags,
       passed: false,
       skipped: false,
       replies: [],
@@ -145,6 +151,8 @@ async function runCandidate(candidate: MinedRegressionCandidate, provider: AIPro
     source: candidate.source,
     sessionId,
     confidence: candidate.confidence,
+    routeRisk: candidate.routeRisk,
+    routeTags: candidate.routeTags,
     passed: failures.length === 0,
     skipped: false,
     replies,
@@ -166,6 +174,11 @@ function writeReports(resultDir: string, results: CandidateReplayResult[], args:
     passed: results.filter((result) => result.passed).length,
     failed: results.filter((result) => !result.passed && !result.skipped).length,
     skipped: results.filter((result) => result.skipped).length,
+    byRouteTag: countByFlat(results, (result) => result.routeTags ?? []),
+    failedByRouteTag: countByFlat(
+      results.filter((result) => !result.passed && !result.skipped),
+      (result) => result.routeTags ?? [],
+    ),
     results,
   };
 
@@ -184,6 +197,8 @@ function renderMarkdown(summary: {
   passed: number;
   failed: number;
   skipped: number;
+  byRouteTag: Record<string, number>;
+  failedByRouteTag: Record<string, number>;
   results: CandidateReplayResult[];
 }): string {
   const lines = [
@@ -197,12 +212,19 @@ function renderMarkdown(summary: {
     `- requireReviewed: ${summary.requireReviewed}`,
     `- result: ${summary.passed}/${summary.total} passed, ${summary.failed} failed, ${summary.skipped} skipped`,
     '',
+    '## Route Tags',
+    '',
+    ...Object.entries(summary.byRouteTag).map(([key, count]) => `- ${key}: ${count}`),
+    ...(Object.keys(summary.failedByRouteTag).length > 0 ? ['', 'Failed route tags:', ...Object.entries(summary.failedByRouteTag).map(([key, count]) => `- ${key}: ${count}`)] : []),
+    '',
   ];
 
   for (const result of summary.results) {
     lines.push(`## ${result.passed ? 'PASS' : 'FAIL'} ${result.id}`);
     lines.push('');
     lines.push(`- taxonomy: ${result.taxonomy}`);
+    if (result.routeTags && result.routeTags.length > 0) lines.push(`- routeTags: ${result.routeTags.join(', ')}`);
+    if (result.routeRisk) lines.push(`- routeRisk: ${result.routeRisk}`);
     lines.push(`- source: ${result.source}`);
     lines.push(`- confidence: ${result.confidence.toFixed(2)}`);
     lines.push(`- reason: ${result.reason}`);
@@ -279,6 +301,8 @@ async function main(): Promise<void> {
         source: candidate.source,
         sessionId: candidate.sessionId,
         confidence: candidate.confidence,
+        routeRisk: candidate.routeRisk,
+        routeTags: candidate.routeTags,
         passed: false,
         skipped: false,
         replies: [],
@@ -294,6 +318,14 @@ async function main(): Promise<void> {
   console.log(`\nReport: ${join(args.resultDir, 'report.md')}`);
   console.log(`Summary: ${results.length - failed.length}/${results.length} passed, ${failed.length} failed`);
   if (failed.length > 0) process.exit(1);
+}
+
+function countByFlat<T>(items: T[], keyFn: (item: T) => string[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const item of items) {
+    for (const key of keyFn(item)) counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
 }
 
 if (basename(process.argv[1] ?? '') === basename(__filename)) {

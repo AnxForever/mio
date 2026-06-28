@@ -67,18 +67,24 @@ writeFileSync(join(dir, 'actor-replay', 'summary.json'), JSON.stringify({
   passed: 3,
   failed: 0,
   skipped: 0,
+  byRouteTag: { temporal_state: 2, proactive: 1 },
+  failedByRouteTag: {},
 }), 'utf-8');
 writeFileSync(join(dir, 'persona-case-replay', 'summary.json'), JSON.stringify({
   total: 4,
   passed: 4,
   failed: 0,
   skipped: 0,
+  byRouteTag: { prompt_probe: 2, intimacy_control: 1 },
+  failedByRouteTag: {},
 }), 'utf-8');
 writeFileSync(join(dir, 'mined-replay', 'summary.json'), JSON.stringify({
   total: 2,
   passed: 1,
   failed: 1,
   skipped: 0,
+  byRouteTag: { offline_life: 1, temporal_state: 1 },
+  failedByRouteTag: { offline_life: 1 },
 }), 'utf-8');
 
 const summary = summarizeCompanionLoop(dir, [
@@ -108,6 +114,9 @@ ok(summary.totals.total === 9, 'summary totals replayed candidates', `total=${su
 ok(summary.totals.passed === 8, 'summary totals passed candidates', `passed=${summary.totals.passed}`);
 ok(summary.totals.failed === 1, 'summary totals failed candidates', `failed=${summary.totals.failed}`);
 ok(summary.ok === false, 'summary fails when any replay gate failed');
+ok(summary.routeTags.temporal_state === 3, 'summary aggregates route tags across replay gates', JSON.stringify(summary.routeTags));
+ok(summary.routeTags.prompt_probe === 2, 'summary includes persona prompt-probe route tags', JSON.stringify(summary.routeTags));
+ok(summary.failedRouteTags.offline_life === 1, 'summary aggregates failed route tags', JSON.stringify(summary.failedRouteTags));
 
 const cleanDir = mkdtempSync(join(tmpdir(), 'mio-companion-loop-clean-'));
 mkdirSync(join(cleanDir, 'actor-replay'), { recursive: true });
