@@ -57,6 +57,12 @@ ok(sleepyCtx.active.some((entry) => entry.kind === 'sleepy' || entry.kind === 'g
 const expiredCtx = temporal.updateTemporalStateForTurn(sessionId, '在干嘛', nextDay);
 ok(!expiredCtx.active.some((entry) => entry.kind === 'sleepy' || entry.kind === 'going_to_sleep'), 'sleep state expires by next afternoon');
 ok(expiredCtx.expiredRecent.some((entry) => entry.kind === 'sleepy' || entry.kind === 'going_to_sleep'), 'expired sleep state remains as historical context');
+const expiredState = temporal.readTemporalState(sessionId);
+const expiredSleepEntry = expiredState.entries.find((entry) => entry.kind === 'sleepy' || entry.kind === 'going_to_sleep');
+ok(
+  expiredSleepEntry && temporal.classifyTemporalStateEntry(expiredSleepEntry, nextDay) === 'historical_only',
+  'naturally expired sleep state is classified as historical_only',
+);
 
 const rendered = temporal.renderTemporalAwarenessContext(expiredCtx);
 ok(rendered.includes('时间感'), 'renders temporal awareness section');
@@ -66,6 +72,11 @@ ok(rendered.includes('预设式追问'), 'rendered context forbids presuppositio
 
 const busyCtx = temporal.updateTemporalStateForTurn('openai-busy-user_im_wechat-def456', '我先忙去了，等会儿再聊', new Date('2026-06-28T10:00:00.000Z'));
 ok(busyCtx.active.some((entry) => entry.kind === 'busy' || entry.kind === 'away'), 'busy/away text becomes active state');
+const busyQuery = temporal.queryTemporalState(
+  temporal.readTemporalState('openai-busy-user_im_wechat-def456'),
+  new Date('2026-06-28T10:30:00.000Z'),
+);
+ok(busyQuery.current.some((entry) => entry.kind === 'busy' || entry.kind === 'away'), 'active busy/away state is queryable as current');
 
 const promisedSpaceSessionId = 'openai-promised-space_im_wechat-space1';
 const promised = temporal.observeAssistantTemporalCommitments(
@@ -103,7 +114,14 @@ const resolvedSleepSessionId = 'openai-temporal-resolved-sleep_im_wechat-resolve
 temporal.updateTemporalStateForTurn(resolvedSleepSessionId, '好困，先睡了', new Date('2026-06-28T00:00:00.000Z'));
 const resolvedSleepCtx = temporal.updateTemporalStateForTurn(resolvedSleepSessionId, '我睡醒了，现在不困', new Date('2026-06-28T08:00:00.000Z'));
 ok(!resolvedSleepCtx.active.some((entry) => entry.kind === 'sleepy' || entry.kind === 'going_to_sleep'), 'explicit wake/not sleepy text resolves active sleep state');
-ok(resolvedSleepCtx.expiredRecent.some((entry) => entry.kind === 'sleepy' || entry.kind === 'going_to_sleep'), 'resolved sleep state remains only as expired history');
+ok(resolvedSleepCtx.resolvedRecent.some((entry) => entry.kind === 'sleepy' || entry.kind === 'going_to_sleep'), 'explicitly resolved sleep state remains as resolved recent context');
+ok(!resolvedSleepCtx.expiredRecent.some((entry) => entry.kind === 'sleepy' || entry.kind === 'going_to_sleep'), 'explicitly resolved sleep state is not mixed into expired history');
+const resolvedSleepQuery = temporal.queryTemporalState(
+  temporal.readTemporalState(resolvedSleepSessionId),
+  new Date('2026-06-28T08:00:00.000Z'),
+);
+ok(resolvedSleepQuery.recentlyResolved.some((entry) => entry.kind === 'sleepy' || entry.kind === 'going_to_sleep'), 'explicitly resolved sleep state is queryable as recently_resolved');
+ok(!resolvedSleepQuery.historicalOnly.some((entry) => entry.kind === 'sleepy' || entry.kind === 'going_to_sleep'), 'recently resolved sleep state is excluded from historical_only query bucket');
 
 const resolvedBusySessionId = 'openai-temporal-resolved-busy_im_wechat-resolve2';
 temporal.updateTemporalStateForTurn(resolvedBusySessionId, '我还在忙着优化你', new Date('2026-06-28T10:00:00.000Z'));

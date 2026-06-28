@@ -66,6 +66,19 @@ export interface TemporalTurnContext {
   resolvedRecent: TemporalStateEntry[];
 }
 
+export type TemporalEntryStatus =
+  | 'current'
+  | 'recently_resolved'
+  | 'historical_only'
+  | 'future_or_invalid';
+
+export interface TemporalStateQuery {
+  current: TemporalStateEntry[];
+  recentlyResolved: TemporalStateEntry[];
+  historicalOnly: TemporalStateEntry[];
+  futureOrInvalid: TemporalStateEntry[];
+}
+
 interface DetectionRule {
   kind: TemporalStateKind;
   label: string;
@@ -251,17 +264,17 @@ export function buildTemporalTurnContext(
   now = new Date(),
 ): TemporalTurnContext {
   const nowMs = now.getTime();
-  const active = state.entries
-    .filter((entry) => isActiveEntry(entry, nowMs))
+  const query = queryTemporalState(state, now);
+  const active = query.current
     .sort((a, b) => a.expiresAt.localeCompare(b.expiresAt));
-  const expiredRecent = state.entries
+  const expiredRecent = query.historicalOnly
     .filter((entry) => {
       const expiresAt = new Date(entry.expiresAt).getTime();
       return expiresAt <= nowMs && expiresAt > nowMs - RECENT_EXPIRED_WINDOW_MS;
     })
     .sort((a, b) => b.expiresAt.localeCompare(a.expiresAt))
     .slice(0, 6);
-  const resolvedRecent = state.entries
+  const resolvedRecent = query.recentlyResolved
     .filter((entry) => {
       if (!entry.resolvedAt) return false;
       const resolvedAt = new Date(entry.resolvedAt).getTime();
@@ -280,6 +293,56 @@ export function buildTemporalTurnContext(
     expiredRecent,
     resolvedRecent,
   };
+}
+
+export function queryTemporalState(state: TemporalStateFile, now = new Date()): TemporalStateQuery {
+  const grouped: TemporalStateQuery = {
+    current: [],
+    recentlyResolved: [],
+    historicalOnly: [],
+    futureOrInvalid: [],
+  };
+  for (const entry of state.entries) {
+    switch (classifyTemporalStateEntry(entry, now)) {
+      case 'current':
+        grouped.current.push(entry);
+        break;
+      case 'recently_resolved':
+        grouped.recentlyResolved.push(entry);
+        break;
+      case 'historical_only':
+        grouped.historicalOnly.push(entry);
+        break;
+      case 'future_or_invalid':
+        grouped.futureOrInvalid.push(entry);
+        break;
+    }
+  }
+  return grouped;
+}
+
+export function classifyTemporalStateEntry(entry: TemporalStateEntry, now = new Date()): TemporalEntryStatus {
+  const nowMs = now.getTime();
+  const observedAt = new Date(entry.observedAt).getTime();
+  const expiresAt = new Date(entry.expiresAt).getTime();
+  if (
+    Number.isNaN(nowMs)
+    || Number.isNaN(observedAt)
+    || Number.isNaN(expiresAt)
+    || observedAt > nowMs
+  ) {
+    return 'future_or_invalid';
+  }
+
+  if (entry.resolvedAt) {
+    const resolvedAt = new Date(entry.resolvedAt).getTime();
+    if (Number.isNaN(resolvedAt) || resolvedAt > nowMs) return 'future_or_invalid';
+    if (resolvedAt > nowMs - RECENT_EXPIRED_WINDOW_MS) return 'recently_resolved';
+    return 'historical_only';
+  }
+
+  if (expiresAt > nowMs) return 'current';
+  return 'historical_only';
 }
 
 export function renderTemporalAwarenessContext(ctx: TemporalTurnContext): string {
@@ -378,7 +441,7 @@ export function applyTemporalResolutions(
   return entries.map((entry) => {
     if (!matchedKinds.has(entry.kind)) return entry;
     const expiresAtMs = new Date(entry.expiresAt).getTime();
-    if (Number.isNaN(expiresAtMs) || expiresAtMs <= nowMs) return entry;
+    if (entry.resolvedAt || Number.isNaN(expiresAtMs) || expiresAtMs <= nowMs - RECENT_EXPIRED_WINDOW_MS) return entry;
     return resolveEntry(entry, nowIso, 'explicit_user_resolution', quoteEvidence(trimmed));
   });
 }
