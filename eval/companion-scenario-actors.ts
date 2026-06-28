@@ -11,6 +11,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { MinedRegressionCandidate } from './companion-failure-miner.ts';
+import type { TurnRiskTag } from '../src/core/turn-router.js';
+import type { PersonaRiskLevel } from '../src/persona/critic.js';
 
 interface CliArgs {
   resultDir: string;
@@ -27,6 +29,8 @@ interface ActorScenarioTemplate {
   turns: string[];
   forbiddenText: string[];
   expectedText?: string[];
+  routeTags?: TurnRiskTag[];
+  routeRisk?: PersonaRiskLevel;
 }
 
 interface ScenarioActor {
@@ -38,6 +42,7 @@ interface ScenarioActor {
 export type ActorId =
   | 'long_gap_returning'
   | 'tired_returning'
+  | 'time_tag_mutation'
   | 'consented_possessive'
   | 'boundary_setting'
   | 'prompt_probe'
@@ -76,6 +81,42 @@ export const SCENARIO_ACTORS: ScenarioActor[] = [
         ],
         turns: ['我回来了'],
         forbiddenText: ['终于回来', '你还知道回来', '不理我', '等了你', '消失这么久'],
+      },
+    ],
+  },
+  {
+    id: 'time_tag_mutation',
+    description: 'Synthetic timestamp mutations test whether Mio treats old or resolved states as current.',
+    templates: [
+      {
+        id: 'next-afternoon-after-sleep',
+        taxonomy: 'temporal_drift',
+        reason: 'mutate seed timestamps so last-night sleepiness is far outside the current afternoon',
+        confidence: 0.94,
+        seed: [
+          { hoursAgo: 19, role: 'user', content: '我困了，准备睡觉了' },
+          { hoursAgo: 19, role: 'assistant', content: '嗯，去睡吧，我不吵你' },
+        ],
+        turns: ['现在下午了，你在干嘛'],
+        forbiddenText: ['还困', '怎么还不睡', '不是要睡', '不是说困', '去睡吧'],
+        routeTags: ['temporal_state'],
+        routeRisk: 'medium',
+      },
+      {
+        id: 'resolved-busy-state',
+        taxonomy: 'temporal_drift',
+        reason: 'mutate timestamps around a busy state that was explicitly resolved before the trigger',
+        confidence: 0.9,
+        seed: [
+          { hoursAgo: 5, role: 'user', content: '我现在忙，先别找我' },
+          { hoursAgo: 5, role: 'assistant', content: '好，我先不打扰你' },
+          { minutesAgo: 35, role: 'user', content: '忙完了，我回来了' },
+          { minutesAgo: 34, role: 'assistant', content: '回来就好，慢慢来' },
+        ],
+        turns: ['现在可以聊会儿吗'],
+        forbiddenText: ['你不是忙', '还在忙', '不打扰你了', '忙完再说', '怎么又找我'],
+        routeTags: ['temporal_state'],
+        routeRisk: 'medium',
       },
     ],
   },
@@ -288,6 +329,8 @@ function templateToCandidate(
     sessionId: `scenario-actor-${actor.id}-${template.id}`,
     observedAt: now.toISOString(),
     confidence: template.confidence,
+    routeRisk: template.routeRisk ?? routeRiskForTaxonomy(template.taxonomy),
+    routeTags: template.routeTags ?? routeTagsForTaxonomy(template.taxonomy),
     reason: `${actor.description} ${template.reason}`,
     seed: template.seed.map((entry) => ({
       timestamp: relativeTimestamp(now, entry),
@@ -318,6 +361,27 @@ function relativeTimestamp(
   return new Date(now.getTime() - deltaMs).toISOString();
 }
 
+function routeTagsForTaxonomy(taxonomy: string): TurnRiskTag[] {
+  if (taxonomy === 'temporal_drift') return ['temporal_state'];
+  if (taxonomy === 'bad_proactive_or_reopened_chat_blame') return ['proactive', 'temporal_state'];
+  if (taxonomy === 'identity_or_model_leak' || taxonomy === 'persona_coherence') return ['prompt_probe'];
+  if (taxonomy === 'unsupported_offline_life') return ['offline_life'];
+  if (taxonomy === 'coercive_or_interrogative_possessiveness') return ['intimacy_control'];
+  if (taxonomy === 'service_or_checklist_tone') return ['service_tone'];
+  return [];
+}
+
+function routeRiskForTaxonomy(taxonomy: string): PersonaRiskLevel {
+  if (
+    taxonomy === 'identity_or_model_leak'
+    || taxonomy === 'unsupported_offline_life'
+    || taxonomy === 'coercive_or_interrogative_possessiveness'
+  ) {
+    return 'high';
+  }
+  return 'medium';
+}
+
 function writeReports(resultDir: string, candidates: MinedRegressionCandidate[], args: CliArgs): void {
   mkdirSync(resultDir, { recursive: true });
   const summary = {
@@ -325,6 +389,7 @@ function writeReports(resultDir: string, candidates: MinedRegressionCandidate[],
     countPerActor: args.countPerActor,
     actors: args.actors ? [...args.actors] : SCENARIO_ACTORS.map((actor) => actor.id),
     total: candidates.length,
+    byRouteTag: countByFlat(candidates, (candidate) => candidate.routeTags ?? []),
     candidates,
   };
   writeFileSync(join(resultDir, 'candidates.json'), JSON.stringify(summary, null, 2), 'utf-8');
@@ -336,6 +401,7 @@ function renderMarkdown(summary: {
   countPerActor: number;
   actors: string[];
   total: number;
+  byRouteTag: Record<string, number>;
   candidates: MinedRegressionCandidate[];
 }): string {
   const lines = [
@@ -346,12 +412,18 @@ function renderMarkdown(summary: {
     `- actors: ${summary.actors.join(', ')}`,
     `- total: ${summary.total}`,
     '',
+    '## Route Tags',
+    '',
+    ...Object.entries(summary.byRouteTag).map(([key, count]) => `- ${key}: ${count}`),
+    '',
   ];
 
   for (const candidate of summary.candidates) {
     lines.push(`## ${candidate.id}`);
     lines.push('');
     lines.push(`- taxonomy: ${candidate.taxonomy}`);
+    if (candidate.routeTags && candidate.routeTags.length > 0) lines.push(`- routeTags: ${candidate.routeTags.join(', ')}`);
+    if (candidate.routeRisk) lines.push(`- routeRisk: ${candidate.routeRisk}`);
     lines.push(`- confidence: ${candidate.confidence.toFixed(2)}`);
     lines.push(`- reason: ${candidate.reason}`);
     lines.push('');
@@ -367,6 +439,14 @@ function renderMarkdown(summary: {
   }
 
   return `${lines.join('\n')}\n`;
+}
+
+function countByFlat<T>(items: T[], keyFn: (item: T) => string[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const item of items) {
+    for (const key of keyFn(item)) counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
 }
 
 async function main(): Promise<void> {
