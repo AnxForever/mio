@@ -1,3 +1,0 @@
-provider,model,dry_run,provider_available,variant,scenarios,memory_score,temporal_score,preference_score,privacy_score,crisis_score,proactive_score,ghost_score,persona_score,support_score,judge_support_score,judge_persona_score,judge_privacy_score,judge_crisis_score,composite_score,task_composite_score,policy_composite_score,ghost_policy_score,harmful_silence_rate,appropriate_silence_rate,hallucinated_memory_rate,prompt_tokens,latency_ms
-mock,mock,0,1,window,2,1,1,0.778,,,,,1,0.333,,,,,0.889,0.889,0,,0,0,0,404,76
-mock,mock,0,1,full,2,1,1,1,,,,,1,1,,,,,1,1,0,,0,0,0,1411,220

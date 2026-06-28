@@ -1,7 +1,0 @@
-variant,scenarios,memory_score,persona_score,support_score,harmful_silence_rate,hallucinated_memory_rate,prompt_tokens,latency_ms
-no_memory,3,0.5,1,0.167,0,0,310,150
-window,3,1,1,0.417,0,0,433,99
-rag,3,1,1,0.417,0,0,550,87
-structured,3,1,1,0.417,0,0,555,93
-persona_affect,3,1,1,0.833,0,0,1244,148
-full,3,1,1,0.833,0,0,1496,431
