@@ -48,7 +48,10 @@ try {
   writeFileSync(
     join(tmp, 'memory-bank', 'structured-memory.json'),
     JSON.stringify({
-      entities: [{ reviewStatus: 'confirmed' }, { reviewStatus: 'pending' }],
+      entities: [
+        { reviewStatus: 'confirmed', content: '请先帮我复述重点再建议' },
+        { reviewStatus: 'pending', content: '我喜欢晚上聊天放松一下' },
+      ],
       durableFacts: [{}, {}, {}],
     }),
     'utf-8',
@@ -58,6 +61,12 @@ try {
     JSON.stringify({ rituals: [{ significance: 0.5 }, { significance: 0.1 }] }),
     'utf-8',
   );
+
+  // 串户用例：alice(非default) 偏好泄漏进全局 structured-memory → 应标记；default 偏好在全局属正常 → 不标记
+  mkdirSync(join(tmp, 'users', 'alice'), { recursive: true });
+  mkdirSync(join(tmp, 'users', 'default'), { recursive: true });
+  writeFileSync(join(tmp, 'users', 'alice', 'preferences.json'), JSON.stringify({ userId: 'alice', explicit: [{ rule: '请先帮我复述重点再建议' }] }), 'utf-8');
+  writeFileSync(join(tmp, 'users', 'default', 'preferences.json'), JSON.stringify({ userId: 'default', explicit: [{ rule: '我喜欢晚上聊天放松一下' }] }), 'utf-8');
 
   // ── 跑真脚本 ──
   execFileSync(
@@ -82,6 +91,9 @@ try {
   // 06-01(周一)/06-02(周二) 同 ISO 周，06-08 次周 → 2 周
   record('byWeek 覆盖 2 周（06-01/02 同周，06-08 次周）', Array.isArray(report.cardboard.byWeek) && report.cardboard.byWeek.length === 2, `weeks=${report.cardboard.byWeek?.length}`);
   record('首周聚合 2 个配对', report.cardboard.byWeek?.[0]?.count === 2, `count=${report.cardboard.byWeek?.[0]?.count}`);
+  record('串户：仅 alice(非default) 被标记', report.isolation.leakCount === 1 && report.isolation.leakFlags[0]?.userId === 'alice', JSON.stringify(report.isolation));
+  record('串户：default 不算泄漏', !report.isolation.leakFlags.some((f: { userId: string }) => f.userId === 'default'));
+  record('串户：非 default 用户数 = 1', report.isolation.nonDefaultUsers === 1, `got ${report.isolation.nonDefaultUsers}`);
 } catch (err) {
   record('health-check 运行', false, err instanceof Error ? err.message : String(err));
 } finally {

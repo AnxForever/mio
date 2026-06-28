@@ -51,6 +51,14 @@ export interface RepetitionStats {
   topOpeners: Array<{ opener: string; count: number }>;
 }
 
+export interface IsolationReport {
+  /** 非 default 用户（IM 联系人/隔离会话）数量 */
+  nonDefaultUsers: number;
+  /** 非 default 用户的偏好出现在全局记忆里的疑似泄漏 */
+  leakFlags: Array<{ userId: string; snippet: string }>;
+  leakCount: number;
+}
+
 // ─── 纯函数（无 dist 依赖，可单测） ───
 
 /** 从一个 session 的有序 entries 中抽 user→assistant 配对（取 assistant 前最近一条 user，兼容 IM 多条）。 */
@@ -180,9 +188,42 @@ function readJsonSafe<T>(path: string): T | null {
   try { return JSON.parse(readFileSync(path, 'utf-8')) as T; } catch { return null; }
 }
 
+function readTextSafe(path: string): string {
+  if (!existsSync(path)) return '';
+  try { return readFileSync(path, 'utf-8'); } catch { return ''; }
+}
+
 function listJsonl(dir: string): string[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir).filter((f) => f.endsWith('.jsonl')).map((f) => join(dir, f));
+}
+
+/**
+ * 串户检测：非 default 用户（IM 联系人/隔离会话）的显式偏好不应出现在全局记忆里。
+ * default = 本机主用户，其内容本就该全局，故排除。任何非 default 的 per-user 规则
+ * 出现在全局 structured-memory/BOOKMARKS/MEMORY 中 = 疑似隔离泄漏，标记待人工核对。
+ */
+export function analyzeIsolation(dataDir: string, globalMemoryText: string): IsolationReport {
+  const usersDir = join(dataDir, 'users');
+  const leakFlags: Array<{ userId: string; snippet: string }> = [];
+  let nonDefaultUsers = 0;
+  if (existsSync(usersDir)) {
+    for (const entry of readdirSync(usersDir, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name === 'default') continue;
+      nonDefaultUsers++;
+      const prefs = readJsonSafe<{ explicit?: Array<{ rule?: string }> }>(
+        join(usersDir, entry.name, 'preferences.json'),
+      );
+      for (const p of prefs?.explicit ?? []) {
+        const rule = (p.rule ?? '').trim();
+        // 只查足够独特的规则串，避免泛化词误报
+        if (rule.length >= 6 && globalMemoryText.includes(rule)) {
+          leakFlags.push({ userId: entry.name, snippet: rule.slice(0, 40) });
+        }
+      }
+    }
+  }
+  return { nonDefaultUsers, leakFlags, leakCount: leakFlags.length };
 }
 
 // ─── 编排（用 dist 的 assessDepth；其余只读文件） ───
@@ -205,6 +246,7 @@ export interface HealthReport {
     relationshipStage: string;
     interactionCount: number;
   };
+  isolation: IsolationReport;
   notes: string[];
 }
 
@@ -271,6 +313,16 @@ export async function runHealthCheck(dataDir: string, nowIso: string): Promise<H
     join(dataDir, 'relationship-state.json'),
   );
 
+  const globalMemoryText = [
+    readTextSafe(join(dataDir, 'memory-bank', 'structured-memory.json')),
+    readTextSafe(join(dataDir, 'memory-bank', 'BOOKMARKS.md')),
+    readTextSafe(join(dataDir, 'memory-bank', 'MEMORY.md')),
+  ].join('\n');
+  const isolation = analyzeIsolation(dataDir, globalMemoryText);
+  if (isolation.leakCount > 0) {
+    notes.push(`⚠️ 疑似串户：${isolation.leakCount} 条非 default 用户的偏好出现在全局记忆里，需人工核对隔离。`);
+  }
+
   return {
     dataDir,
     generatedAt: nowIso,
@@ -289,6 +341,7 @@ export async function runHealthCheck(dataDir: string, nowIso: string): Promise<H
       relationshipStage: rel?.stage ?? 'n/a',
       interactionCount: rel?.interactionCount ?? 0,
     },
+    isolation,
     notes,
   };
 }
@@ -338,6 +391,11 @@ ${openerLines}
 - rituals: ${r.memory.rituals}（已晋升 significance≥0.3: ${r.memory.promotedRituals}）
 - per-user 目录: ${r.memory.perUserDirs}（有 persona-delta: ${r.memory.usersWithPersonaDelta}，有 preferences: ${r.memory.usersWithPreferences}）
 - 关系阶段: ${r.memory.relationshipStage}，互动计数: ${r.memory.interactionCount}
+
+## 串户隔离 (cross-user contamination)
+- 非 default 用户数: ${r.isolation.nonDefaultUsers}
+- 疑似泄漏到全局的 per-user 偏好: **${r.isolation.leakCount}** ${r.isolation.leakCount > 0 ? '（应为 0；>0 需人工核对隔离）' : '（干净）'}
+${r.isolation.leakFlags.map((f) => `  - [${f.userId}] \`${f.snippet}…\``).join('\n')}
 
 ---
 > 这是 Phase 0 的"改进前"基线。Phase 1–5 每步落地后重跑本脚本，对比 cardboard 均值 / distinct-2 / durableFacts 看是否真的更好。
