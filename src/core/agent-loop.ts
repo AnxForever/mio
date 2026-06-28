@@ -59,6 +59,7 @@ import { appendBookmark, readUserProfile, readRecentBookmarks, readStructuredMem
 import { deserializeMemory } from '../memory/structured-memory.js';
 import { search as searchMemory } from '../memory/vector.js';
 import { rerankByLLM } from '../memory/rerank.js';
+import { appendMemoryUsefulnessTrace, collectMemoryUsefulnessCandidates } from '../memory/usefulness.js';
 import { getRelationContext } from '../memory/entity-graph.js';
 import { getLorebookContext, commitLorebookState } from '../memory/lorebook.js';
 import { PromptBudget } from '../utils/prompt-budget.js';
@@ -937,6 +938,7 @@ async function runInferenceStage(
     buildPrePrompt,
     buildPostPrompt,
   });
+  const memoryUsefulnessCandidates = collectMemoryUsefulnessCandidates(promptCtx, finalSystemPrompt);
 
   recordMessage(sessionId, userMessage);
 
@@ -973,7 +975,7 @@ async function runInferenceStage(
     onToken(text); // 未破功，补发先前扣住的草稿
   }
 
-  return { text, toolCallCount, turns, intent, budget };
+  return { text, toolCallCount, turns, intent, budget, memoryUsefulnessCandidates };
 }
 
 // ─── Main entry ───
@@ -1020,6 +1022,12 @@ export async function runTurn(
     enableLlmJudge: config.features.llmJudge,
   });
   const text = quality.text;
+  appendMemoryUsefulnessTrace({
+    sessionId,
+    userText: turnInput.text,
+    replyText: text,
+    candidates: inference.memoryUsefulnessCandidates ?? [],
+  });
 
   await applyPostTurnSideEffects({
     input: turnInput,

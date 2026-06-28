@@ -7,6 +7,7 @@ import type {
   TurnChannelContext,
 } from '../types.js';
 import type { PromptBudget } from '../utils/prompt-budget.js';
+import type { MemoryUsefulnessCandidate } from '../memory/usefulness.js';
 import type { ToolRegistryLike } from './tool-runtime.js';
 import type { getConfig } from '../config.js';
 import type { classifyIntent } from '../emotion/tracker.js';
@@ -74,4 +75,5 @@ export interface InferenceStageResult {
   turns: number;
   intent: ReturnType<typeof classifyIntent>;
   budget?: PromptBudget;
+  memoryUsefulnessCandidates?: MemoryUsefulnessCandidate[];
 }

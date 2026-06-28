@@ -404,6 +404,7 @@ export function buildStructuredMemoryContext(
 
   // Recent emotions (top 5, high confidence)
   const recentEmotions = structuredMemory.entities
+    .filter((e) => e.enabled !== false && e.reviewStatus !== 'ignored' && !e.invalidatedAt)
     .filter((e) => e.type === 'emotion' && e.confidence >= 0.5)
     .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime())
     .slice(0, 5);

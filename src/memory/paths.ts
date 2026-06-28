@@ -237,6 +237,11 @@ export function replyQualityInterventionsPath(): string {
   return join(colaDir(), 'quality', 'reply-interventions.jsonl');
 }
 
+/** Memory retrieval/injection usefulness trace log. */
+export function memoryUsefulnessTracePath(): string {
+  return join(colaDir(), 'quality', 'memory-usefulness.jsonl');
+}
+
 function safeUserId(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return 'default';
