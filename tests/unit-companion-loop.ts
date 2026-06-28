@@ -28,17 +28,21 @@ const steps = buildCompanionLoopSteps({
   provider: 'mock',
   actorCountPerActor: 1,
   actorMaxCandidates: 3,
+  personaMaxCandidates: 2,
   minedLimit: 4,
   minedMaxCandidates: 2,
   minConfidence: 0.7,
   skipBuild: true,
   skipActors: false,
+  skipPersonaCases: false,
   skipMining: false,
 });
 
-ok(steps.length === 4, 'builds actor + mining loop without build step', `steps=${steps.map((step) => step.id).join(',')}`);
+ok(steps.length === 6, 'builds actor + persona case + mining loop without build step', `steps=${steps.map((step) => step.id).join(',')}`);
 ok(steps[0]?.id === 'actor_generate', 'first step generates actor candidates');
 ok(steps.some((step) => step.id === 'actor_replay' && step.command.includes('--max-candidates=3')), 'actor replay uses max candidate limit');
+ok(steps.some((step) => step.id === 'persona_case_generate'), 'loop generates persona case candidates');
+ok(steps.some((step) => step.id === 'persona_case_replay' && step.command.includes('--max-candidates=2')), 'persona case replay uses max candidate limit');
 ok(steps.some((step) => step.id === 'mine_failures' && step.command.includes('--limit=4')), 'failure miner uses mined limit');
 ok(steps.some((step) => step.id === 'mined_replay' && step.command.includes('--min-confidence=0.7')), 'candidate replay uses confidence threshold');
 
@@ -50,15 +54,23 @@ const buildSteps = buildCompanionLoopSteps({
   minConfidence: 0,
   skipBuild: false,
   skipActors: true,
+  skipPersonaCases: true,
   skipMining: true,
 });
 ok(buildSteps.length === 1 && buildSteps[0]?.id === 'build', 'skip flags can leave build-only plan');
 
 mkdirSync(join(dir, 'actor-replay'), { recursive: true });
+mkdirSync(join(dir, 'persona-case-replay'), { recursive: true });
 mkdirSync(join(dir, 'mined-replay'), { recursive: true });
 writeFileSync(join(dir, 'actor-replay', 'summary.json'), JSON.stringify({
   total: 3,
   passed: 3,
+  failed: 0,
+  skipped: 0,
+}), 'utf-8');
+writeFileSync(join(dir, 'persona-case-replay', 'summary.json'), JSON.stringify({
+  total: 4,
+  passed: 4,
   failed: 0,
   skipped: 0,
 }), 'utf-8');
@@ -92,8 +104,8 @@ const summary = summarizeCompanionLoop(dir, [
   },
 ]);
 
-ok(summary.totals.total === 5, 'summary totals replayed candidates', `total=${summary.totals.total}`);
-ok(summary.totals.passed === 4, 'summary totals passed candidates', `passed=${summary.totals.passed}`);
+ok(summary.totals.total === 9, 'summary totals replayed candidates', `total=${summary.totals.total}`);
+ok(summary.totals.passed === 8, 'summary totals passed candidates', `passed=${summary.totals.passed}`);
 ok(summary.totals.failed === 1, 'summary totals failed candidates', `failed=${summary.totals.failed}`);
 ok(summary.ok === false, 'summary fails when any replay gate failed');
 

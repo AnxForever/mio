@@ -47,7 +47,7 @@ interface CandidateCheck {
 
 export interface MinedRegressionCandidate {
   id: string;
-  source: 'reply_intervention' | 'transcript_scan' | 'scenario_actor';
+  source: 'reply_intervention' | 'transcript_scan' | 'scenario_actor' | 'persona_case';
   taxonomy: string;
   sessionId: string;
   observedAt: string;

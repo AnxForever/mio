@@ -5,9 +5,11 @@
  * Pipeline:
  *   1. Generate scenario-actor candidates.
  *   2. Replay scenario candidates through the production turn loop.
- *   3. Mine real transcripts/intervention logs into regression candidates.
- *   4. Replay mined candidates.
- *   5. Write one summary/report for nightly or manual review.
+ *   3. Generate persona case repository candidates.
+ *   4. Replay persona cases through the production turn loop.
+ *   5. Mine real transcripts/intervention logs into regression candidates.
+ *   6. Replay mined candidates.
+ *   7. Write one summary/report for nightly or manual review.
  */
 
 import 'dotenv/config';
@@ -25,9 +27,11 @@ interface CliArgs {
   actorMaxCandidates?: number;
   minedLimit: number;
   minedMaxCandidates?: number;
+  personaMaxCandidates?: number;
   minConfidence: number;
   skipBuild: boolean;
   skipActors: boolean;
+  skipPersonaCases: boolean;
   skipMining: boolean;
 }
 
@@ -71,6 +75,7 @@ function parseArgs(argv: string[]): CliArgs {
     minConfidence: 0,
     skipBuild: false,
     skipActors: false,
+    skipPersonaCases: false,
     skipMining: false,
   };
 
@@ -81,11 +86,13 @@ function parseArgs(argv: string[]): CliArgs {
     else if (arg.startsWith('--data-dir=')) args.dataDir = resolve(arg.slice('--data-dir='.length));
     else if (arg.startsWith('--actor-count-per-actor=')) args.actorCountPerActor = Math.max(1, Number(arg.slice('--actor-count-per-actor='.length)) || 1);
     else if (arg.startsWith('--actor-max-candidates=')) args.actorMaxCandidates = Math.max(1, Number(arg.slice('--actor-max-candidates='.length)) || 1);
+    else if (arg.startsWith('--persona-max-candidates=')) args.personaMaxCandidates = Math.max(1, Number(arg.slice('--persona-max-candidates='.length)) || 1);
     else if (arg.startsWith('--mined-limit=')) args.minedLimit = Math.max(1, Number(arg.slice('--mined-limit='.length)) || 1);
     else if (arg.startsWith('--mined-max-candidates=')) args.minedMaxCandidates = Math.max(1, Number(arg.slice('--mined-max-candidates='.length)) || 1);
     else if (arg.startsWith('--min-confidence=')) args.minConfidence = clamp01(Number(arg.slice('--min-confidence='.length)));
     else if (arg === '--skip-build') args.skipBuild = true;
     else if (arg === '--skip-actors') args.skipActors = true;
+    else if (arg === '--skip-persona-cases') args.skipPersonaCases = true;
     else if (arg === '--skip-mining') args.skipMining = true;
   }
 
@@ -98,6 +105,8 @@ export function buildCompanionLoopSteps(args: CliArgs): LoopStep[] {
   const steps: LoopStep[] = [];
   const actorDir = join(args.resultDir, 'actors');
   const actorReplayDir = join(args.resultDir, 'actor-replay');
+  const personaDir = join(args.resultDir, 'persona-cases');
+  const personaReplayDir = join(args.resultDir, 'persona-case-replay');
   const minedDir = join(args.resultDir, 'mined');
   const minedReplayDir = join(args.resultDir, 'mined-replay');
   const providerArgs = ['--provider=' + args.provider, ...(args.model ? ['--model=' + args.model] : [])];
@@ -137,6 +146,37 @@ export function buildCompanionLoopSteps(args: CliArgs): LoopStep[] {
         `--result-dir=${actorReplayDir}`,
         `--min-confidence=${args.minConfidence}`,
         ...(args.actorMaxCandidates ? [`--max-candidates=${args.actorMaxCandidates}`] : []),
+        ...providerArgs,
+      ],
+      cwd: REPO_ROOT,
+      required: true,
+    });
+  }
+
+  if (!args.skipPersonaCases) {
+    steps.push({
+      id: 'persona_case_generate',
+      label: 'Generate persona case repository candidates',
+      command: [
+        node,
+        stripTypes,
+        'eval/persona-case-repository.ts',
+        `--result-dir=${personaDir}`,
+      ],
+      cwd: REPO_ROOT,
+      required: true,
+    });
+    steps.push({
+      id: 'persona_case_replay',
+      label: 'Replay persona case repository candidates',
+      command: [
+        node,
+        stripTypes,
+        'eval/companion-candidate-replay.ts',
+        `--candidates=${join(personaDir, 'candidates.json')}`,
+        `--result-dir=${personaReplayDir}`,
+        `--min-confidence=${args.minConfidence}`,
+        ...(args.personaMaxCandidates ? [`--max-candidates=${args.personaMaxCandidates}`] : []),
         ...providerArgs,
       ],
       cwd: REPO_ROOT,
@@ -189,6 +229,7 @@ export function summarizeCompanionLoop(resultDir: string, stepResults: StepResul
 } {
   const gates = {
     actorReplay: readReplaySummary(join(resultDir, 'actor-replay', 'summary.json')),
+    personaCaseReplay: readReplaySummary(join(resultDir, 'persona-case-replay', 'summary.json')),
     minedReplay: readReplaySummary(join(resultDir, 'mined-replay', 'summary.json')),
   };
   const totals = Object.values(gates).reduce(

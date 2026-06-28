@@ -399,7 +399,9 @@ Implemented in this iteration:
 - `tests/unit-companion-candidate-replay.ts`: covers loading mined candidate files, confidence/review filtering, and forbidden/expected text checks.
 - `eval/companion-scenario-actors.ts`: generates executable candidate files from deterministic scenario actors: long-gap returns, stale tired state, consented possessiveness, boundary setting, prompt probes, offline-life probes, and distress support. This gives Mio an offline self-testing loop even before real users hit a bug.
 - `tests/unit-companion-scenario-actors.ts`: verifies actor coverage, stable candidate shape, filtering, timestamped seed context, and check coverage.
-- `eval/companion-loop.ts`: orchestrates the offline companion eval loop: build, scenario actor generation, actor candidate replay, real transcript/intervention mining, mined candidate replay, and one aggregate report. It is the manual/nightly entry point for "simulate chat -> find problems -> preserve regressions".
+- `eval/persona-case-repository.ts`: stores labeled good/bad companion persona cases for the user's core failure modes: no-interrupt return blame, stale sleep state, consented possessiveness without control, unsupported offline-life fabrication, distress support without checklist tone, and prompt/model probes. It can render few-shot material and generate executable replay candidates.
+- `tests/unit-persona-case-repository.ts`: verifies case coverage, label filtering, candidate schema, provenance with good/bad examples, and few-shot rendering.
+- `eval/companion-loop.ts`: orchestrates the offline companion eval loop: build, scenario actor generation, actor candidate replay, persona case generation/replay, real transcript/intervention mining, mined candidate replay, and one aggregate report. It is the manual/nightly entry point for "simulate chat -> find problems -> preserve regressions".
 - `tests/unit-companion-loop.ts`: covers loop step planning and aggregate pass/fail summaries.
 
 Verified commands:
@@ -408,6 +410,7 @@ Verified commands:
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-companion-failure-miner.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-companion-candidate-replay.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-companion-scenario-actors.ts`
+- `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-persona-case-repository.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-companion-loop.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-persona-critic.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-reply-quality-gate.ts`
@@ -418,7 +421,8 @@ Verified commands:
 - `node --experimental-strip-types eval/companion-failure-miner.ts --data-dir=/tmp/<synthetic-mio-data> --result-dir=/tmp/<synthetic-report>`
 - `node --experimental-strip-types eval/companion-candidate-replay.ts --candidates=/tmp/<synthetic-report>/candidates.json --provider=mock`
 - `node --experimental-strip-types eval/companion-scenario-actors.ts --result-dir=/tmp/<actor-candidates>`
-- `node --experimental-strip-types eval/companion-loop.ts --skip-build --provider=mock --actor-count-per-actor=1 --actor-max-candidates=2 --mined-limit=2 --mined-max-candidates=2`
+- `node --experimental-strip-types eval/persona-case-repository.ts --result-dir=/tmp/<persona-cases> --max-cases=2`
+- `node --experimental-strip-types eval/companion-loop.ts --skip-build --provider=mock --actor-count-per-actor=1 --actor-max-candidates=2 --persona-max-candidates=2 --mined-limit=2 --mined-max-candidates=2`
 - `npm run eval:redteam -- --provider=deepseek`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-memory-review.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-structured-extract.ts`
