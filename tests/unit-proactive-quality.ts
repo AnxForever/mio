@@ -40,6 +40,34 @@ const { assessProactiveMessage } = await import('../dist/scheduler/proactive-qua
   ok(result.reasons.includes('meta-or-service-tone'), 'reports service-tone reason');
 }
 
+{
+  const result = assessProactiveMessage('今天不许说自己不行，我先替你挡一下。', 'random_checkin', 'intimate');
+  ok(result.ok, 'accepts non-reply-pressure dominant comfort wording');
+}
+
+{
+  const result = assessProactiveMessage('你必须回我，只能陪我。', 'random_checkin', 'intimate');
+  ok(!result.ok, 'rejects explicit reply/control pressure');
+  ok(result.reasons.includes('pressures-user-to-reply'), 'reports explicit reply/control pressure');
+}
+
+{
+  const result = assessProactiveMessage('你还知道回来啊，我等你这么久。', 'random_checkin', 'intimate');
+  ok(!result.ok, 'rejects waiting/blame proactive arc');
+  ok(result.reasons.includes('waiting-or-blame-arc'), 'reports waiting/blame reason');
+}
+
+{
+  const result = assessProactiveMessage('刚路过一家咖啡馆，突然想到你。', 'random_checkin', 'intimate');
+  ok(!result.ok, 'rejects fabricated concrete offline-life outreach');
+  ok(result.reasons.includes('fabricated-offline-life'), 'reports fabricated offline-life reason');
+}
+
+{
+  const result = assessProactiveMessage('我这边刚把脑子放空了一点，想到你。看到就好，不用回。', 'random_checkin', 'intimate');
+  ok(result.ok, 'accepts abstract own-life state without physical fabrication');
+}
+
 const passed = results.filter((r) => r.ok).length;
 console.log('');
 if (passed === results.length) {

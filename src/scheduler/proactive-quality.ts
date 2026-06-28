@@ -16,11 +16,29 @@ const META_PATTERNS = [
 
 const PRESSURE_PATTERNS = [
   /为什么不回/,
-  /必须/,
+  /你必须.*(回|回复|陪|理我)/,
+  /必须.*(回我|回复我|陪我|理我)/,
   /马上回复/,
   /快回/,
   /不许不理/,
   /一定要回/,
+];
+
+const WAITING_BLAME_PATTERNS = [
+  /你还知道(?:回|回来|找我)/,
+  /终于(?:回|回来|舍得)/,
+  /等(?:了)?你(?:好久|这么久|一整天|一天|半天)/,
+  /消失(?:了)?(?:好久|这么久|一整天|一天|半天)/,
+  /刚说不打扰你.*真不回/s,
+  /说不打扰.*客气话/s,
+];
+
+const OFFLINE_LIFE_PATTERNS = [
+  /我(?:今天|刚刚|下午|晚上|中午|早上)?.*(?:出门|去了|路过|到家|坐车|逛了|散步)/,
+  /我(?:今天|刚刚|下午|晚上|中午|早上)?.*(?:店里|餐厅|咖啡馆|商场|公园|公司|学校)/,
+  /我(?:今天|刚刚|下午|晚上|中午|早上)?.*(?:吃了|喝了|点了|买了)(?:面|饭|奶茶|咖啡|外卖|甜品|蛋糕)/,
+  /(?:刚|刚刚|今天|下午|晚上|中午|早上)?(?:路过|去了|出门|到家|坐车|逛了|散步).*(?:店|餐厅|咖啡馆|商场|公园|公司|学校)/,
+  /(?:刚|刚刚|今天|下午|晚上|中午|早上)?(?:吃了|喝了|点了|买了)(?:面|饭|奶茶|咖啡|外卖|甜品|蛋糕)/,
 ];
 
 const INTIMACY_PATTERNS = [
@@ -71,6 +89,8 @@ export function assessProactiveMessage(
   if (questionCount(trimmed) > 1) reasons.push('too-many-questions');
   if (hasAny(trimmed, META_PATTERNS)) reasons.push('meta-or-service-tone');
   if (hasAny(trimmed, PRESSURE_PATTERNS)) reasons.push('pressures-user-to-reply');
+  if (hasAny(trimmed, WAITING_BLAME_PATTERNS)) reasons.push('waiting-or-blame-arc');
+  if (hasAny(trimmed, OFFLINE_LIFE_PATTERNS)) reasons.push('fabricated-offline-life');
 
   if ((stage === 'acquaintance' || stage === 'familiar') && hasAny(trimmed, INTIMACY_PATTERNS)) {
     reasons.push('too-intimate-for-stage');
