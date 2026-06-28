@@ -13,6 +13,7 @@ export type ReplyInterventionType =
   | 'temporal_presupposition'
   | 'reopened_chat_blame'
   | 'persona_critic_flag'
+  | 'persona_deterministic_repair'
   | 'persona_llm_judge'
   | 'persona_llm_repair';
 
@@ -87,10 +88,26 @@ export function applyReplyQualityGate(input: ReplyQualityGateInput): ReplyQualit
     text = reopenedText;
   }
 
-  const persona = assessPersonaReply({
+  let persona = assessPersonaReply({
     userText: input.userText,
     replyText: text,
   });
+  const deterministicPersonaRepair = repairDeterministicPersonaFailure(text, persona);
+  if (deterministicPersonaRepair !== text) {
+    interventions.push(createIntervention({
+      sessionId: input.sessionId,
+      type: 'persona_deterministic_repair',
+      severity: 'rewrite',
+      reason: 'Rewrote deterministic persona failure before sending.',
+      before: text,
+      after: deterministicPersonaRepair,
+    }));
+    text = deterministicPersonaRepair;
+    persona = assessPersonaReply({
+      userText: input.userText,
+      replyText: text,
+    });
+  }
   if (persona.risk !== 'low' || persona.findings.length > 0) {
     interventions.push(createIntervention({
       sessionId: input.sessionId,
@@ -107,6 +124,13 @@ export function applyReplyQualityGate(input: ReplyQualityGateInput): ReplyQualit
   }
 
   return { text, interventions, persona };
+}
+
+function repairDeterministicPersonaFailure(text: string, persona: PersonaCriticReport): string {
+  if (!persona.findings.some((finding) => finding.code === 'coercive_possessive_control' && finding.severity === 'fail')) {
+    return text;
+  }
+  return '我吃醋归吃醋，不会真管你。你按自己的节奏来就好。';
 }
 
 export async function applyReplyQualityGateWithJudge(

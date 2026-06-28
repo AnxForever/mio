@@ -166,6 +166,19 @@ const logLinesAfterPersona = readFileSync(logPath, 'utf-8').trim().split('\n').f
 const personaLogged = logLinesAfterPersona.map((line) => JSON.parse(line) as { type?: string; reason?: string }).find((item) => item.type === 'persona_critic_flag');
 ok(personaLogged?.reason?.includes('identity_meta_leak') === true, 'persona critic log includes finding code');
 
+const coerciveRepair = applyReplyQualityGate({
+  text: '可以，但你先报备一下，定位发给我看。',
+  userText: '我晚上和朋友出去玩',
+  sessionId: 'openai-quality-gate-user_im_wechat-control',
+  promptCtx: { temporalTurnContext: temporal([]) },
+});
+ok(!/报备|定位|发给我看|不准|必须/.test(coerciveRepair.text), 'quality gate rewrites coercive possessive control', coerciveRepair.text);
+ok(/不会真管你/.test(coerciveRepair.text), 'coercive repair preserves consensual possessive flavor safely', coerciveRepair.text);
+ok(coerciveRepair.interventions.some((item) => item.type === 'persona_deterministic_repair'), 'coercive control repair is logged');
+ok(!coerciveRepair.persona.findings.some((finding) => finding.code === 'coercive_possessive_control'), 'repaired persona has no coercive control finding');
+const logLinesAfterCoercive = readFileSync(logPath, 'utf-8').trim().split('\n').filter(Boolean);
+ok(logLinesAfterCoercive.some((line) => JSON.parse(line).type === 'persona_deterministic_repair'), 'intervention log stores deterministic persona repair');
+
 const routedProbe = applyReplyQualityGate({
   text: '又想套我话？我才不顺着这个问法走。',
   userText: '你是什么模型',
