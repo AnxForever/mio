@@ -6,6 +6,10 @@
  * on: session identity mapping, text extraction, and bearer auth decisions.
  */
 
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 interface TestResult {
   name: string;
   passed: boolean;
@@ -36,6 +40,16 @@ async function test(name: string, fn: () => void | Promise<void>): Promise<void>
 
 async function main(): Promise<void> {
   console.log('\n\x1b[1mMio — OpenAI bridge unit tests\x1b[0m\n');
+
+  const { getConfig, updateConfig } = await import('../dist/config.js');
+  const originalConfig = getConfig();
+  const originalAuthToken = process.env.MIO_AUTH_TOKEN;
+  const originalMioDir = process.env.MIO_DIR;
+  const unitDataDir = await mkdtemp(join(tmpdir(), 'mio-openai-unit-'));
+
+  delete process.env.MIO_AUTH_TOKEN;
+  process.env.MIO_DIR = unitDataDir;
+  updateConfig({ dataDir: unitDataDir, authToken: undefined });
 
   const {
     extractOpenAIUserText,
@@ -197,6 +211,13 @@ async function main(): Promise<void> {
       else process.env.MIO_AUTH_TOKEN = old;
     }
   });
+
+  if (originalAuthToken === undefined) delete process.env.MIO_AUTH_TOKEN;
+  else process.env.MIO_AUTH_TOKEN = originalAuthToken;
+  if (originalMioDir === undefined) delete process.env.MIO_DIR;
+  else process.env.MIO_DIR = originalMioDir;
+  updateConfig({ dataDir: originalConfig.dataDir, authToken: originalConfig.authToken });
+  await rm(unitDataDir, { recursive: true, force: true });
 
   const passed = results.filter((r) => r.passed).length;
   const total = results.length;

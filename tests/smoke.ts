@@ -21,6 +21,10 @@
  */
 
 import { createServer } from 'node:http';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { getConfig, updateConfig } from '../dist/config.js';
 import { startServer, type RunningServer } from '../dist/server/index.js';
 
 interface TestResult {
@@ -99,6 +103,18 @@ async function startFakeOneBotApi(): Promise<{
 }
 
 async function main(): Promise<void> {
+  const originalAuthToken = process.env.MIO_AUTH_TOKEN;
+  const originalMioDir = process.env.MIO_DIR;
+  const originalConfig = getConfig();
+  const smokeDataDir = await mkdtemp(join(tmpdir(), 'mio-smoke-'));
+
+  // Keep the default smoke server independent from the developer's real
+  // local console users or legacy auth token. Auth behavior is covered by
+  // the dedicated OpenAI-compatible auth block below.
+  delete process.env.MIO_AUTH_TOKEN;
+  process.env.MIO_DIR = smokeDataDir;
+  updateConfig({ dataDir: smokeDataDir, authToken: undefined });
+
   const port = await getFreePort();
   const base = `http://127.0.0.1:${port}`;
   const wsBase = `ws://127.0.0.1:${port}/ws`;
@@ -746,6 +762,13 @@ async function main(): Promise<void> {
   }
 
   // ─── Summary ───
+  if (originalAuthToken === undefined) delete process.env.MIO_AUTH_TOKEN;
+  else process.env.MIO_AUTH_TOKEN = originalAuthToken;
+  if (originalMioDir === undefined) delete process.env.MIO_DIR;
+  else process.env.MIO_DIR = originalMioDir;
+  updateConfig({ dataDir: originalConfig.dataDir, authToken: originalConfig.authToken });
+  await rm(smokeDataDir, { recursive: true, force: true });
+
   const passed = results.filter((r) => r.passed).length;
   const total = results.length;
   console.log('');
