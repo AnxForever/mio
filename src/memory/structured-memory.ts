@@ -34,6 +34,10 @@ export interface MemoryEntity {
   source: string;         // which bookmark/transcript line
   reviewStatus?: 'inferred' | 'confirmed' | 'ignored';
   reviewedAt?: string;
+  /** B-1 bi-temporal：被更新事实取代时打上(ISO)；不删除，留审计；activeEntities 据此排除。 */
+  invalidatedAt?: string;
+  /** 取代它的新事实 content（溯源）。 */
+  supersededBy?: string;
 }
 
 export interface TopicSegment {
@@ -255,7 +259,8 @@ function entitiesSimilar(a: string, b: string): boolean {
 }
 
 function activeEntities(entities: MemoryEntity[]): MemoryEntity[] {
-  return entities.filter((entity) => entity.reviewStatus !== 'ignored');
+  // B-1：排除被取代的矛盾旧事实（invalidatedAt 已设）。无人 set 之前行为不变。
+  return entities.filter((entity) => entity.reviewStatus !== 'ignored' && !entity.invalidatedAt);
 }
 
 // ─── Main API ───
