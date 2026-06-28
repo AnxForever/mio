@@ -10,18 +10,97 @@ import { z } from 'zod';
 // ─── Chat ───
 
 export const chatBody = z.object({
-  text: z.string().min(1).max(8000),
+  text: z.string().min(1).max(8000).optional(),
   sessionId: z.string().max(64).optional(),
   imagePath: z.string().max(512).optional(),
+  audioPath: z.string().max(512).optional(),
+}).refine((body) => !!body.text || !!body.imagePath || !!body.audioPath, {
+  message: 'At least one of text, imagePath, or audioPath is required',
 });
 
 export type ChatBody = z.infer<typeof chatBody>;
+
+const openAIContentPart = z.object({
+  type: z.string().trim().min(1).max(64).optional(),
+  text: z.string().max(8000).optional(),
+  input_text: z.string().max(8000).optional(),
+}).passthrough();
+
+export const openAIChatMessage = z.object({
+  role: z.enum(['system', 'developer', 'user', 'assistant', 'tool']),
+  content: z.union([
+    z.string().max(8000),
+    z.array(openAIContentPart).max(32),
+    z.null(),
+  ]).optional(),
+  name: z.string().trim().max(128).optional(),
+  tool_call_id: z.string().trim().max(256).optional(),
+}).passthrough();
+
+export const openAIChatCompletionsBody = z.object({
+  model: z.string().trim().min(1).max(200).optional().default('mio'),
+  messages: z.array(openAIChatMessage).min(1).max(100),
+  stream: z.boolean().optional().default(false),
+  user: z.string().trim().max(256).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  max_tokens: z.number().int().min(1).max(8192).optional(),
+}).passthrough();
+
+export type OpenAIChatMessage = z.infer<typeof openAIChatMessage>;
+export type OpenAIChatCompletionsBody = z.infer<typeof openAIChatCompletionsBody>;
+
+const oneBotId = z.union([
+  z.string().trim().min(1).max(64),
+  z.number().int().nonnegative(),
+]);
+
+export const oneBotMessageSegment = z.object({
+  type: z.string().trim().min(1).max(64),
+  data: z.record(z.string(), z.unknown()).optional(),
+}).passthrough();
+
+export const oneBotEventBody = z.object({
+  post_type: z.string().trim().min(1).max(64),
+  message_type: z.enum(['private', 'group']).optional(),
+  sub_type: z.string().trim().max(64).optional(),
+  user_id: oneBotId.optional(),
+  group_id: oneBotId.optional(),
+  self_id: oneBotId.optional(),
+  message_id: oneBotId.optional(),
+  message: z.union([
+    z.string().max(8000),
+    z.array(oneBotMessageSegment).max(128),
+  ]).optional(),
+  raw_message: z.string().max(8000).optional(),
+  sender: z.record(z.string(), z.unknown()).optional(),
+  time: z.number().optional(),
+}).passthrough();
+
+export type OneBotMessageSegment = z.infer<typeof oneBotMessageSegment>;
+export type OneBotEventBody = z.infer<typeof oneBotEventBody>;
 
 export const voiceSynthesizeBody = z.object({
   text: z.string().trim().min(1).max(2000),
 });
 
 export type VoiceSynthesizeBody = z.infer<typeof voiceSynthesizeBody>;
+
+export const audioUploadBody = z.object({
+  filename: z.string().trim().min(1).max(180).optional(),
+  mimeType: z.enum(['audio/wav', 'audio/x-wav', 'audio/mpeg', 'audio/mp4', 'audio/webm', 'audio/ogg']).optional(),
+  data: z.string().min(1).max(20_000_000),
+});
+
+export type AudioUploadBody = z.infer<typeof audioUploadBody>;
+
+export const imageUploadBody = z.object({
+  filename: z.string().trim().min(1).max(180).optional(),
+  mimeType: z.enum(['image/png', 'image/jpeg', 'image/webp', 'image/gif']).optional(),
+  data: z.string().min(1).max(7_000_000),
+});
+
+export type ImageUploadBody = z.infer<typeof imageUploadBody>;
 
 // ─── Mod switch ───
 
@@ -30,6 +109,18 @@ export const modBody = z.object({
 });
 
 export type ModBody = z.infer<typeof modBody>;
+
+export const modNameParam = z.object({
+  name: z.string().trim().min(1).max(80).regex(/^[\p{L}\p{N}_-]+$/u, 'Invalid mod name'),
+});
+
+export type ModNameParam = z.infer<typeof modNameParam>;
+
+export const soulBody = z.object({
+  soul: z.string().min(1).max(80_000),
+});
+
+export type SoulBody = z.infer<typeof soulBody>;
 
 // ─── Persona generation ───
 
@@ -72,6 +163,7 @@ export const memoryPatchBody = z.object({
   type: z.enum(['fact', 'preference', 'event', 'decision', 'intention', 'emotion']).optional(),
   content: z.string().trim().min(1).max(500).optional(),
   confidence: z.number().min(0).max(1).optional(),
+  reviewStatus: z.enum(['inferred', 'confirmed', 'ignored']).optional(),
 }).refine((body) => Object.keys(body).length > 0, {
   message: 'At least one field is required',
 });
@@ -135,7 +227,7 @@ export const wsClientMessageSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('switch_mod'),
-    name: z.enum(['male', 'female']),
+    name: z.string().min(1).max(80).regex(/^[\p{L}\p{N}_-]+$/u, 'Invalid mod name'),
   }),
   z.object({ type: z.literal('subscribe_avatar') }),
   z.object({

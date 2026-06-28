@@ -210,6 +210,18 @@ export function deleteBySource(source: string): void {
   db.prepare('DELETE FROM entries WHERE source = ?').run(source);
 }
 
+/** Delete one entry by id plus its dense row if present. */
+export function deleteById(id: string): boolean {
+  const db = getDb();
+  const row = db.prepare('SELECT rowid FROM entries WHERE id = ?').get(id) as { rowid: number } | undefined;
+  if (!row) return false;
+  if (hasDenseTable(db)) {
+    db.prepare('DELETE FROM vec_dense WHERE rowid = ?').run(BigInt(row.rowid));
+  }
+  db.prepare('DELETE FROM entries WHERE id = ?').run(id);
+  return true;
+}
+
 // ─── Reads ───
 
 /** All entries, materialized. */

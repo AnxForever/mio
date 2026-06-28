@@ -355,7 +355,8 @@ Usage:
   mio mod <name>             Switch persona (male | female)
   mio status                 Show config + state
   mio voice                  Show detected voice capabilities
-  mio serve [--port N]       Start HTTP/WebSocket server
+  mio serve [--port N] [--host HOST]
+                             Start HTTP/WebSocket server
   mio diary                  Run the diary pass for today
   mio help                   Show this help
 
@@ -413,16 +414,21 @@ switch (command) {
     process.exit(0);
     break;
   case 'serve': {
-    // Parse --port N from args
+    // Parse --port N / --host HOST from args
     let port: number | undefined;
     const portIdx = args.indexOf('--port');
     if (portIdx >= 0 && args[portIdx + 1]) {
       port = parseInt(args[portIdx + 1], 10);
     }
+    let host: string | undefined;
+    const hostIdx = args.indexOf('--host');
+    if (hostIdx >= 0 && args[hostIdx + 1]) {
+      host = args[hostIdx + 1];
+    }
     lifeScheduler().start();
     nightlyScheduler().start();   // arm nightly consolidation: long-term memory固化 / stage 晋升 / diary
     proactiveScheduler().start(); // arm proactive messages: 主动关心 (morning/evening/check-in by stage)
-    startServer({ port }).catch((err) => {
+    startServer({ port, host }).catch((err) => {
       console.error(err);
       process.exit(1);
     });

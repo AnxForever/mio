@@ -21,7 +21,11 @@ import { getConfig } from '../config.js';
 import { decideProactiveMessage, recordProactiveMessage } from './smart-proactive.js';
 import { sendToAllChannels, isNotifyEnabled } from '../server/notify.js';
 import { appendBookmark } from '../memory/bank.js';
-import type { StreamingProvider, SessionContext, EmotionState, RelationshipState, RelationshipStage } from '../types.js';
+import { loadTranscriptWindow, recordMessage } from '../memory/transcript.js';
+import type { StreamingProvider, SessionContext, EmotionState, RelationshipState, RelationshipStage, Message } from '../types.js';
+import { assessProactiveMessage } from './proactive-quality.js';
+import { listUsersWithProactiveWeClawTargets, readPreferences } from '../memory/persona-delta.js';
+import { buildPreferencePrompt } from '../persona/layered.js';
 
 /** 主动消息类型 */
 export type ProactiveMessageType = 'morning' | 'evening' | 'random_checkin' | 'emotional_support';
@@ -31,6 +35,12 @@ export interface ProactiveMessage {
   type: ProactiveMessageType;
   content: string;
   timestamp: string;
+  userId?: string;
+}
+
+interface SendProactiveOptions {
+  skipSmartGate?: boolean;
+  recordSmartOutcome?: boolean;
 }
 
 /** 阶段顺序（索引越大关系越深） */
@@ -88,7 +98,7 @@ export class ProactiveScheduler {
     if (stageIdx >= 1) {
       this.cronJobs.push(
         new Cron('0 8 * * *', { timezone: tz }, () => {
-          this.sendProactiveMessage('morning').catch((err) => {
+          this.sendForEligibleUsers('morning').catch((err) => {
             logger.error('[proactive] morning failed:', err);
           });
         }),
@@ -100,7 +110,7 @@ export class ProactiveScheduler {
     if (stageIdx >= 1) {
       this.cronJobs.push(
         new Cron('0 23 * * *', { timezone: tz }, () => {
-          this.sendProactiveMessage('evening').catch((err) => {
+          this.sendForEligibleUsers('evening').catch((err) => {
             logger.error('[proactive] evening failed:', err);
           });
         }),
@@ -117,7 +127,7 @@ export class ProactiveScheduler {
           if (Math.random() < 0.5) {
             // 30% 概率发情感支持，70% 随机关心
             const type: ProactiveMessageType = Math.random() < 0.3 ? 'emotional_support' : 'random_checkin';
-            this.sendProactiveMessage(type).catch((err) => {
+            this.sendForEligibleUsers(type).catch((err) => {
               logger.error('[proactive] random check-in failed:', err);
             });
           }
@@ -147,7 +157,63 @@ export class ProactiveScheduler {
    */
   async triggerNow(type?: ProactiveMessageType): Promise<string | null> {
     const t: ProactiveMessageType = type ?? 'random_checkin';
-    return this.sendProactiveMessage(t);
+    const targetUserId = this.ctx?.sessionId;
+    if (targetUserId) {
+      return this.sendProactiveMessage(t, targetUserId);
+    }
+
+    const targets = listUsersWithProactiveWeClawTargets();
+    if (targets.length === 0) {
+      if (weClawOptInMode()) {
+        // WeChat opt-in mode: no opted-in contacts → skip (no global fallback;
+        // never message opted-out contacts via MIO_WECLAW_TO).
+        logger.info('[proactive] WeClaw opt-in mode with no opted-in targets; skipping trigger');
+        return null;
+      }
+      // Legacy non-WeClaw deployment → keep the global Telegram/webhook proactive.
+      return this.sendProactiveMessage(t);
+    }
+
+    const messages = await this.sendToTargets(t, targets);
+    return messages.length > 0 ? messages.join('\n') : null;
+  }
+
+  private async sendForEligibleUsers(type: ProactiveMessageType): Promise<void> {
+    const targets = listUsersWithProactiveWeClawTargets();
+    if (targets.length === 0) {
+      if (weClawOptInMode()) {
+        // WeChat opt-in mode: no opted-in contacts → skip (no global fallback).
+        logger.info('[proactive] WeClaw opt-in mode with no opted-in targets; skipping scheduled message');
+        return;
+      }
+      // Legacy non-WeClaw deployment → keep the global Telegram/webhook proactive.
+      await this.sendProactiveMessage(type, this.ctx?.sessionId);
+      return;
+    }
+
+    await this.sendToTargets(type, targets);
+  }
+
+  private async sendToTargets(
+    type: ProactiveMessageType,
+    targets: Array<{ userId: string; to: string }>,
+  ): Promise<string[]> {
+    const relationshipState: RelationshipState = readRelationshipState();
+    if (!canSendProactiveMsgs(relationshipState.stage)) {
+      logger.info(
+        `[proactive] stage ${relationshipState.stage} does not allow proactive messages`,
+      );
+      return [];
+    }
+
+    const messages: string[] = [];
+    for (const target of targets) {
+      const message = await this.sendProactiveMessage(type, target.userId);
+      if (message) {
+        messages.push(message);
+      }
+    }
+    return messages;
   }
 
   /**
@@ -159,7 +225,11 @@ export class ProactiveScheduler {
    * 4. 若返回 [NO_MSG] 则跳过
    * 5. 否则存入 buffer 并触发回调
    */
-  async sendProactiveMessage(type: ProactiveMessageType): Promise<string | null> {
+  async sendProactiveMessage(
+    type: ProactiveMessageType,
+    userId?: string,
+    opts: SendProactiveOptions = {},
+  ): Promise<string | null> {
     // 1. 读取当前状态
     const emotionState: EmotionState = readEmotionState();
     const relationshipState: RelationshipState = readRelationshipState();
@@ -175,24 +245,17 @@ export class ProactiveScheduler {
     }
 
     // 2b. Smart scheduler gate (unless disabled by feature flag or env var)
-    if (config.features.smartProactive) {
-      const decision = decideProactiveMessage(
-        relationshipState.stage,
-        emotionState.lastInteraction,
-      );
-      if (!decision.shouldMessage) {
-        logger.info(`[proactive] smart scheduler vetoed: ${decision.reason}`);
-        recordProactiveMessage(false);
-        return null;
-      }
-      logger.info(`[proactive] smart scheduler approved: ${decision.reason}`);
+    const recordSmartOutcome = opts.recordSmartOutcome ?? true;
+    if (!opts.skipSmartGate) {
+      const passed = this.passSmartGate(config, relationshipState, emotionState, recordSmartOutcome, userId);
+      if (!passed) return null;
     }
 
     // 3. 构建 prompt
-    const prompt = buildProactivePrompt(type, emotionState, relationshipState, stageConfig);
+    const prompt = buildProactivePrompt(type, emotionState, relationshipState, stageConfig, userId);
 
     // 4. spawn proactive-msg 子 agent
-    const result = await spawnSubagent('proactive-msg', prompt, this.provider, this.ctx, {
+    const result = await spawnSubagent('proactive-msg', prompt, this.provider, { ...this.ctx, sessionId: userId ?? this.ctx?.sessionId }, {
       maxTurns: 10,
       awaitTerminal: true,
     });
@@ -201,33 +264,48 @@ export class ProactiveScheduler {
     const trimmed = result.trim();
     if (trimmed === '[NO_MSG]') {
       logger.info('[proactive] subagent decided no message needed');
-      recordProactiveMessage(false);
+      if (recordSmartOutcome) recordProactiveMessage(false, undefined, userId);
+      return null;
+    }
+
+    const quality = assessProactiveMessage(trimmed, type, relationshipState.stage);
+    if (!quality.ok) {
+      logger.info(`[proactive] quality gate rejected message: ${quality.reasons.join(', ')}`);
+      if (recordSmartOutcome) recordProactiveMessage(false, undefined, userId);
       return null;
     }
 
     // 6. 记录发送给 smart scheduler
-    recordProactiveMessage(true);
+    if (recordSmartOutcome) recordProactiveMessage(true, undefined, userId);
 
     // 7. 存入 buffer 并触发回调
     const message: ProactiveMessage = {
       type,
       content: trimmed,
       timestamp: new Date().toISOString(),
+      ...(userId ? { userId } : {}),
     };
     this.messageBuffer.push(message);
 
-    // Record the outreach as a bookmark so Mio "remembers" she reached out —
-    // it gets indexed for semantic recall and consolidated at night. Without
-    // this, a proactive message leaves no trace and the next user reply has
-    // no context that she just messaged them.
+    // Keep contact-scoped outreach in the contact transcript. Global bookmarks
+    // are injected into every user's prompt, so writing per-user proactive
+    // content there would leak private outreach across contacts.
     try {
-      appendBookmark({
-        time: message.timestamp,
-        what: `我主动联系了 ta（${type}）`,
-        evidence: trimmed.slice(0, 120),
-      });
+      if (userId) {
+        recordMessage(userId, {
+          role: 'assistant',
+          content: trimmed,
+          timestamp: message.timestamp,
+        });
+      } else {
+        appendBookmark({
+          time: message.timestamp,
+          what: `我主动联系了 ta（${type}）`,
+          evidence: trimmed.slice(0, 120),
+        });
+      }
     } catch {
-      // Best-effort — never let a bookmark write break message delivery.
+      // Best-effort — never let memory persistence break message delivery.
     }
 
     if (this.onMessage) {
@@ -237,7 +315,7 @@ export class ProactiveScheduler {
     logger.info(`[proactive] message generated (${type}): ${trimmed.slice(0, 100)}`);
 
     // 8. 投递到外部通知渠道（Telegram / Webhook）
-    await dispatchToNotifyChannels(trimmed, type);
+    await dispatchToNotifyChannels(trimmed, type, userId);
 
     return trimmed;
   }
@@ -252,6 +330,30 @@ export class ProactiveScheduler {
   /** 是否有待投递消息 */
   hasPendingMessages(): boolean {
     return this.messageBuffer.length > 0;
+  }
+
+  private passSmartGate(
+    config: ReturnType<typeof getConfig>,
+    relationshipState: RelationshipState,
+    emotionState: EmotionState,
+    recordOutcome: boolean,
+    userId?: string,
+  ): boolean {
+    if (!config.features.smartProactive) return true;
+
+    const decision = decideProactiveMessage(
+      relationshipState.stage,
+      emotionState.lastInteraction,
+      userId,
+    );
+    if (!decision.shouldMessage) {
+      logger.info(`[proactive] smart scheduler vetoed: ${decision.reason}`);
+      if (recordOutcome) recordProactiveMessage(false, undefined, userId);
+      return false;
+    }
+
+    logger.info(`[proactive] smart scheduler approved: ${decision.reason}`);
+    return true;
   }
 }
 
@@ -271,12 +373,25 @@ export function proactiveScheduler(
 
 // ─── 内部辅助 ───
 
+/** Whether WeChat (WeClaw) opt-in proactive mode is enabled (MIO_WECLAW_NOTIFY). */
+function weClawOptInMode(): boolean {
+  const v = (process.env.MIO_WECLAW_NOTIFY ?? '').trim().toLowerCase();
+  return v === 'true' || v === '1' || v === 'on' || v === 'yes';
+}
+
 /** 通知渠道分发：将主动消息推送到外部通知渠道 */
-async function dispatchToNotifyChannels(text: string, type: ProactiveMessageType): Promise<void> {
-  if (!isNotifyEnabled()) return;
+async function dispatchToNotifyChannels(text: string, type: ProactiveMessageType, userId?: string): Promise<void> {
+  if (!isNotifyEnabled(userId)) return;
 
   logger.info(`[proactive] dispatching to notification channels (${type})`);
-  const results = await sendToAllChannels(text);
+  const results = await sendToAllChannels(text, {
+    userId,
+    // WeChat is opt-in only: never fall back to MIO_WECLAW_TO for global
+    // (userId-less) sends — that would message opted-out contacts. Global
+    // proactive reaches the non-WeClaw channels (Telegram/webhook) only.
+    allowEnvWeClawFallback: false,
+    weclawOnly: !!userId,
+  });
   for (const r of results) {
     if (r.success) {
       logger.info(`[proactive]  ✓ ${r.channel}: delivered`);
@@ -303,7 +418,31 @@ function buildProactivePrompt(
   emotionState: EmotionState,
   relationshipState: RelationshipState,
   stageConfig: StageConfig,
+  userId?: string,
 ): string {
+  const userPreferenceBlock = userId ? buildPreferencePrompt(readPreferences(userId)) : '';
+  const contactHistoryBlock = userId ? buildContactHistoryBlock(userId) : '';
+  const emotionBlock = userId
+    ? `- My mood: ${emotionState.myMood}
+- Energy level: ${emotionState.energy}`
+    : `- My mood: ${emotionState.myMood}
+- User's mood: ${emotionState.userMood}
+- Affection level: ${emotionState.affection}/100
+- Energy level: ${emotionState.energy}
+- Last interaction: ${emotionState.lastInteraction}
+- Recent topics: ${emotionState.recentTopics.join(', ') || '(none)'}
+- Unresolved thread: ${emotionState.unresolvedThread ?? '(none)'}`;
+  const relationshipMemoryBlock = userId
+    ? ''
+    : `
+## Nicknames
+- User calls me: ${relationshipState.nicknames.userCallsAgent ?? '(none yet)'}
+- I call user: ${relationshipState.nicknames.agentCallsUser ?? '(none yet)'}
+
+## Shared memories
+${relationshipState.sharedMemories.length > 0
+    ? relationshipState.sharedMemories.map((m) => `- ${m}`).join('\n')
+    : '(none yet)'}`;
   return `Generate a proactive message for the user.
 
 ## Context
@@ -313,28 +452,33 @@ function buildProactivePrompt(
 - Allowed behaviors: ${stageConfig.allowedBehaviors.join(', ')}
 
 ## Current emotional state
-- My mood: ${emotionState.myMood}
-- User's mood: ${emotionState.userMood}
-- Affection level: ${emotionState.affection}/100
-- Energy level: ${emotionState.energy}
-- Last interaction: ${emotionState.lastInteraction}
-- Recent topics: ${emotionState.recentTopics.join(', ') || '(none)'}
-- Unresolved thread: ${emotionState.unresolvedThread ?? '(none)'}
-
-## Nicknames
-- User calls me: ${relationshipState.nicknames.userCallsAgent ?? '(none yet)'}
-- I call user: ${relationshipState.nicknames.agentCallsUser ?? '(none yet)'}
-
-## Shared memories
-${relationshipState.sharedMemories.length > 0
-    ? relationshipState.sharedMemories.map((m) => `- ${m}`).join('\n')
-    : '(none yet)'}
+${emotionBlock}
+${relationshipMemoryBlock}
+${contactHistoryBlock ? `\n## Contact-scoped recent conversation\n${contactHistoryBlock}` : ''}
+${userPreferenceBlock ? `\n## User-specific preferences\n${userPreferenceBlock}` : ''}
 
 ## Instructions
 - Write a single natural message as Mio (the companion).
 - Match the relationship stage's tone and allowed behaviors strictly.
+- Respect relationship boundaries: no love-talk, possessiveness, or intimate nicknames before the relationship stage explicitly allows it.
+- If this is for a specific contact, rely only on contact-scoped recent conversation and user-specific preferences; do not infer private facts from global memories.
 - Keep it short (1-3 sentences).
+- Ask at most one question and never pressure the user to reply.
 - If this moment doesn't call for a message (e.g., too soon since last interaction, or context doesn't fit), respond with exactly: [NO_MSG]
 - Write in the user's primary language (Chinese if unsure).
 - Do not include any meta-text, just the message or [NO_MSG].`;
+}
+
+function buildContactHistoryBlock(userId: string): string {
+  const messages = loadTranscriptWindow(userId, 6)
+    .map(formatTranscriptMessage)
+    .filter(Boolean);
+  return messages.length > 0 ? messages.join('\n') : '(none yet)';
+}
+
+function formatTranscriptMessage(message: Message): string {
+  const content = typeof message.content === 'string'
+    ? message.content
+    : JSON.stringify(message.content);
+  return `- ${message.role}: ${content.slice(0, 180)}`;
 }

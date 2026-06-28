@@ -1,0 +1,51 @@
+#!/usr/bin/env node
+/**
+ * Mio — proactive message quality gate tests.
+ *
+ * Keeps proactive outreach from becoming intrusive, too intimate for the
+ * relationship stage, or service-toned.
+ */
+
+const results: { ok: boolean; msg: string }[] = [];
+
+function ok(cond: boolean, msg: string): void {
+  results.push({ ok: cond, msg });
+  console.log(`  ${cond ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m'} ${msg}`);
+}
+
+console.log('\n\x1b[1mMio — proactive quality tests\x1b[0m\n');
+
+const { assessProactiveMessage } = await import('../dist/scheduler/proactive-quality.js');
+
+{
+  const result = assessProactiveMessage('你为什么不回我，马上回复我。', 'random_checkin', 'ambiguous');
+  ok(!result.ok, 'rejects reply-pressure copy');
+  ok(result.reasons.includes('pressures-user-to-reply'), 'reports reply-pressure reason');
+}
+
+{
+  const result = assessProactiveMessage('宝贝早安，爱你，今天也要想我。', 'morning', 'familiar');
+  ok(!result.ok, 'rejects intimate copy before ambiguous/intimate stages');
+  ok(result.reasons.includes('too-intimate-for-stage'), 'reports stage-boundary reason');
+}
+
+{
+  const result = assessProactiveMessage('早，今天慢慢来就好。我在这边，不急着回。', 'morning', 'familiar');
+  ok(result.ok, 'accepts short low-pressure morning check-in');
+}
+
+{
+  const result = assessProactiveMessage('作为AI助手，有什么可以帮您的？', 'random_checkin', 'intimate');
+  ok(!result.ok, 'rejects meta/service tone');
+  ok(result.reasons.includes('meta-or-service-tone'), 'reports service-tone reason');
+}
+
+const passed = results.filter((r) => r.ok).length;
+console.log('');
+if (passed === results.length) {
+  console.log(`\x1b[32m✔ all ${results.length} proactive quality tests passed\x1b[0m`);
+  process.exit(0);
+}
+
+console.log(`\x1b[31m✘ ${results.length - passed}/${results.length} failed\x1b[0m`);
+process.exit(1);

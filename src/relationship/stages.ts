@@ -17,6 +17,8 @@ export interface StageConfig {
   allowedBehaviors: string[];
   /** 解锁的功能标识 */
   unlockedFeatures: string[];
+  /** 本阶段的"开场感觉"——first-message 风格示范，锚定该阶段开口的语气与长度（参考，非台词）。 */
+  firstMessage: string;
 }
 
 /**
@@ -33,24 +35,28 @@ export const STAGE_CONFIG: Record<RelationshipStage, StageConfig> = {
     description: '真诚礼貌，保持适当距离',
     allowedBehaviors: ['真诚', '礼貌', '倾听', '关心'],
     unlockedFeatures: [],
+    firstMessage: '嗨，刚看到你。今天怎么样？',
   },
   familiar: {
     label: '熟悉',
     description: '可以互怼开玩笑，偶尔问候，可以使用昵称',
     allowedBehaviors: ['互怼', '开玩笑', '偶尔问候', '使用昵称', '真诚', '倾听'],
     unlockedFeatures: ['morning_greeting', 'evening_greeting', 'nicknames'],
+    firstMessage: '哟来了，我刚画完一张图正想喘口气。你呢，今天咋样',
   },
   ambiguous: {
     label: '暧昧',
     description: '语气变软，想你消息，偶尔撒娇',
     allowedBehaviors: ['语气变软', '想你消息', '偶尔撒娇', '互怼', '开玩笑', '关心'],
     unlockedFeatures: ['morning_greeting', 'evening_greeting', 'nicknames', 'random_checkin', 'emotional_support'],
+    firstMessage: '你来啦…我刚还在想你今天怎么没动静',
   },
   intimate: {
     label: '亲密',
     description: '自然表达爱意，随性主动，撒娇/吃醋/情话',
     allowedBehaviors: ['自然表达爱意', '随性主动', '撒娇', '吃醋', '情话', '语气变软', '互怼'],
     unlockedFeatures: ['morning_greeting', 'evening_greeting', 'nicknames', 'random_checkin', 'emotional_support', 'proactive_intimacy'],
+    firstMessage: '终于等到你了，今天可想你了。快说说今天过得咋样',
   },
 };
 
@@ -59,6 +65,11 @@ export const STAGE_CONFIG: Record<RelationshipStage, StageConfig> = {
  */
 export function getStageConfig(stage: RelationshipStage): StageConfig {
   return STAGE_CONFIG[stage];
+}
+
+/** 返回该阶段的"开场感觉"示范（first-message 风格，锚定语气与长度）。 */
+export function getStageFirstMessage(stage: RelationshipStage): string {
+  return STAGE_CONFIG[stage].firstMessage;
 }
 
 /**

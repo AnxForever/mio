@@ -7,6 +7,8 @@ import { registerFileTools } from '../tools/file.js';
 import { registerSessionTools } from '../tools/session.js';
 import { registerWorkTools } from '../tools/work.js';
 import { registerRecallTools } from '../tools/recall.js';
+import { registerKnowledgeTools } from '../tools/knowledge.js';
+import { readPersonaDelta } from '../memory/persona-delta.js';
 
 export interface ToolRegistryLike {
   listDefs(names?: string[]): { name: string; description: string; inputSchema: Record<string, unknown> }[];
@@ -16,14 +18,72 @@ export interface ToolRegistryLike {
   ): Promise<{ id: string; name: string; output: string; isError?: boolean }>;
 }
 
+const ISOLATED_SESSION_TOOL_NAMES = new Set(['current_time']);
+
+/**
+ * Return a registry view scoped to the current session.
+ *
+ * External IM bridge sessions are contact-isolated. They must not see or call
+ * tools that can read shared memory, transcripts, files, emotion state, cron
+ * tasks, or work ledgers.
+ */
+export function scopedToolRegistry(
+  registry: ToolRegistryLike,
+  ctx: SessionContext,
+): ToolRegistryLike {
+  if (ctx.isolatedMemory === true) {
+    return {
+      listDefs(names?: string[]) {
+        const requested = names
+          ? names.filter((name) => ISOLATED_SESSION_TOOL_NAMES.has(name))
+          : [...ISOLATED_SESSION_TOOL_NAMES];
+        return registry.listDefs(requested);
+      },
+      async execute(call, execCtx) {
+        if (!ISOLATED_SESSION_TOOL_NAMES.has(call.name)) {
+          return {
+            id: call.id,
+            name: call.name,
+            output: `Tool "${call.name}" is not available in isolated IM contact sessions.`,
+            isError: true,
+          };
+        }
+        return registry.execute(call, execCtx);
+      },
+    };
+  }
+
+  // C4: per-persona tool allowlist (borrowed from AstrBot Persona.tools).
+  // Absent/empty → all tools; non-empty → only the whitelisted tools.
+  const allow = readPersonaDelta(ctx.sessionId)?.allowedTools;
+  if (!allow || allow.length === 0) return registry;
+  const allowed = new Set(allow);
+  return {
+    listDefs(names?: string[]) {
+      return registry.listDefs(names).filter((d) => allowed.has(d.name));
+    },
+    async execute(call, execCtx) {
+      if (!allowed.has(call.name)) {
+        return {
+          id: call.id,
+          name: call.name,
+          output: `Tool "${call.name}" is not in this persona's allowed-tools list.`,
+          isError: true,
+        };
+      }
+      return registry.execute(call, execCtx);
+    },
+  };
+}
+
 let toolsRegistered = false;
 let pluginsLoaded = false;
 
 /** Load builtin plugins once per process. */
-export function ensurePluginsLoaded(): void {
+export async function ensurePluginsLoaded(): Promise<void> {
   if (pluginsLoaded) return;
   for (const plugin of BUILTIN_PLUGINS) {
-    try { pluginRegistry().register(plugin); } catch { /* duplicate */ }
+    try { await pluginRegistry().register(plugin); } catch { /* duplicate */ }
   }
   pluginsLoaded = true;
 }
@@ -42,6 +102,7 @@ export function ensureToolsRegistered(): ToolRegistryLike {
   registerWorkTools(reg as unknown as { register: (def: unknown, handler: unknown) => void });
   registerEmotionTools(reg as unknown as { register: (def: unknown, handler: unknown) => void });
   registerRecallTools(reg as unknown as { register: (def: unknown, handler: unknown) => void });
+  registerKnowledgeTools(reg as unknown as { register: (def: unknown, handler: unknown) => void });
   toolsRegistered = true;
   return reg;
 }

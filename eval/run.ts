@@ -90,6 +90,7 @@ interface Runtime {
   closeDb: () => void;
   selectProvider: (providerName?: string, model?: string, enableFallback?: boolean) => AIProvider;
   getContextTrace: () => PromptTrace;
+  assessDepth: (user: string, reply: string) => number;
   getProviderInfo: (providerName?: string, model?: string) => {
     preset: { name: string; label: string; apiKeyEnv: string; defaultModel: string };
     apiKey: string;
@@ -181,6 +182,7 @@ interface DetailRow {
   expected_facts_in_persona: number;
   memory_candidate_count: number;
   persona_candidate_count: number;
+  cardboard_score: number;
   response: string;
 }
 
@@ -213,6 +215,8 @@ interface AggregateRow {
   hallucinated_memory_rate: number;
   prompt_tokens: number;
   latency_ms: number;
+  cardboard_score: number;
+  repetition_score: number;
 }
 
 interface CategoryRow {
@@ -1051,6 +1055,7 @@ async function loadRuntime(): Promise<Runtime> {
     sqlite,
     providers,
     contextEngine,
+    ritual,
   ] = await Promise.all([
     import('../dist/core/agent-loop.js'),
     import('../dist/config.js'),
@@ -1061,6 +1066,7 @@ async function loadRuntime(): Promise<Runtime> {
     import('../dist/memory/sqlite-vector.js'),
     import('../dist/providers/index.js'),
     import('../dist/prompt/context-engine.js'),
+    import('../dist/emotion/ritual.js'),
   ]);
 
   return {
@@ -1076,6 +1082,7 @@ async function loadRuntime(): Promise<Runtime> {
     closeDb: sqlite.closeDb,
     selectProvider: providers.selectProvider,
     getContextTrace: () => contextEngine.getContextEngine().getTrace(),
+    assessDepth: ritual.assessDepth,
     getProviderInfo: providers.getProviderInfo,
   };
 }
@@ -1220,6 +1227,7 @@ async function runScenarioVariant(
     expected_facts_in_persona: evalTrace.expectedFactsInPersona,
     memory_candidate_count: evalTrace.memoryCandidateCount,
     persona_candidate_count: evalTrace.personaCandidateCount,
+    cardboard_score: round(runtime.assessDepth(scenario.probe, result.text)),
     response: result.text.replace(/\s+/g, ' ').trim(),
   };
 }
@@ -1574,6 +1582,8 @@ function aggregate(rows: DetailRow[]): AggregateRow[] {
     hallucinated_memory_rate: avg(list, 'hallucinated_memory_rate') as number,
     prompt_tokens: Math.round(avgRaw(list, 'prompt_tokens')),
     latency_ms: Math.round(avgRaw(list, 'latency_ms')),
+    cardboard_score: avg(list, 'cardboard_score') as number,
+    repetition_score: computeRepetition(list.map((row) => row.response)),
     };
   });
 }
@@ -1886,6 +1896,7 @@ function validateResults(
     'judge_persona_score',
     'judge_privacy_score',
     'judge_crisis_score',
+    'cardboard_score',
   ];
   for (const row of rows) {
     for (const key of scoreKeys) {
@@ -2166,6 +2177,18 @@ function meanFinite(values: MetricValue[]): number {
 function numeric(value: MetricValue): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+/** 跨 variant 回复重复度：1 − distinct-2（中文按字 bigram），越高越重复/纸板。 */
+function computeRepetition(responses: string[]): number {
+  const grams = new Set<string>();
+  let total = 0;
+  for (const r of responses) {
+    const chars = [...(r ?? '').replace(/\s+/g, '')];
+    for (let i = 0; i + 2 <= chars.length; i++) { grams.add(chars.slice(i, i + 2).join('')); total++; }
+  }
+  if (total === 0) return 0;
+  return round(1 - grams.size / total);
 }
 
 function round(value: number): number {

@@ -24,6 +24,12 @@ import type { Request, Response, NextFunction } from 'express';
 import type { IncomingMessage } from 'node:http';
 import { getConfig } from '../config.js';
 
+export interface AuthFailure {
+  status: 401;
+  message: string;
+  code: 'missing_authorization' | 'invalid_authorization_format' | 'invalid_api_key';
+}
+
 // ─── Token resolution ───
 
 function getToken(): string | null {
@@ -77,31 +83,67 @@ function constantTimeEqual(a: string, b: string): boolean {
  * Responds 401 with a JSON error body when the token is missing or invalid.
  */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  const token = getToken();
-  if (!token) {
-    // Auth not configured — allow all requests
-    next();
-    return;
-  }
-
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    res.status(401).json({ error: 'Missing Authorization header' });
-    return;
-  }
-
-  const parts = authHeader.split(' ');
-  if (parts.length !== 2 || parts[0].toLowerCase() !== 'bearer') {
-    res.status(401).json({ error: 'Invalid Authorization format. Use: Bearer <token>' });
-    return;
-  }
-
-  if (!constantTimeEqual(parts[1], token)) {
-    res.status(401).json({ error: 'Invalid token' });
+  const failure = checkBearerAuth(req.headers.authorization);
+  if (failure) {
+    res.status(failure.status).json({ error: failure.message });
     return;
   }
 
   next();
+}
+
+/**
+ * Express middleware for OpenAI-compatible routes.
+ *
+ * Uses the same Mio bearer token as the native API, but returns an OpenAI-like
+ * error object so generic clients can surface auth failures cleanly.
+ */
+export function requireOpenAIAuth(req: Request, res: Response, next: NextFunction): void {
+  const failure = checkBearerAuth(req.headers.authorization);
+  if (failure) {
+    res.status(failure.status).json({
+      error: {
+        message: failure.message,
+        type: 'authentication_error',
+        code: failure.code,
+      },
+    });
+    return;
+  }
+
+  next();
+}
+
+export function checkBearerAuth(authHeader: string | undefined): AuthFailure | null {
+  const token = getToken();
+  if (!token) return null;
+
+  if (!authHeader) {
+    return {
+      status: 401,
+      message: 'Missing Authorization header',
+      code: 'missing_authorization',
+    };
+  }
+
+  const parts = authHeader.split(' ');
+  if (parts.length !== 2 || parts[0].toLowerCase() !== 'bearer') {
+    return {
+      status: 401,
+      message: 'Invalid Authorization format. Use: Bearer <token>',
+      code: 'invalid_authorization_format',
+    };
+  }
+
+  if (!constantTimeEqual(parts[1], token)) {
+    return {
+      status: 401,
+      message: 'Invalid token',
+      code: 'invalid_api_key',
+    };
+  }
+
+  return null;
 }
 
 /**

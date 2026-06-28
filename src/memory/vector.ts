@@ -126,12 +126,57 @@ function similarity(query: AnyVector, candidate: AnyVector): number {
   return 0;
 }
 
+// ─── RRF hybrid fusion ───
+
+/**
+ * Reciprocal Rank Fusion. Merges multiple ranked id-lists into a combined
+ * score map: an item's score is Σ 1/(k + rank) across the lists it appears in.
+ * k=60 is the canonical constant (dampens the weight of top ranks).
+ */
+export function rrfFuse(rankings: string[][], k = 60): Map<string, number> {
+  const scores = new Map<string, number>();
+  for (const ranking of rankings) {
+    for (let i = 0; i < ranking.length; i++) {
+      const id = ranking[i];
+      scores.set(id, (scores.get(id) ?? 0) + 1 / (k + i + 1));
+    }
+  }
+  return scores;
+}
+
+/**
+ * Re-rank dense KNN candidates by fusing the dense order with a free,
+ * query-time TF keyword ranking (computed from each candidate's own text — no
+ * stored sparse vectors needed). Lets dense (semantic) recall keep the exact
+ * keyword matches it would otherwise miss. Returns the top `limit`.
+ */
+export function fuseDenseWithKeyword<T extends { id: string; text: string }>(
+  query: string,
+  denseRanked: T[],
+  limit: number,
+  k = 60,
+): T[] {
+  if (denseRanked.length <= 1) return denseRanked.slice(0, limit);
+  const qTf = embed(tokenize(query));
+  const denseRanking = denseRanked.map((e) => e.id); // already dense-score desc
+  const tfRanking = denseRanked
+    .map((e) => ({ id: e.id, tf: cosine(qTf, embed(tokenize(e.text))) }))
+    .sort((a, b) => b.tf - a.tf)
+    .map((e) => e.id);
+  const fused = rrfFuse([denseRanking, tfRanking], k);
+  const byId = new Map(denseRanked.map((e) => [e.id, e]));
+  return [...fused.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([id]) => byId.get(id)!)
+    .slice(0, limit);
+}
+
 // ─── Index entry types ───
 
 export interface VectorIndexEntry {
   id: string;
   text: string;
-  source: 'bookmark' | 'note' | 'user_profile' | 'diary' | 'manual';
+  source: 'bookmark' | 'note' | 'user_profile' | 'diary' | 'manual' | 'knowledge';
   timestamp: string;
   embeddingType: 'tf' | 'minimax';
   /** Sparse vector (object) or base64-encoded Float32Array (string). */
@@ -256,6 +301,48 @@ export function readIndex(): MaterializedEntry[] {
   return store.readAll().map(toMaterialized);
 }
 
+function textMatches(haystack: string, needle: string): boolean {
+  const n = needle.trim();
+  return n.length > 0 && haystack.includes(n);
+}
+
+/** Delete entries whose text contains the provided content. */
+export function deleteEntriesMatchingText(content: string): number {
+  ensureMigrated();
+  let deleted = 0;
+  for (const entry of store.readAll()) {
+    if (textMatches(entry.text, content) && store.deleteById(entry.id)) {
+      deleted++;
+    }
+  }
+  return deleted;
+}
+
+/**
+ * Replace matching text in vector entries and re-embed changed rows.
+ * Returns the number of updated entries.
+ */
+export async function updateEntriesMatchingText(oldContent: string, newContent: string): Promise<number> {
+  ensureMigrated();
+  const oldText = oldContent.trim();
+  const nextText = newContent.trim();
+  if (!oldText || !nextText || oldText === nextText) return 0;
+
+  const provider = getEmbeddingProvider();
+  let updated = 0;
+  for (const entry of store.readAll()) {
+    if (!textMatches(entry.text, oldText)) continue;
+    await indexEntryWithProvider({
+      id: entry.id,
+      text: entry.text.split(oldText).join(nextText),
+      source: entry.source as VectorIndexEntry['source'],
+      timestamp: entry.timestamp,
+    }, provider);
+    updated++;
+  }
+  return updated;
+}
+
 /**
  * Search the index for entries similar to a query string.
  *
@@ -270,23 +357,31 @@ export async function search(
   query: string,
   limit: number = 5,
   minScore: number = 0.05,
+  sources?: string[],
 ): Promise<Array<MaterializedEntry & { score: number }>> {
   ensureMigrated();
   const provider = getEmbeddingProvider();
   const queryVecs = await provider.embed([query]);
   if (queryVecs.length === 0) return [];
   const queryVec = queryVecs[0];
+  const inSources = (s: string): boolean => !sources || sources.includes(s);
 
   if (queryVec instanceof Float32Array) {
-    // Dense → sqlite-vec KNN.
-    return store
-      .searchDense(queryVec, limit, minScore)
-      .map((r) => ({ ...toMaterialized(r), score: r.score }));
+    // Dense → sqlite-vec KNN, then RRF-fuse with a free TF keyword ranking so
+    // exact keyword matches the pure-semantic KNN would miss get surfaced.
+    // Oversample the pool when a source filter is set to offset post-filtering.
+    const pool = Math.max(limit * 4, 20) * (sources ? 3 : 1);
+    const candidates = store
+      .searchDense(queryVec, pool, minScore)
+      .map((r) => ({ ...toMaterialized(r), score: r.score }))
+      .filter((c) => inSources(c.source));
+    return fuseDenseWithKeyword(query, candidates, limit);
   }
 
   // Sparse (tf) → application-level cosine over tf entries.
   const scored: Array<MaterializedEntry & { score: number }> = [];
   for (const e of store.readSparse()) {
+    if (!inSources(e.source)) continue;
     const score = similarity(queryVec, e.embedding as AnyVector);
     if (score >= minScore) scored.push({ ...toMaterialized(e), score });
   }

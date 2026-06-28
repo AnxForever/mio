@@ -151,6 +151,14 @@
   padding: var(--s4);
 }
 
+.memory-card--ignored {
+  opacity: .72;
+}
+
+.memory-card--ignored .memory-content {
+  color: var(--text-2);
+}
+
 .memory-meta,
 .memory-actions {
   display: flex;
@@ -177,6 +185,14 @@
   color: var(--text);
 }
 
+.memory-status--confirmed {
+  color: #047857;
+}
+
+.memory-status--ignored {
+  color: var(--text-2);
+}
+
 .memory-content {
   margin-top: var(--s3);
   color: var(--text);
@@ -201,6 +217,15 @@
 .memory-action--primary {
   background: var(--text);
   color: var(--bg);
+}
+
+.memory-action--confirm {
+  background: var(--text);
+  color: var(--bg);
+}
+
+.memory-action--ignore {
+  color: var(--text-2);
 }
 
 .memory-action--danger {

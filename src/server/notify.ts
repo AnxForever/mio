@@ -5,10 +5,12 @@
  * 设计上允许各渠道独立配置、独立运行，单渠道失败不应阻塞其他渠道。
  */
 
+import { getWeClawTarget, listUsersWithProactiveWeClawTargets } from '../memory/persona-delta.js';
+
 // ─── 类型 ───
 
 export interface NotifyChannel {
-  type: 'telegram' | 'webhook' | 'whatsapp' | 'discord' | 'slack';
+  type: 'telegram' | 'webhook' | 'whatsapp' | 'discord' | 'slack' | 'weclaw';
   enabled: boolean;
   config: Record<string, string>;
 }
@@ -17,6 +19,18 @@ export interface NotifyResult {
   channel: string;
   success: boolean;
   error?: string;
+}
+
+export interface NotifyDispatchOptions {
+  userId?: string;
+  allowEnvWeClawFallback?: boolean;
+  weclawOnly?: boolean;
+}
+
+export interface WeClawMessageOptions {
+  userId?: string;
+  to?: string;
+  allowEnvFallback?: boolean;
 }
 
 // ============================================================
@@ -303,6 +317,62 @@ export async function sendSlackMessage(text: string): Promise<NotifyResult> {
 }
 
 // ============================================================
+// WeClaw local API
+// ============================================================
+
+/**
+ * Send a text message through the local WeClaw API.
+ *
+ * Reads config from environment variables:
+ *   MIO_WECLAW_NOTIFY   — must be true/1/on/yes to enable proactive WeChat sends
+ *   MIO_WECLAW_TO       — legacy single-user target, e.g. user@im.wechat
+ *   MIO_WECLAW_API_BASE — optional, defaults from MIO_WECLAW_API_ADDR or 127.0.0.1:18011
+ */
+export async function sendWeClawMessage(text: string, opts: WeClawMessageOptions = {}): Promise<NotifyResult> {
+  if (!isTruthy(process.env.MIO_WECLAW_NOTIFY)) {
+    return {
+      channel: 'weclaw',
+      success: false,
+      error: 'MIO_WECLAW_NOTIFY is not enabled',
+    };
+  }
+
+  const to = opts.to ?? getWeClawTarget(opts.userId) ?? (opts.allowEnvFallback ? process.env.MIO_WECLAW_TO : undefined);
+  if (!to) {
+    return {
+      channel: 'weclaw',
+      success: false,
+      error: opts.userId
+        ? `No WeClaw target configured for user ${opts.userId}`
+        : 'MIO_WECLAW_TO not configured',
+    };
+  }
+
+  const apiBase = resolveWeClawApiBase();
+  try {
+    const response = await fetch(`${apiBase}/api/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to, text }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => '(no body)');
+      return {
+        channel: 'weclaw',
+        success: false,
+        error: `WeClaw API returned ${response.status}: ${body.slice(0, 500)}`,
+      };
+    }
+
+    return { channel: 'weclaw', success: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { channel: 'weclaw', success: false, error: msg };
+  }
+}
+
+// ============================================================
 // Dispatch
 // ============================================================
 
@@ -315,12 +385,13 @@ export async function sendSlackMessage(text: string): Promise<NotifyResult> {
  * @param text  The message to deliver.
  * @returns     Array of NotifyResult, one per attempted channel.
  */
-export async function sendToAllChannels(text: string): Promise<NotifyResult[]> {
+export async function sendToAllChannels(text: string, opts: NotifyDispatchOptions = {}): Promise<NotifyResult[]> {
   const channels = getNotifyChannels();
   const results: NotifyResult[] = [];
 
   for (const channel of channels) {
     if (!channel.enabled) continue;
+    if (opts.weclawOnly && channel.type !== 'weclaw') continue;
 
     let result: NotifyResult;
     switch (channel.type) {
@@ -338,6 +409,12 @@ export async function sendToAllChannels(text: string): Promise<NotifyResult[]> {
         break;
       case 'slack':
         result = await sendSlackMessage(text);
+        break;
+      case 'weclaw':
+        result = await sendWeClawMessage(text, {
+          userId: opts.userId,
+          allowEnvFallback: opts.allowEnvWeClawFallback ?? !opts.userId,
+        });
         break;
       default:
         result = { channel: channel.type, success: false, error: 'Unknown channel type' };
@@ -362,14 +439,16 @@ export async function sendToAllChannels(text: string): Promise<NotifyResult[]> {
  *   - WhatsApp  (MIO_WHATSAPP_TOKEN + MIO_WHATSAPP_PHONE_ID + MIO_WHATSAPP_TO)
  *   - Discord   (MIO_DISCORD_TOKEN + MIO_DISCORD_CHANNEL_ID)
  *   - Slack     (MIO_SLACK_WEBHOOK_URL)
+ *   - WeClaw    (MIO_WECLAW_NOTIFY + MIO_WECLAW_TO) or per-user target
  */
-export function isNotifyEnabled(): boolean {
+export function isNotifyEnabled(userId?: string): boolean {
   return (
     !!(process.env.MIO_TELEGRAM_BOT_TOKEN && process.env.MIO_TELEGRAM_CHAT_ID) ||
     !!process.env.MIO_WEBHOOK_URL ||
     !!(process.env.MIO_WHATSAPP_TOKEN && process.env.MIO_WHATSAPP_PHONE_ID && process.env.MIO_WHATSAPP_TO) ||
     !!(process.env.MIO_DISCORD_TOKEN && process.env.MIO_DISCORD_CHANNEL_ID) ||
-    !!process.env.MIO_SLACK_WEBHOOK_URL
+    !!process.env.MIO_SLACK_WEBHOOK_URL ||
+    !!(isTruthy(process.env.MIO_WECLAW_NOTIFY) && (process.env.MIO_WECLAW_TO || getWeClawTarget(userId)))
   );
 }
 
@@ -442,7 +521,38 @@ export function getNotifyChannels(): NotifyChannel[] {
     },
   });
 
+  // WeClaw
+  const weclawNotify = isTruthy(process.env.MIO_WECLAW_NOTIFY);
+  const weclawTo = process.env.MIO_WECLAW_TO;
+  const perUserWeClawTargetCount = listUsersWithProactiveWeClawTargets().length;
+  channels.push({
+    type: 'weclaw',
+    enabled: weclawNotify && (!!weclawTo || perUserWeClawTargetCount > 0),
+    config: {
+      apiBase: resolveWeClawApiBase(),
+      toConfigured: weclawTo ? 'true' : 'false',
+      perUserTargetCount: String(perUserWeClawTargetCount),
+      notifyEnabled: weclawNotify ? 'true' : 'false',
+    },
+  });
+
   return channels;
+}
+
+function resolveWeClawApiBase(): string {
+  const explicit = process.env.MIO_WECLAW_API_BASE;
+  if (explicit) return explicit.replace(/\/+$/, '');
+
+  const addr = process.env.MIO_WECLAW_API_ADDR || '127.0.0.1:18011';
+  if (addr.startsWith('http://') || addr.startsWith('https://')) {
+    return addr.replace(/\/+$/, '');
+  }
+  return `http://${addr}`;
+}
+
+function isTruthy(raw: string | undefined): boolean {
+  const normalized = raw?.trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
 }
 
 /**

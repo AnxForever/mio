@@ -1,11 +1,23 @@
 import { createHash } from 'node:crypto';
 import {
   createEmptyMemory,
+  mergeMemories,
   readStructuredMemoryFromDisk,
   writeStructuredMemoryToDisk,
   type MemoryEntity,
   type StructuredMemory,
 } from '../memory/structured-memory.js';
+import {
+  deleteEntriesMatchingText,
+  indexEntryWithProvider,
+  updateEntriesMatchingText,
+} from '../memory/vector.js';
+import { getEmbeddingProvider } from '../memory/embedding.js';
+import {
+  autoGenerateLoreEntries,
+  removeLoreEntriesByContent,
+  updateLoreEntriesByContent,
+} from '../memory/lorebook.js';
 
 export type MemoryItemType = MemoryEntity['type'];
 
@@ -18,7 +30,7 @@ export interface MemoryReviewItem {
   lastSeen: string;
   occurrences: number;
   source: string;
-  status: 'confirmed' | 'inferred';
+  status: 'confirmed' | 'inferred' | 'ignored';
   durable: boolean;
   topic?: string;
 }
@@ -27,6 +39,7 @@ export interface MemoryPatch {
   type?: MemoryItemType;
   content?: string;
   confidence?: number;
+  reviewStatus?: MemoryReviewItem['status'];
 }
 
 function entitySignature(entity: MemoryEntity): string {
@@ -65,6 +78,8 @@ function findTopic(memory: StructuredMemory, entity: MemoryEntity): string | und
 
 function toReviewItem(memory: StructuredMemory, entity: MemoryEntity): MemoryReviewItem {
   const durable = memory.durableFacts.some((candidate) => entityKey(candidate) === entityKey(entity));
+  const status = entity.reviewStatus
+    ?? (entity.confidence >= 0.8 || entity.occurrences >= 2 ? 'confirmed' : 'inferred');
   return {
     id: memoryId(entity),
     type: entity.type,
@@ -74,10 +89,14 @@ function toReviewItem(memory: StructuredMemory, entity: MemoryEntity): MemoryRev
     lastSeen: entity.lastSeen,
     occurrences: entity.occurrences,
     source: entity.source,
-    status: entity.confidence >= 0.8 || entity.occurrences >= 2 ? 'confirmed' : 'inferred',
+    status,
     durable,
     topic: findTopic(memory, entity),
   };
+}
+
+function recomputeDerived(memory: StructuredMemory): StructuredMemory {
+  return mergeMemories(memory, createEmptyMemory());
 }
 
 export function listMemoryReviewItems(): MemoryReviewItem[] {
@@ -102,46 +121,63 @@ function updateMatchingEntities(
   return { entities: next, changed };
 }
 
-export function updateMemoryReviewItem(id: string, patch: MemoryPatch): MemoryReviewItem | null {
+async function maybeIndexConfirmed(entity: MemoryEntity): Promise<void> {
+  if (entity.reviewStatus !== 'confirmed') return;
+  await indexEntryWithProvider({
+    id: `structured:${memoryId(entity)}`,
+    text: entity.content,
+    source: 'manual',
+    timestamp: entity.reviewedAt ?? entity.lastSeen,
+  }, getEmbeddingProvider());
+}
+
+export async function updateMemoryReviewItem(id: string, patch: MemoryPatch): Promise<MemoryReviewItem | null> {
   const memory = loadMemory();
-  let updatedEntity: MemoryEntity | null = null;
   const now = new Date().toISOString();
 
-  const updateOne = (entity: MemoryEntity): MemoryEntity => {
-    updatedEntity = {
-      ...entity,
-      type: patch.type ?? entity.type,
-      content: patch.content?.trim() ?? entity.content,
-      confidence: patch.confidence ?? entity.confidence,
-      lastSeen: now,
-    };
-    return updatedEntity;
+  const target = memory.entities.find((entity) => memoryId(entity) === id);
+  if (!target) return null;
+
+  const oldContent = target.content;
+  const reviewStatus = patch.reviewStatus ?? target.reviewStatus;
+  const updatedEntity: MemoryEntity = {
+    ...target,
+    type: patch.type ?? target.type,
+    content: patch.content?.trim() ?? target.content,
+    confidence: reviewStatus === 'confirmed' ? 1 : reviewStatus === 'ignored' ? 0 : patch.confidence ?? target.confidence,
+    occurrences: reviewStatus === 'confirmed' ? Math.max(target.occurrences, 3) : target.occurrences,
+    reviewStatus,
+    reviewedAt: patch.reviewStatus ? now : target.reviewedAt,
+    lastSeen: now,
   };
 
-  const main = updateMatchingEntities(memory.entities, id, updateOne);
-  if (!main.changed || !updatedEntity) return null;
-
-  const durable = updateMatchingEntities(memory.durableFacts, id, updateOne);
-  const topics = memory.topics.map((topic) => {
-    const topicUpdate = updateMatchingEntities(topic.entities, id, updateOne);
-    return topicUpdate.changed
-      ? { ...topic, entities: topicUpdate.entities, dateRange: { ...topic.dateRange, end: now } }
-      : topic;
-  });
-
-  const nextMemory: StructuredMemory = {
+  let nextMemory: StructuredMemory = {
     ...memory,
-    entities: main.entities,
-    durableFacts: durable.entities,
-    topics,
+    entities: memory.entities.map((entity) => memoryId(entity) === id ? updatedEntity : entity),
     updatedAt: now,
   };
+  nextMemory = recomputeDerived(nextMemory);
   writeStructuredMemoryToDisk(nextMemory);
+
+  if (updatedEntity.content !== oldContent) {
+    await updateEntriesMatchingText(oldContent, updatedEntity.content);
+    updateLoreEntriesByContent(oldContent, updatedEntity.content);
+  }
+
+  if (updatedEntity.reviewStatus === 'ignored') {
+    deleteEntriesMatchingText(updatedEntity.content);
+    removeLoreEntriesByContent(updatedEntity.content);
+  } else if (updatedEntity.reviewStatus === 'confirmed') {
+    await maybeIndexConfirmed(updatedEntity);
+    autoGenerateLoreEntries();
+  }
+
   return toReviewItem(nextMemory, updatedEntity);
 }
 
 export function deleteMemoryReviewItem(id: string): boolean {
   const memory = loadMemory();
+  const target = memory.entities.find((entity) => memoryId(entity) === id);
   const main = updateMatchingEntities(memory.entities, id, () => null);
   if (!main.changed) return false;
 
@@ -155,12 +191,17 @@ export function deleteMemoryReviewItem(id: string): boolean {
     })
     .filter((topic) => topic.entities.length > 0);
 
-  writeStructuredMemoryToDisk({
+  const nextMemory = recomputeDerived({
     ...memory,
     entities: main.entities,
     durableFacts: durable.entities,
     topics,
     updatedAt: new Date().toISOString(),
   });
+  writeStructuredMemoryToDisk(nextMemory);
+  if (target) {
+    deleteEntriesMatchingText(target.content);
+    removeLoreEntriesByContent(target.content);
+  }
   return true;
 }

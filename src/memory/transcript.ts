@@ -18,6 +18,7 @@ export interface TranscriptEntry {
   toolOutput?: string;
   isError?: boolean;
   summary?: string;
+  recallCues?: string[];
 }
 
 // ─── Core Operations ───
@@ -92,9 +93,12 @@ export function loadTranscriptWindow(
     } else if (entry.type === 'compaction' && entry.summary) {
       // Inject compaction summaries as system messages so the model
       // remembers compressed context.
+      const cues = Array.isArray(entry.recallCues) && entry.recallCues.length > 0
+        ? `\n\n召回线索:\n${entry.recallCues.map((cue) => `- ${cue}`).join('\n')}`
+        : '';
       messages.push({
         role: 'system',
-        content: `[之前的对话摘要]\n${entry.summary}`,
+        content: `[之前的对话摘要]\n${entry.summary}${cues}`,
         timestamp: entry.timestamp,
       });
     }

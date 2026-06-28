@@ -20,6 +20,7 @@ import type {
 import { EVENT_TEMPLATES, getOccupationContext } from './event-templates.js';
 import { appendEvent, readRecentEvents } from './memory-stream.js';
 import { readStoryArcs, writeStoryArcs, updateArcPhase } from './story-arcs.js';
+import { feedReflectionTrigger, runReflection } from './reflection.js';
 import { characterJsonPath } from './paths.js';
 import { logger } from '../utils/logger.js';
 import { existsSync, readFileSync } from 'node:fs';
@@ -102,21 +103,21 @@ export class LifeEngine {
 
     // 1. Check for crisis events (low probability ~5%)
     if (Math.random() < 0.05) {
-      return this.generateCrisisEvent(characterName, config);
+      return this.withReflection(characterName, await this.generateCrisisEvent(characterName, config));
     }
 
     // 2. Check for story arc progression
-    const arcEvent = this.maybeAdvanceArc(characterName, config);
-    if (arcEvent) return arcEvent;
+    const arcEvent = await this.maybeAdvanceArc(characterName, config);
+    if (arcEvent) return this.withReflection(characterName, arcEvent);
 
     // 3. Maybe start a new story arc (low probability ~8%)
     if (Math.random() < 0.08) {
-      const newArcEvent = this.maybeStartNewArc(characterName, config);
-      if (newArcEvent) return newArcEvent;
+      const newArcEvent = await this.maybeStartNewArc(characterName, config);
+      if (newArcEvent) return this.withReflection(characterName, newArcEvent);
     }
 
     // 4. Generate a template event
-    return this.generateTemplateEvent(characterName, config);
+    return this.withReflection(characterName, await this.generateTemplateEvent(characterName, config));
   }
 
   /** Lightweight tick for chat-triggered events (lower probability) */
@@ -136,6 +137,18 @@ export class LifeEngine {
     } catch {
       return null;
     }
+  }
+
+  private async withReflection(characterName: string, event: LifeEvent | null): Promise<LifeEvent | null> {
+    if (!event) return null;
+    try {
+      if (feedReflectionTrigger(characterName, event.importance)) {
+        await runReflection(characterName);
+      }
+    } catch (err) {
+      logger.warn('[life-engine] reflection failed', { characterName, err: String(err) });
+    }
+    return event;
   }
 
   private async generateTemplateEvent(

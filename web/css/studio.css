@@ -318,6 +318,114 @@
   background: var(--hairline);
 }
 
+/* ═══ Character management ═══ */
+.character-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+.character-card {
+  background: var(--bg);
+  border: .5px solid var(--hairline);
+  border-radius: var(--r-card);
+  padding: var(--s4);
+}
+
+.character-card.active {
+  border-color: var(--accent);
+}
+
+.character-card-main {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  min-width: 0;
+}
+
+.character-avatar {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+
+.character-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.character-name {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.character-meta {
+  margin-top: 2px;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.character-badge {
+  flex-shrink: 0;
+  min-height: 24px;
+  padding: 0 var(--s3);
+  border-radius: var(--r-input);
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 650;
+  display: inline-flex;
+  align-items: center;
+}
+
+.character-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-top: var(--s3);
+}
+
+.character-actions .btn-primary,
+.character-actions .btn-secondary {
+  flex: 0 1 auto;
+  min-width: 72px;
+}
+
+.character-danger {
+  color: #b42318;
+}
+
+.character-life {
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  border-top: .5px solid var(--hairline);
+}
+
+.character-life-summary,
+.character-life-state,
+.character-life-time {
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.character-life-event {
+  margin-top: var(--s3);
+}
+
+.character-life-text {
+  margin-top: 2px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 /* ═══ 新建 Mod 表单向导 ═══ */
 
 /* 步骤指示器 */

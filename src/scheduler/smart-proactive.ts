@@ -9,8 +9,7 @@
  * All persistence to `data/user-activity.json`.
  */
 
-import { readFileSync, existsSync } from 'node:fs';
-import { colaDir } from '../memory/paths.js';
+import { globalUserActivityPath, smartProactiveConfigPath, userActivityPath } from '../memory/paths.js';
 import { readFileSyncSafe, writeFileSyncSafe } from '../memory/bank.js';
 import { isPersonalityDriverEnabled, getPersonalityState } from '../persona/driver.js';
 
@@ -59,10 +58,22 @@ interface ActivityRecord {
 
 // ─── Internal helpers ───
 
-const ACTIVITY_PATH = 'user-activity.json';
+const GLOBAL_ACTIVITY_SCOPE = '__global__';
 
-function activityPath(): string {
-  return colaDir() + '/' + ACTIVITY_PATH;
+function activityPath(userId?: string): string {
+  return userId?.trim() ? userActivityPath(userId) : globalUserActivityPath();
+}
+
+function activityScope(userId?: string): string {
+  return userId?.trim() || GLOBAL_ACTIVITY_SCOPE;
+}
+
+function cloneDefaultActivity(): UserActivityPattern {
+  return {
+    ...DEFAULT_ACTIVITY,
+    hourDistribution: [...DEFAULT_ACTIVITY.hourDistribution],
+    responseProbability: [...DEFAULT_ACTIVITY.responseProbability],
+  };
 }
 
 // ─── Defaults ───
@@ -90,29 +101,39 @@ const DEFAULT_SMART_CONFIG: SmartProactiveConfig = {
 
 // ─── In-memory cache ───
 
-let cachedActivity: UserActivityPattern | null = null;
+let cachedActivityByScope = new Map<string, UserActivityPattern>();
 let cachedSmartConfig: SmartProactiveConfig | null = null;
 
 // Raw outcome history (persisted alongside activity)
-let outcomeHistory: ProactiveOutcome[] = [];
+let outcomeHistoryByScope = new Map<string, ProactiveOutcome[]>();
 
 // Raw activity records (kept for hourly distribution, trimmed to last 1000 entries)
-let activityRecords: ActivityRecord[] = [];
+let activityRecordsByScope = new Map<string, ActivityRecord[]>();
 
 // ─── Persistence helpers ───
 
-function readActivityFile(): { activity: UserActivityPattern; outcomes: ProactiveOutcome[]; records: ActivityRecord[] } {
-  const path = activityPath();
+function readActivityFile(userId?: string): { activity: UserActivityPattern; outcomes: ProactiveOutcome[]; records: ActivityRecord[] } {
+  const scope = activityScope(userId);
+  const cachedActivity = cachedActivityByScope.get(scope);
   if (cachedActivity) {
-    return { activity: cachedActivity, outcomes: outcomeHistory, records: activityRecords };
+    return {
+      activity: cachedActivity,
+      outcomes: outcomeHistoryByScope.get(scope) ?? [],
+      records: activityRecordsByScope.get(scope) ?? [],
+    };
   }
+
+  const path = activityPath(userId);
   try {
     const raw = readFileSyncSafe(path, '');
     if (!raw) {
-      cachedActivity = { ...DEFAULT_ACTIVITY, hourDistribution: [...DEFAULT_ACTIVITY.hourDistribution], responseProbability: [...DEFAULT_ACTIVITY.responseProbability] };
-      outcomeHistory = [];
-      activityRecords = [];
-      return { activity: cachedActivity, outcomes: outcomeHistory, records: activityRecords };
+      const activity = cloneDefaultActivity();
+      const outcomes: ProactiveOutcome[] = [];
+      const records: ActivityRecord[] = [];
+      cachedActivityByScope.set(scope, activity);
+      outcomeHistoryByScope.set(scope, outcomes);
+      activityRecordsByScope.set(scope, records);
+      return { activity, outcomes, records };
     }
     const parsed = JSON.parse(raw);
     // Merge with defaults in case of partial data
@@ -123,26 +144,35 @@ function readActivityFile(): { activity: UserActivityPattern; outcomes: Proactiv
       lastActive: parsed.lastActive || DEFAULT_ACTIVITY.lastActive,
       totalSessions: typeof parsed.totalSessions === 'number' ? parsed.totalSessions : DEFAULT_ACTIVITY.totalSessions,
     };
-    cachedActivity = activity;
-    outcomeHistory = Array.isArray(parsed.outcomes) ? parsed.outcomes : [];
-    activityRecords = Array.isArray(parsed.records) ? parsed.records : [];
-    return { activity, outcomes: outcomeHistory, records: activityRecords };
+    const outcomes = Array.isArray(parsed.outcomes) ? parsed.outcomes : [];
+    const records = Array.isArray(parsed.records) ? parsed.records : [];
+    cachedActivityByScope.set(scope, activity);
+    outcomeHistoryByScope.set(scope, outcomes);
+    activityRecordsByScope.set(scope, records);
+    return { activity, outcomes, records };
   } catch {
-    cachedActivity = { ...DEFAULT_ACTIVITY, hourDistribution: [...DEFAULT_ACTIVITY.hourDistribution], responseProbability: [...DEFAULT_ACTIVITY.responseProbability] };
-    outcomeHistory = [];
-    activityRecords = [];
-    return { activity: cachedActivity, outcomes: outcomeHistory, records: activityRecords };
+    const activity = cloneDefaultActivity();
+    const outcomes: ProactiveOutcome[] = [];
+    const records: ActivityRecord[] = [];
+    cachedActivityByScope.set(scope, activity);
+    outcomeHistoryByScope.set(scope, outcomes);
+    activityRecordsByScope.set(scope, records);
+    return { activity, outcomes, records };
   }
 }
 
-function persistActivity(): void {
-  if (!cachedActivity) return;
-  const path = activityPath();
+function persistActivity(userId?: string): void {
+  const scope = activityScope(userId);
+  const activity = cachedActivityByScope.get(scope);
+  if (!activity) return;
+  const outcomes = outcomeHistoryByScope.get(scope) ?? [];
+  const records = activityRecordsByScope.get(scope) ?? [];
+  const path = activityPath(userId);
   try {
     const data = {
-      ...cachedActivity,
-      outcomes: outcomeHistory.slice(-500),   // keep last 500 outcomes
-      records: activityRecords.slice(-1000),    // keep last 1000 records
+      ...activity,
+      outcomes: outcomes.slice(-500),   // keep last 500 outcomes
+      records: records.slice(-1000),    // keep last 1000 records
     };
     writeFileSyncSafe(path, JSON.stringify(data, null, 2));
   } catch {
@@ -151,9 +181,8 @@ function persistActivity(): void {
 }
 
 function readSmartConfigFile(): SmartProactiveConfig {
-  const path = colaDir() + '/smart-proactive-config.json';
   try {
-    const raw = readFileSyncSafe(path, '');
+    const raw = readFileSyncSafe(smartProactiveConfigPath(), '');
     if (!raw) return { ...DEFAULT_SMART_CONFIG };
     return { ...DEFAULT_SMART_CONFIG, ...JSON.parse(raw) };
   } catch {
@@ -162,9 +191,8 @@ function readSmartConfigFile(): SmartProactiveConfig {
 }
 
 function persistSmartConfig(): void {
-  const path = colaDir() + '/smart-proactive-config.json';
   try {
-    writeFileSyncSafe(path, JSON.stringify(cachedSmartConfig, null, 2));
+    writeFileSyncSafe(smartProactiveConfigPath(), JSON.stringify(cachedSmartConfig, null, 2));
   } catch {
     // best-effort
   }
@@ -183,9 +211,14 @@ function persistSmartConfig(): void {
  * Lightweight — call this after every user message in the agent loop.
  */
 export function updateActivityPattern(sessionId: string): void {
+  updateActivityScope(sessionId);
+  if (sessionId.trim()) updateActivityScope(sessionId, sessionId);
+}
+
+function updateActivityScope(sessionId: string, userId?: string): void {
   const now = new Date();
   const hour = now.getHours();
-  const { activity, records } = readActivityFile();
+  const { activity, records } = readActivityFile(userId);
 
   // Record this activity (bounded: keep last 1000)
   records.push({
@@ -218,9 +251,10 @@ export function updateActivityPattern(sessionId: string): void {
   const uniqueSessions = new Set(records.map(r => r.sessionId));
   activity.totalSessions = uniqueSessions.size;
 
-  cachedActivity = activity;
-  activityRecords = records;
-  persistActivity();
+  const scope = activityScope(userId);
+  cachedActivityByScope.set(scope, activity);
+  activityRecordsByScope.set(scope, records);
+  persistActivity(userId);
 }
 
 /**
@@ -241,13 +275,14 @@ export function updateActivityPattern(sessionId: string): void {
 export function decideProactiveMessage(
   relationshipStage: string,
   lastInteraction: string,
+  userId?: string,
 ): ProactiveDecision {
   const cfg = getSmartProactiveConfig();
   if (!cfg.enabled) {
     return { shouldMessage: false, confidence: 0, reason: 'smart scheduler disabled' };
   }
 
-  const { activity, outcomes } = readActivityFile();
+  const { activity, outcomes } = readActivityFile(userId);
   const now = Date.now();
 
   // Step 0: Personality driver modulation
@@ -288,7 +323,9 @@ export function decideProactiveMessage(
   const effectiveLambda = cfg.baseRate * stageMult * hourActivityFactor * personalityModifier;
 
   // Calculate hours since last interaction (cap at 24 for rate stability)
-  const lastInteractionMs = new Date(lastInteraction).getTime();
+  const effectiveLastInteraction =
+    userId && activity.totalSessions > 0 ? activity.lastActive : lastInteraction;
+  const lastInteractionMs = new Date(effectiveLastInteraction).getTime();
   const hoursSinceLast = Math.min(24, Math.max(0, (now - lastInteractionMs) / 3_600_000));
   const poissonProb = 1 - Math.exp(-effectiveLambda * hoursSinceLast);
 
@@ -370,12 +407,12 @@ export function updateSmartProactiveConfig(patch: Partial<SmartProactiveConfig>)
  * @param sent             Whether the message was sent
  * @param userResponded    Whether the user responded within ~30 minutes (optional, can be updated later)
  */
-export function recordProactiveMessage(sent: boolean, userResponded?: boolean): void {
+export function recordProactiveMessage(sent: boolean, userResponded?: boolean, userId?: string): void {
   const now = new Date();
   const hour = now.getHours();
-  const { activity } = readActivityFile();
+  const { activity, outcomes } = readActivityFile(userId);
 
-  outcomeHistory.push({
+  outcomes.push({
     timestamp: now.toISOString(),
     sent,
     userResponded,
@@ -385,7 +422,7 @@ export function recordProactiveMessage(sent: boolean, userResponded?: boolean): 
   // Bayesian-inspired update: Laplace-smoothed success rate per hour
   if (sent && userResponded !== undefined) {
     // Count all sent outcomes with explicit response tracking for this hour
-    const relevant = outcomeHistory.filter(o => o.sent && o.userResponded !== undefined && o.hour === hour);
+    const relevant = outcomes.filter(o => o.sent && o.userResponded !== undefined && o.hour === hour);
     const successes = relevant.filter(o => o.userResponded).length;
     const failures = relevant.filter(o => !o.userResponded).length;
     // Laplace smoothing: add 1 pseudo-success and 1 pseudo-failure
@@ -393,7 +430,7 @@ export function recordProactiveMessage(sent: boolean, userResponded?: boolean): 
   }
 
   // Recompute average response time from recent outcomes where user responded
-  const responded = outcomeHistory.filter(o => o.userResponded).slice(-20);
+  const responded = outcomes.filter(o => o.userResponded).slice(-20);
   if (responded.length > 1) {
     let totalMinutes = 0;
     let count = 0;
@@ -407,8 +444,10 @@ export function recordProactiveMessage(sent: boolean, userResponded?: boolean): 
     }
   }
 
-  cachedActivity = activity;
-  persistActivity();
+  const scope = activityScope(userId);
+  cachedActivityByScope.set(scope, activity);
+  outcomeHistoryByScope.set(scope, outcomes);
+  persistActivity(userId);
 }
 
 /**
@@ -416,8 +455,8 @@ export function recordProactiveMessage(sent: boolean, userResponded?: boolean): 
  *
  * Example: "用户通常在晚上9-11点最活跃，早上7-8点回应概率最高"
  */
-export function getActivityInsight(): string {
-  const { activity } = readActivityFile();
+export function getActivityInsight(userId?: string): string {
+  const { activity } = readActivityFile(userId);
 
   const peakActivityHours = topHours(activity.hourDistribution, 2);
   const peakResponseHours = topHours(activity.responseProbability, 2);
@@ -498,9 +537,17 @@ function generateTopicHint(
  * Reset the in-memory cache so the next read forces a fresh load from disk.
  * Useful for testing.
  */
-export function _resetCache(): void {
-  cachedActivity = null;
+export function _resetCache(userId?: string): void {
+  if (userId) {
+    const scope = activityScope(userId);
+    cachedActivityByScope.delete(scope);
+    outcomeHistoryByScope.delete(scope);
+    activityRecordsByScope.delete(scope);
+    return;
+  }
+
+  cachedActivityByScope = new Map();
   cachedSmartConfig = null;
-  outcomeHistory = [];
-  activityRecords = [];
+  outcomeHistoryByScope = new Map();
+  activityRecordsByScope = new Map();
 }

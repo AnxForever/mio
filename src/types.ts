@@ -25,6 +25,8 @@ export type ProviderPreset =
   | 'qwen'
   | 'doubao'
   | 'siliconflow'
+  | 'hybgzs'
+  | 'lora'
   | 'mock';
 
 /**
@@ -147,6 +149,24 @@ export interface SessionContext {
   colaDir: string;
   outputDir: string;
   connectedChannels?: ChannelInfo[];
+  /** True for external IM bridge sessions that must not read/write shared user memory. */
+  isolatedMemory?: boolean;
+}
+
+export interface TurnChannelContext {
+  type: 'private' | 'group' | 'web' | 'unknown';
+  platform?: string;
+  userId?: string;
+  groupId?: string;
+  hasAt?: boolean;
+  hasMention?: boolean;
+  focusActive?: boolean;
+  pendingCount?: number;
+  recentSelfReplies?: number;
+  consecutiveSelfReplies?: number;
+  effectiveFrequency?: number;
+  idleSeconds?: number;
+  idleReachedAverage?: boolean;
 }
 
 // ─── IM Channel ───
@@ -240,6 +260,47 @@ export interface RelationshipState {
     userCallsAgent: string | null;
     agentCallsUser: string | null;
   };
+}
+
+// ─── Layered Persona (per-user) ───
+
+export interface PersonaDeltaChange { field: string; value: string; source: string; at: string; }
+
+/** L2：用户对 Mio 的专属覆盖。空字段表示不覆盖。 */
+export interface PersonaDelta {
+  userId: string;                 // 本切片固定 "default"
+  tone?: string;                  // 相处基调：playful/teasing/gentle/cool/mature/自由词
+  clinginess?: number;            // 黏度 0..1
+  initiative?: number;            // 主动频率 0..1
+  personaOverride?: string;       // 自由文本：对 Mio 设定的补充/改写（职业/背景/性格）
+  updatedAt: string;
+  history: PersonaDeltaChange[];   // append-only 变更记录（可解释、可回滚）
+  /** C4: per-persona 工具白名单。缺省/空=全部工具；非空=仅这些工具可用（借鉴 AstrBot Persona.tools）。 */
+  allowedTools?: string[];
+  /** C5: per-user 语气示范对话对（few-shot 定调，借鉴 AstrBot begin_dialogs）。 */
+  beginDialogs?: { user: string; assistant: string }[];
+}
+
+export interface PreferenceRule { rule: string; source: string; createdAt: string; }
+
+export interface UserWeClawChannel {
+  to: string;
+  enabled: boolean;
+  source: string;
+  updatedAt: string;
+}
+
+export interface UserNotificationChannels {
+  weclaw?: UserWeClawChannel;
+}
+
+/** L3：用户偏好。 */
+export interface UserPreferences {
+  userId: string;
+  explicit: PreferenceRule[];
+  implicit?: Record<string, unknown>;
+  channels?: UserNotificationChannels;
+  updatedAt: string;
 }
 
 // ─── Persona Studio ───
@@ -359,4 +420,10 @@ export interface PromptCtx {
    * memory prompt section. Absent when there is no input or no match.
    */
   semanticMemories?: SemanticMemory[];
+  /** L2 用户专属人格覆盖（per-user，本切片 default）。 */
+  personaDelta?: PersonaDelta;
+  /** L3 用户显式偏好。 */
+  preferences?: UserPreferences;
+  /** True for external IM bridge sessions that must not read/write shared user memory. */
+  isolatedMemory?: boolean;
 }

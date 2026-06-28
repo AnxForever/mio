@@ -96,6 +96,8 @@ npm run test:e2e     # 11 项 Playwright E2E 测试
 ## 文档
 
 - **[CLAUDE.md](CLAUDE.md)** — 完整架构、设计决策、API 端点、编码规范
+- **[docs/mio-showcase-pack-cn.md](docs/mio-showcase-pack-cn.md)** — 产品展示包：定位、架构图、demo 脚本、类人评估指标、Web 展示改造建议
+- **[docs/humanlike-agent-architecture.md](docs/humanlike-agent-architecture.md)** — 类人陪伴 Agent 技术架构说明
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — 贡献指南
 - **[README.md](README.md)** — English
 

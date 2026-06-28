@@ -11,6 +11,7 @@
  * - 3-tier memory: STM (FIFO) -> MTM (topic segments) -> LTM (durable facts)
  */
 
+import { createHash } from 'node:crypto';
 import { readFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { logger } from '../utils/logger.js';
 import { readFileSyncSafe, writeFileSyncSafe } from './bank.js';
@@ -20,6 +21,7 @@ import {
   midTermTopicPath,
 } from './paths.js';
 import type { AIProvider, Message } from '../types.js';
+import { resolveContradictions, makeLLMContradicts } from './temporal-resolve.js';
 
 // ─── Types ───
 
@@ -31,6 +33,12 @@ export interface MemoryEntity {
   lastSeen: string;       // ISO timestamp
   occurrences: number;    // how many times confirmed
   source: string;         // which bookmark/transcript line
+  reviewStatus?: 'inferred' | 'confirmed' | 'ignored';
+  reviewedAt?: string;
+  /** B-1 bi-temporal：被更新事实取代时打上(ISO)；不删除，留审计；activeEntities 据此排除。 */
+  invalidatedAt?: string;
+  /** 取代它的新事实 content（溯源）。 */
+  supersededBy?: string;
 }
 
 export interface TopicSegment {
@@ -45,6 +53,13 @@ export interface StructuredMemory {
   topics: TopicSegment[];        // topic-clustered segments
   durableFacts: MemoryEntity[];  // high-confidence long-term facts (confidence >= 0.8, occurrences >= 3)
   updatedAt: string;
+  extractionState?: StructuredMemoryExtractionState;
+}
+
+export interface StructuredMemoryExtractionState {
+  sourceHash: string;
+  processedSourceIds: string[];
+  lastProcessedAt: string;
 }
 
 // ─── Topic keywords for classification ───
@@ -244,6 +259,11 @@ function entitiesSimilar(a: string, b: string): boolean {
   return aNorm.includes(bNorm) || bNorm.includes(aNorm);
 }
 
+function activeEntities(entities: MemoryEntity[]): MemoryEntity[] {
+  // B-1：排除被取代的矛盾旧事实（invalidatedAt 已设）。无人 set 之前行为不变。
+  return entities.filter((entity) => entity.reviewStatus !== 'ignored' && !entity.invalidatedAt);
+}
+
 // ─── Main API ───
 
 /**
@@ -263,8 +283,10 @@ export function extractStructuredMemory(
   existingMemory?: StructuredMemory,
 ): StructuredMemory {
   const now = new Date().toISOString();
-  const newEntities = extractEntitiesFromBookmarks(bookmarksContent);
-  return assembleMemory(newEntities, existingMemory, now);
+  const dirtyContent = dirtyBookmarkContent(bookmarksContent, existingMemory);
+  if (!dirtyContent && existingMemory) return existingMemory;
+  const newEntities = extractEntitiesFromBookmarks(dirtyContent || bookmarksContent);
+  return assembleMemory(newEntities, existingMemory, now, buildExtractionState(bookmarksContent, now));
 }
 
 /** A parsed `- <time=…> …` bookmark line. */
@@ -294,6 +316,32 @@ function extractEntitiesFromBookmarks(bookmarksContent: string): MemoryEntity[] 
   return newEntities;
 }
 
+function hashText(text: string): string {
+  return createHash('sha1').update(text).digest('hex');
+}
+
+function sourceId(entry: BookmarkEntry): string {
+  return hashText(entry.source);
+}
+
+function buildExtractionState(bookmarksContent: string, at: string): StructuredMemoryExtractionState {
+  return {
+    sourceHash: hashText(bookmarksContent),
+    processedSourceIds: parseBookmarkEntries(bookmarksContent).map(sourceId),
+    lastProcessedAt: at,
+  };
+}
+
+function dirtyBookmarkContent(bookmarksContent: string, existingMemory?: StructuredMemory): string {
+  const existing = existingMemory?.extractionState;
+  const sourceHash = hashText(bookmarksContent);
+  if (existing?.sourceHash === sourceHash) return '';
+
+  const processed = new Set(existing?.processedSourceIds ?? []);
+  const dirty = parseBookmarkEntries(bookmarksContent).filter((entry) => !processed.has(sourceId(entry)));
+  return dirty.map((entry) => entry.source).join('\n');
+}
+
 /**
  * Merge newly-extracted entities with the existing memory, decay stale ones,
  * re-cluster by topic, and recompute durable facts.
@@ -306,6 +354,7 @@ function assembleMemory(
   newEntities: MemoryEntity[],
   existingMemory: StructuredMemory | undefined,
   now: string,
+  extractionState?: StructuredMemoryExtractionState,
 ): StructuredMemory {
   // Merge with existing memory or start fresh
   let merged: MemoryEntity[];
@@ -318,9 +367,22 @@ function assembleMemory(
   // Decay confidence for old unconfirmed entities
   merged = decayOldEntities(merged, now);
 
-  // Cluster by topic
+  return deriveStructuredState(merged, now, extractionState);
+}
+
+/**
+ * 从(已合并/已消解的)实体集派生 prompt-facing 状态(topics + durableFacts)。
+ * 从 assembleMemory 抽出，以便 B-1 矛盾消解后能重新派生（失效项经 activeEntities 排除）。
+ */
+function deriveStructuredState(
+  merged: MemoryEntity[],
+  now: string,
+  extractionState?: StructuredMemoryExtractionState,
+): StructuredMemory {
+  // Cluster active entities by topic. Ignored/invalidated entities stay in
+  // `entities` for audit, but are excluded from prompt-facing derived state.
   const topicMap = new Map<string, MemoryEntity[]>();
-  for (const entity of merged) {
+  for (const entity of activeEntities(merged)) {
     const topic = classifyTopic(entity.content);
     const existing = topicMap.get(topic) ?? [];
     existing.push(entity);
@@ -348,8 +410,9 @@ function assembleMemory(
   topics.sort((a, b) => b.entities.length - a.entities.length);
 
   // Filter durable facts: high confidence, multiple occurrences
-  const durableFacts = merged.filter(
-    (e) => e.confidence >= 0.8 && e.occurrences >= 3,
+  const durableFacts = activeEntities(merged).filter(
+    (e) => e.reviewStatus === 'confirmed'
+      || (e.reviewStatus !== 'inferred' && e.confidence >= 0.8 && e.occurrences >= 3),
   );
 
   return {
@@ -357,6 +420,7 @@ function assembleMemory(
     topics,
     durableFacts,
     updatedAt: now,
+    extractionState,
   };
 }
 
@@ -478,6 +542,24 @@ function parseLLMEntities(rawText: string, now: string): MemoryEntity[] | null {
  * @returns  Parsed entities, or `null` if extraction is unavailable/unparseable
  *           (e.g. the MockProvider, an offline run, or malformed output).
  */
+/**
+ * 解析用于"summarize"类任务的 provider/model：显式 opts.provider 优先，否则回退到配置
+ * provider 经 router 路由（与 LLM 提取同一套，保证 B-1 矛盾消解在生产里也能用上同一 provider）。
+ */
+async function resolveSummarizeProvider(
+  opts?: { provider?: AIProvider; model?: string },
+): Promise<{ provider: AIProvider; model?: string }> {
+  if (opts?.provider) return { provider: opts.provider, model: opts.model };
+  const { selectProvider } = await import('../providers/index.js');
+  const { getRouterConfig, routeTask, getTaskModel } = await import('../providers/router.js');
+  const { getConfig } = await import('../config.js');
+  const config = getConfig();
+  const base = selectProvider(config.provider, config.model);
+  const routerCfg = getRouterConfig();
+  const provider = await routeTask('summarize', base, routerCfg);
+  return { provider, model: opts?.model ?? getTaskModel('summarize', routerCfg) ?? undefined };
+}
+
 async function extractEntitiesViaLLM(
   bookmarksContent: string,
   now: string,
@@ -486,24 +568,7 @@ async function extractEntitiesViaLLM(
   const entries = parseBookmarkEntries(bookmarksContent);
   if (entries.length === 0) return [];
 
-  let provider: AIProvider;
-  let model: string | undefined = opts?.model;
-
-  if (opts?.provider) {
-    provider = opts.provider;
-  } else {
-    // Lazy-load the provider stack so this module stays lightweight in the
-    // many sync contexts that import it (matches router.ts's dynamic-import
-    // pattern and avoids any load-time cycle).
-    const { selectProvider } = await import('../providers/index.js');
-    const { getRouterConfig, routeTask, getTaskModel } = await import('../providers/router.js');
-    const { getConfig } = await import('../config.js');
-    const config = getConfig();
-    const base = selectProvider(config.provider, config.model);
-    const routerCfg = getRouterConfig();
-    provider = await routeTask('summarize', base, routerCfg);
-    if (!model) model = getTaskModel('summarize', routerCfg) || undefined;
-  }
+  const { provider, model } = await resolveSummarizeProvider(opts);
 
   const userText = entries.map((e) => `- ${e.content}`).join('\n');
   const messages: Message[] = [{ role: 'user', content: userText, timestamp: now }];
@@ -538,16 +603,46 @@ export async function extractStructuredMemoryLLM(
   opts?: { provider?: AIProvider; model?: string },
 ): Promise<StructuredMemory> {
   const now = new Date().toISOString();
+  const dirtyContent = dirtyBookmarkContent(bookmarksContent, existingMemory);
+  if (!dirtyContent && existingMemory) return existingMemory;
+  const extractionState = buildExtractionState(bookmarksContent, now);
   try {
-    const newEntities = await extractEntitiesViaLLM(bookmarksContent, now, opts);
+    const newEntities = await extractEntitiesViaLLM(dirtyContent || bookmarksContent, now, opts);
     if (newEntities === null) {
       logger.warn('[structured-memory] LLM extraction unavailable/unparseable; using regex fallback');
       return extractStructuredMemory(bookmarksContent, existingMemory);
     }
-    return assembleMemory(newEntities, existingMemory, now);
+    const assembled = assembleMemory(newEntities, existingMemory, now, extractionState);
+    return await resolveMemoryContradictions(assembled, now, opts);
   } catch (err) {
     logger.warn('[structured-memory] LLM extraction failed; using regex fallback', { error: String(err) });
     return extractStructuredMemory(bookmarksContent, existingMemory);
+  }
+}
+
+/**
+ * B-1：LLM 提取后对合并实体跑 bi-temporal 矛盾消解，标记被取代的旧事实并重新派生状态。
+ * 仅在有 provider 时启用；实体数 > 60 时跳过(控 O(n²) LLM 成本，留人工/夜间专项)；失败保守保留原记忆。
+ */
+async function resolveMemoryContradictions(
+  memory: StructuredMemory,
+  now: string,
+  opts?: { provider?: AIProvider; model?: string },
+): Promise<StructuredMemory> {
+  if (memory.entities.length > 60) return memory; // 控 O(n²) LLM 成本
+  try {
+    const { provider, model } = await resolveSummarizeProvider(opts);
+    const { entities, supersededCount } = await resolveContradictions(
+      memory.entities,
+      makeLLMContradicts(provider, model),
+      now,
+    );
+    if (supersededCount === 0) return memory;
+    logger.info('[structured-memory] B-1 矛盾消解', { supersededCount });
+    return deriveStructuredState(entities, now, memory.extractionState);
+  } catch (err) {
+    logger.warn('[structured-memory] 矛盾消解失败，保留原记忆', { error: String(err) });
+    return memory;
   }
 }
 
@@ -600,6 +695,10 @@ function decayOldEntities(entities: MemoryEntity[], now: string): MemoryEntity[]
   const thirtyDays = 30 * 86400000;
 
   return entities.filter((e) => {
+    if (e.reviewStatus === 'confirmed' || e.reviewStatus === 'ignored') {
+      return true;
+    }
+
     const lastSeenTime = new Date(e.lastSeen).getTime();
     const age = nowTime - lastSeenTime;
 
@@ -655,17 +754,22 @@ function summarizeTopic(topic: string, entities: MemoryEntity[]): string {
  */
 export function memoryToContext(structured: StructuredMemory): string {
   const parts: string[] = [];
+  const durableFacts = activeEntities(structured.durableFacts);
+  const entities = activeEntities(structured.entities);
+  const topics = structured.topics
+    .map((topic) => ({ ...topic, entities: activeEntities(topic.entities) }))
+    .filter((topic) => topic.entities.length > 0);
 
   // Durable facts first (most important)
-  if (structured.durableFacts.length > 0) {
-    const factLines = structured.durableFacts
+  if (durableFacts.length > 0) {
+    const factLines = durableFacts
       .map((f) => f.content)
       .slice(0, 10);
     parts.push(`## 关于用户(结构化记忆)\n${factLines.map((f) => `- ${f}`).join('\n')}`);
   }
 
   // Recent topics (top 3)
-  const activeTopics = structured.topics
+  const activeTopics = topics
     .filter((t) => t.entities.length >= 1)
     .slice(0, 3);
 
@@ -686,7 +790,7 @@ export function memoryToContext(structured: StructuredMemory): string {
   }
 
   // Recent emotions (top 5 high confidence)
-  const recentEmotions = structured.entities
+  const recentEmotions = entities
     .filter((e) => e.type === 'emotion' && e.confidence >= 0.6)
     .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime())
     .slice(0, 5);
@@ -724,9 +828,9 @@ export function mergeMemories(
 ): StructuredMemory {
   const mergedEntities = mergeEntities(existing.entities, newEntries.entities);
 
-  // Re-cluster topics
+  // Re-cluster active topics.
   const topicMap = new Map<string, MemoryEntity[]>();
-  for (const entity of mergedEntities) {
+  for (const entity of activeEntities(mergedEntities)) {
     const topic = classifyTopic(entity.content);
     const existingTopicEntities = topicMap.get(topic) ?? [];
     existingTopicEntities.push(entity);
@@ -752,8 +856,9 @@ export function mergeMemories(
   }
   topics.sort((a, b) => b.entities.length - a.entities.length);
 
-  const durableFacts = mergedEntities.filter(
-    (e) => e.confidence >= 0.8 && e.occurrences >= 3,
+  const durableFacts = activeEntities(mergedEntities).filter(
+    (e) => e.reviewStatus === 'confirmed'
+      || (e.reviewStatus !== 'inferred' && e.confidence >= 0.8 && e.occurrences >= 3),
   );
 
   return {

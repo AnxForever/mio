@@ -121,6 +121,19 @@ export const PROVIDER_PRESETS: Record<string, ProviderPresetConfig> = {
       { id: 'abab6.5s-chat', label: 'abab6.5s Chat（旧）' },
     ],
   },
+  hybgzs: {
+    name: 'hybgzs',
+    label: 'Gemini @ hybgzs（OpenAI 兼容代理）',
+    baseUrl: 'https://ai.hybgzs.com/v1',
+    apiKeyEnv: 'HYBGZS_API_KEY',
+    defaultModel: 'gemini-2.5-flash',
+    authHeader: 'Bearer ${apiKey}',
+    supportsVision: true,
+    supportsToolCalling: true,
+    models: [
+      { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    ],
+  },
   qwen: {
     name: 'qwen',
     label: 'Qwen / 通义千问（阿里云）',
@@ -170,6 +183,17 @@ export const PROVIDER_PRESETS: Record<string, ProviderPresetConfig> = {
       { id: 'Pro/zai-org/GLM-4.7', label: 'GLM-4.7 (托管)' },
     ],
   },
+  lora: {
+    name: 'lora',
+    label: 'Local LoRA Adapter',
+    baseUrl: 'http://127.0.0.1:8000',
+    apiKeyEnv: 'MIO_LORA_API_KEY',
+    defaultModel: 'mio-lora-qwen7b',
+    authHeader: 'Bearer ${apiKey}',
+    supportsVision: false,
+    supportsToolCalling: false,
+    models: [{ id: 'mio-lora-qwen7b', label: 'Mio LoRA Qwen 7B' }],
+  },
   mock: {
     name: 'mock',
     label: 'Mock（离线测试）',
@@ -196,6 +220,7 @@ const AUTO_DETECT_ORDER: ProviderPreset[] = [
   'qwen',
   'doubao',
   'siliconflow',
+  'lora',
   'openai',
 ];
 
@@ -335,6 +360,8 @@ export interface MioConfig {
     personalityDriver: boolean;
     /** Autonomous life engine — custom character life events, story arcs, crises */
     lifeEngine: boolean;
+    /** IM pacing — 私聊里模拟"真人打字"：按长度延迟 + 把长回复分段成多条短消息 */
+    imPacing: boolean;
   };
 }
 
@@ -376,6 +403,7 @@ const DEFAULT_CONFIG: MioConfig = {
     dynamicFewShot: true,
     personalityDriver: true,
     lifeEngine: false,
+    imPacing: false,
   },
 };
 
@@ -389,6 +417,7 @@ function envOverrides(): Partial<MioConfig> {
   if (process.env.COLA_MODEL) patch.model = process.env.COLA_MODEL;
   if (process.env.MIO_PROVIDER) patch.provider = process.env.MIO_PROVIDER as ProviderPreset;
   if (process.env.MIO_PROVIDER_BASE_URL) patch.providerBaseUrl = process.env.MIO_PROVIDER_BASE_URL;
+  if (process.env.MIO_LORA_BASE_URL) patch.providerBaseUrl = process.env.MIO_LORA_BASE_URL;
   if (process.env.MIO_AUTH_TOKEN) patch.authToken = process.env.MIO_AUTH_TOKEN;
   if (process.env.MIO_DIR) patch.dataDir = process.env.MIO_DIR;
   if (process.env.MIO_NIGHTLY_CRON) patch.nightlyCron = process.env.MIO_NIGHTLY_CRON;
@@ -403,6 +432,7 @@ function envOverrides(): Partial<MioConfig> {
   if (process.env.MIO_FEATURE_MULTI_AXIS_RELATIONSHIP) featureOverrides.multiAxisRelationship = process.env.MIO_FEATURE_MULTI_AXIS_RELATIONSHIP === 'true';
   if (process.env.MIO_FEATURE_FRUSTRATION) featureOverrides.frustrationTracking = process.env.MIO_FEATURE_FRUSTRATION === 'true';
   if (process.env.MIO_FEATURE_BUDGET_LOG) featureOverrides.promptBudgetLog = process.env.MIO_FEATURE_BUDGET_LOG === 'true';
+  if (process.env.MIO_FEATURE_INDEPENDENT_SUMMARIZER) featureOverrides.independentSummarizer = process.env.MIO_FEATURE_INDEPENDENT_SUMMARIZER === 'true';
   if (process.env.MIO_FEATURE_SMART_PROACTIVE) featureOverrides.smartProactive = process.env.MIO_FEATURE_SMART_PROACTIVE === 'true';
   if (process.env.MIO_FEATURE_ACE_REFLECTOR) featureOverrides.aceReflector = process.env.MIO_FEATURE_ACE_REFLECTOR === 'true';
   if (process.env.MIO_FEATURE_MODEL_ROUTER) featureOverrides.modelRouter = process.env.MIO_FEATURE_MODEL_ROUTER === 'true';
@@ -419,6 +449,7 @@ function envOverrides(): Partial<MioConfig> {
   if (process.env.MIO_FEATURE_ENTITY_GRAPH) featureOverrides.entityRelationGraph = process.env.MIO_FEATURE_ENTITY_GRAPH === 'true';
   if (process.env.MIO_FEATURE_DYNAMIC_FEWSHOT) featureOverrides.dynamicFewShot = process.env.MIO_FEATURE_DYNAMIC_FEWSHOT === 'true';
   if (process.env.MIO_FEATURE_LIFE_ENGINE) featureOverrides.lifeEngine = process.env.MIO_FEATURE_LIFE_ENGINE === 'true';
+  if (process.env.MIO_FEATURE_IM_PACING) featureOverrides.imPacing = process.env.MIO_FEATURE_IM_PACING === 'true';
   if (Object.keys(featureOverrides).length > 0) {
     patch.features = { ...DEFAULT_CONFIG.features, ...featureOverrides } as MioConfig['features'];
   }

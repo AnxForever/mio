@@ -21,10 +21,6 @@
   margin-bottom: var(--s8);
 }
 
-.onboarding-ball canvas {
-  display: block;
-}
-
 .onboarding-question {
   font-size: 26px;
   font-weight: 600;
@@ -238,3 +234,7 @@
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* ── onboarding 沉浸全屏:激活时隐藏 app shell 导航(.app-main flex:1 自动填满)── */
+.app-shell:has(.onboarding-view) > .app-sidebar,
+.app-shell:has(.onboarding-view) > .app-bottom-nav { display: none; }

@@ -20,6 +20,7 @@ import { AnthropicProvider } from './anthropic.js';
 import { OpenAICompatibleProvider } from './openai-compatible.js';
 import { MockProvider } from './mock.js';
 import { FallbackChainProvider, drainFallbackEvents, resetFallbackCache } from './fallback.js';
+import { createLoRAProvider } from './lora-adapter.js';
 
 export { AnthropicProvider, OpenAICompatibleProvider, MockProvider, FallbackChainProvider };
 export { drainFallbackEvents, resetFallbackCache };
@@ -37,6 +38,14 @@ function createProvider(resolution: ProviderResolution): StreamingProvider {
   // Mock: no API calls
   if (preset.name === 'mock') {
     return new MockProvider();
+  }
+
+  if (preset.name === 'lora') {
+    return createLoRAProvider({
+      baseUrl: process.env.MIO_LORA_BASE_URL || preset.baseUrl,
+      modelName: model || preset.defaultModel,
+      apiKey: apiKey || process.env.MIO_LORA_API_KEY,
+    });
   }
 
   // No API key — fall back to Mock with a clear log message

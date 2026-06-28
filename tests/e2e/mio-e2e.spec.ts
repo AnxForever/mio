@@ -8,17 +8,22 @@
  *   - Server is started by `playwright.global-setup.ts` on a free port.
  *   - The URL is available at `process.env.MIO_TEST_BASE_URL`.
  *
- * Coverage (10 tests):
+ * Coverage (15 tests):
  *   1. Server health — GET /health returns ok
  *   2. Status page — GET /status returns config + emotion + provider info
  *   3. Chat flow — POST /chat with "hello" → response has text + sessionId
  *   4. SSE streaming — POST /chat/stream → SSE events with token + done
- *   5. Mod switching — POST /mod male → activeMod changes
- *   6. Crisis detection — POST /chat with crisis message → crisisFlagged: true
- *   7. WebSocket — connect to /ws → hello → chat → done events
- *   8. Avatar state — GET /avatar/state → valid structure
- *   9. Web frontend loads — GET / → serves index.html (or 404 gracefully)
- *   10. Session continuity — send 2 messages with same sessionId → both recorded
+ *   5. OpenAI-compatible models — GET /v1/models
+ *   6. OpenAI-compatible chat — POST /v1/chat/completions
+ *   7. OpenAI-compatible streaming — POST /v1/chat/completions stream
+ *   8. OpenAI-compatible validation — bad body returns OpenAI error envelope
+ *   9. Mod switching — POST /mod male → activeMod changes
+ *   10. Crisis detection — POST /chat with crisis message → crisisFlagged: true
+ *   11. WebSocket — connect to /ws → hello → chat → done events
+ *   12. Avatar state — GET /avatar/state → valid structure
+ *   13. Web frontend loads — GET / → serves index.html (or 404 gracefully)
+ *   14. Session continuity — send 2 messages with same sessionId → both recorded
+ *   15. Rate limiter — returns 429 after exceeding limit
  */
 
 import { test, expect } from '@playwright/test';
@@ -174,7 +179,88 @@ test('POST /chat/stream returns SSE events with token + done', async ({ request 
   expect(donePayload).toHaveProperty('sessionId');
 });
 
-// ─── Test 5: Mod switching ───
+// ─── Test 5: OpenAI-compatible model list ───
+
+test('GET /v1/models returns OpenAI-compatible model list', async ({ request }) => {
+  const res = await request.get(`${BASE_URL()}/v1/models`);
+  expect(res.status()).toBe(200);
+
+  const body = await res.json();
+  expect(body).toHaveProperty('object', 'list');
+  expect(Array.isArray(body.data)).toBe(true);
+  expect(body.data.some((model: { id?: string }) => model.id === 'mio')).toBe(true);
+});
+
+// ─── Test 6: OpenAI-compatible non-streaming chat ───
+
+test('POST /v1/chat/completions returns OpenAI-compatible completion', async ({ request }) => {
+  const res = await request.post(`${BASE_URL()}/v1/chat/completions`, {
+    headers: {
+      'Content-Type': 'application/json',
+      'X-OpenClaw-User-Id': 'e2e-openclaw-user',
+    },
+    data: {
+      model: 'mio',
+      messages: [
+        { role: 'system', content: 'gateway context' },
+        { role: 'user', content: 'openai compatible e2e test' },
+      ],
+    },
+  });
+  expect(res.status()).toBe(200);
+  expect(res.headers()['x-mio-session-id']).toMatch(/^openai-e2e-openclaw-user-/);
+
+  const body = await res.json();
+  expect(body).toHaveProperty('object', 'chat.completion');
+  expect(body).toHaveProperty('model', 'mio');
+  expect(body.choices[0]).toHaveProperty('index', 0);
+  expect(body.choices[0]).toHaveProperty('finish_reason', 'stop');
+  expect(body.choices[0].message).toHaveProperty('role', 'assistant');
+  expect(body.choices[0].message.content.length).toBeGreaterThan(0);
+  expect(body.usage.total_tokens).toBeGreaterThan(0);
+});
+
+// ─── Test 7: OpenAI-compatible streaming chat ───
+
+test('POST /v1/chat/completions streams OpenAI-compatible chunks', async ({ request }) => {
+  const res = await request.post(`${BASE_URL()}/v1/chat/completions`, {
+    headers: { 'Content-Type': 'application/json' },
+    data: {
+      model: 'mio',
+      stream: true,
+      metadata: { conversation: { id: 'e2e-room-1' } },
+      messages: [
+        { role: 'user', content: [{ type: 'text', text: 'openai stream e2e test' }] },
+      ],
+    },
+  });
+  expect(res.status()).toBe(200);
+  expect(res.headers()['content-type']).toContain('text/event-stream');
+  expect(res.headers()['x-mio-session-id']).toMatch(/^openai-e2e-room-1-/);
+
+  const text = await res.text();
+  const chunks = text.split('\n\n').filter((block) => block.includes('"object":"chat.completion.chunk"'));
+  expect(chunks.length).toBeGreaterThan(1);
+  expect(chunks[0]).toContain('"role":"assistant"');
+  expect(text).toContain('data: [DONE]');
+});
+
+// ─── Test 8: OpenAI-compatible validation ───
+
+test('POST /v1/chat/completions returns OpenAI error envelope for invalid body', async ({ request }) => {
+  const res = await request.post(`${BASE_URL()}/v1/chat/completions`, {
+    headers: { 'Content-Type': 'application/json' },
+    data: { model: 'mio', messages: [] },
+  });
+  expect(res.status()).toBe(400);
+
+  const body = await res.json();
+  expect(body.error).toHaveProperty('type', 'invalid_request_error');
+  expect(body.error).toHaveProperty('code', 'invalid_request');
+  expect(typeof body.error.message).toBe('string');
+});
+
+// ─── Test 9: Mod switching ───
 
 test('POST /mod switches active persona', async ({ request }) => {
   // Switch to male
@@ -208,7 +294,7 @@ test('POST /mod switches active persona', async ({ request }) => {
   expect(res3.status()).toBe(400);
 });
 
-// ─── Test 6: Crisis detection ───
+// ─── Test 10: Crisis detection ───
 
 test('POST /chat with crisis message flags crisis', async ({ request }) => {
   // Yellow crisis: "撑不住"
@@ -239,7 +325,7 @@ test('POST /chat with crisis message flags crisis', async ({ request }) => {
   expect(body3.crisisFlagged).toBe(false);
 });
 
-// ─── Test 7: WebSocket ───
+// ─── Test 11: WebSocket ───
 
 test('WebSocket /ws hello + chat + done events', async () => {
   const ws = new WebSocket(WS_URL());
@@ -280,7 +366,7 @@ test('WebSocket /ws hello + chat + done events', async () => {
   }
 });
 
-// ─── Test 8: Avatar state ───
+// ─── Test 12: Avatar state ───
 
 test('GET /avatar/state returns valid structure', async ({ request }) => {
   const res = await request.get(`${BASE_URL()}/avatar/state`);
@@ -314,7 +400,7 @@ test('GET /avatar/state returns valid structure', async ({ request }) => {
   expect(typeof body.timestamp).toBe('string');
 });
 
-// ─── Test 9: Web frontend ───
+// ─── Test 13: Web frontend ───
 
 test('GET / serves something (index.html or 404)', async ({ request }) => {
   const res = await request.get(`${BASE_URL()}/`);
@@ -338,7 +424,7 @@ test('GET / serves something (index.html or 404)', async ({ request }) => {
   }
 });
 
-// ─── Test 10: Session continuity ───
+// ─── Test 14: Session continuity ───
 
 test('Session continuity — two messages with same sessionId', async ({ request }) => {
   // First message
@@ -376,7 +462,7 @@ test('Session continuity — two messages with same sessionId', async ({ request
   expect(body3.text.length).toBeGreaterThan(0);
 });
 
-// ─── Test 11: Rate limiting returns 429 (bonus) ───
+// ─── Test 15: Rate limiting returns 429 (bonus) ───
 
 test('Rate limiter returns 429 after exceeding limit', async ({ request }) => {
   // The rate limiter is configured with default max=30 per window.

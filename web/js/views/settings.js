@@ -7,6 +7,17 @@ import { toast } from '../components/toast.js';
 import { ICONS } from '../utils/icons.js';
 import { renderGenderPicker } from './gender.js';
 
+const UI_TO_BACKEND_MOD = { girlfriend: 'female', boyfriend: 'male' };
+const BACKEND_TO_UI_MOD = { female: 'girlfriend', male: 'boyfriend', girlfriend: 'girlfriend', boyfriend: 'boyfriend' };
+
+function toBackendMod(mod) {
+  return UI_TO_BACKEND_MOD[mod] || mod;
+}
+
+function toUiMod(mod) {
+  return BACKEND_TO_UI_MOD[mod] || mod;
+}
+
 export class SettingsView extends BaseView {
   constructor(params) {
     super(params);
@@ -42,6 +53,7 @@ export class SettingsView extends BaseView {
     container.innerHTML = '';
 
     this.buildGenderSection(container);
+    this.buildWorkspaceSection(container);
     this.buildMemorySection(container);
     this.buildProactiveSection(container);
     this.buildConnectionSection(container);
@@ -57,6 +69,30 @@ export class SettingsView extends BaseView {
   }
 
   /* ─── 记忆 ─── */
+
+  buildWorkspaceSection(container) {
+    const { wrap, body } = this.makeSection('工作台');
+
+    body.appendChild(this.row({
+      label: '人格工作室',
+      desc: '编辑 soul、切换模式、管理角色',
+      onClick: () => navigate('/studio'),
+    }));
+
+    body.appendChild(this.row({
+      label: '消息概览',
+      desc: '查看最近聊天、心情入口和当前关系',
+      onClick: () => navigate('/messages'),
+    }));
+
+    body.appendChild(this.row({
+      label: '心情状态',
+      desc: '查看 Mio 当前的情绪和关系进度',
+      onClick: () => navigate('/mood'),
+    }));
+
+    container.appendChild(wrap);
+  }
 
   buildMemorySection(container) {
     const { wrap, body } = this.makeSection('记忆');
@@ -141,7 +177,7 @@ export class SettingsView extends BaseView {
     const { wrap, body } = this.makeSection('Mio');
     body.classList.add('gender-setting');
 
-    const initial = Store.get('activeMod');
+    const initial = toUiMod(Store.get('activeMod'));
     const picker = renderGenderPicker({
       value: initial,
       onSelect: (mod) => this.applyGender(mod),
@@ -160,9 +196,10 @@ export class SettingsView extends BaseView {
   }
 
   async applyGender(mod) {
+    const backendMod = toBackendMod(mod);
     try {
-      await api.post('/mod', { name: mod });
-      Store.set('activeMod', mod);
+      const data = await api.post('/mod', { name: backendMod });
+      Store.set('activeMod', toUiMod(data?.activeMod || backendMod));
       toast(mod === 'boyfriend' ? '已切换为他' : '已切换为她', 'success');
     } catch {
       toast('切换失败', 'error');
@@ -173,7 +210,7 @@ export class SettingsView extends BaseView {
     let gender;
     try {
       const data = await api.get('/status');
-      gender = data?.config?.gender || data?.config?.activeMod;
+      gender = toUiMod(data?.config?.activeMod || data?.config?.gender);
     } catch {
       return; // 离线:保留本地初始值
     }

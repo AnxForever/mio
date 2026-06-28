@@ -156,10 +156,14 @@ export function getRouterConfig(): RouterConfig {
 
 /**
  * Check if the model router is enabled.
- * Controlled by MIO_MODEL_ROUTER_ENABLED env var (default: false).
+ * Controlled by config.features.modelRouter / MIO_FEATURE_MODEL_ROUTER.
+ * MIO_MODEL_ROUTER_ENABLED is kept as a legacy alias.
  */
 export function isRouterEnabled(): boolean {
-  return process.env.MIO_MODEL_ROUTER_ENABLED === 'true';
+  if (process.env.MIO_MODEL_ROUTER_ENABLED !== undefined) {
+    return process.env.MIO_MODEL_ROUTER_ENABLED === 'true';
+  }
+  return getConfig().features.modelRouter === true;
 }
 
 /**
@@ -185,7 +189,10 @@ export async function routeTask(
   config?: RouterConfig,
 ): Promise<StreamingProvider> {
   // If router is disabled, return current provider as-is
-  if (!isRouterEnabled()) {
+  const features = getConfig().features;
+  const taskRouterEnabled = isRouterEnabled()
+    || (task === 'summarize' && features.independentSummarizer === true);
+  if (!taskRouterEnabled) {
     return currentProvider;
   }
 
