@@ -165,6 +165,7 @@ export const memoryPatchBody = z.object({
   confidence: z.number().min(0).max(1).optional(),
   enabled: z.boolean().optional(),
   reviewStatus: z.enum(['inferred', 'confirmed', 'ignored']).optional(),
+  pinned: z.boolean().optional(),
 }).refine((body) => Object.keys(body).length > 0, {
   message: 'At least one field is required',
 });

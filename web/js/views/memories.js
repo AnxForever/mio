@@ -52,6 +52,11 @@ export function memoryReviewActions(item) {
     return actions;
   }
   actions.push({ kind: 'disable', label: '禁用', patch: { enabled: false } });
+  if (item.status !== 'ignored') {
+    actions.push(item.pinned
+      ? { kind: 'unpin', label: '取消固定', patch: { pinned: false } }
+      : { kind: 'pin', label: '固定', patch: { pinned: true } });
+  }
   if (item.status !== 'confirmed') {
     actions.push({ kind: 'confirm', label: '确认', patch: { reviewStatus: 'confirmed' } });
   }
@@ -216,19 +221,21 @@ export class MemoriesView extends BaseView {
     const counts = this.items.reduce((acc, item) => {
       const status = item.status || 'inferred';
       acc.total += 1;
+      if (item.pinned && item.enabled !== false && status !== 'ignored') acc.pinned += 1;
       if (item.enabled === false) {
         acc.disabled += 1;
         return acc;
       }
       acc[status] = (acc[status] || 0) + 1;
       return acc;
-    }, { total: 0, confirmed: 0, ignored: 0, inferred: 0, disabled: 0 });
+    }, { total: 0, confirmed: 0, ignored: 0, inferred: 0, disabled: 0, pinned: 0 });
     const pending = counts.inferred;
 
     return el('div', { className: 'memories-summary', 'aria-label': '记忆审查概览' }, [
       this.summaryItem('全部', counts.total),
       this.summaryItem('待确认', pending),
       this.summaryItem('已确认', counts.confirmed),
+      this.summaryItem('已固定', counts.pinned),
       this.summaryItem('已忽略', counts.ignored),
       this.summaryItem('已禁用', counts.disabled),
     ]);
@@ -246,6 +253,7 @@ export class MemoriesView extends BaseView {
     const meta = el('div', { className: 'memory-meta' }, [
       el('span', { className: 'memory-type', textContent: TYPE_LABELS[item.type] || item.type }),
       el('span', { className: `memory-status memory-status--${item.enabled === false ? 'disabled' : item.status || 'inferred'}`, textContent: memoryStatusLabel(item.enabled === false ? 'disabled' : item.status) }),
+      item.pinned ? el('span', { className: 'memory-topic', textContent: '固定' }) : null,
       item.topic ? el('span', { className: 'memory-topic', textContent: item.topic }) : null,
     ]);
 
@@ -324,7 +332,7 @@ export class MemoriesView extends BaseView {
   async reviewItem(id, patch) {
     try {
       await api.patch(`/memories/${id}`, patch);
-      toast(patch.reviewStatus === 'ignored' ? '记忆已忽略' : '记忆已确认', 'success');
+      toast(memoryActionToast(patch), 'success');
       await this.load(this.searchInput.value.trim());
     } catch {
       toast('操作失败', 'error');
@@ -341,6 +349,15 @@ export class MemoriesView extends BaseView {
       toast('删除失败', 'error');
     }
   }
+}
+
+function memoryActionToast(patch) {
+  if (patch.pinned === true) return '记忆已固定';
+  if (patch.pinned === false) return '已取消固定';
+  if (patch.enabled === false) return '记忆已禁用';
+  if (patch.enabled === true) return '记忆已启用';
+  if (patch.reviewStatus === 'ignored') return '记忆已忽略';
+  return '记忆已确认';
 }
 
 let memoriesViewInstance = null;

@@ -39,6 +39,9 @@ export interface MemoryEntity {
   provenance?: MemoryProvenance;
   reviewStatus?: 'inferred' | 'confirmed' | 'ignored';
   reviewedAt?: string;
+  /** User-pinned memories are prompt-facing priority anchors. */
+  pinned?: boolean;
+  pinnedAt?: string;
   /** B-1 bi-temporal：被更新事实取代时打上(ISO)；不删除，留审计；activeEntities 据此排除。 */
   invalidatedAt?: string;
   /** 取代它的新事实 content（溯源）。 */
@@ -74,6 +77,7 @@ export interface StructuredMemoryExtractionState {
 }
 
 export interface StructuredStateView {
+  pinned: MemoryEntity[];
   currentFacts: MemoryEntity[];
   multiDayArcs: TopicSegment[];
   recentEvents: MemoryEntity[];
@@ -433,7 +437,8 @@ function deriveStructuredState(
 
   // Filter durable facts: high confidence, multiple occurrences
   const durableFacts = activeEntities(merged).filter(
-    (e) => e.reviewStatus === 'confirmed'
+    (e) => e.pinned === true
+      || e.reviewStatus === 'confirmed'
       || (e.reviewStatus !== 'inferred' && e.confidence >= 0.8 && e.occurrences >= 3),
   );
 
@@ -783,17 +788,25 @@ export function deriveStructuredStateView(
 ): StructuredStateView {
   const active = activeEntities(structured.entities);
   const durableKeys = new Set(activeEntities(structured.durableFacts).map(entityKey));
+  const pinned = uniqueEntities(active.filter((entity) => entity.pinned === true))
+    .sort(compareMemoryPriority)
+    .slice(0, 10);
+  const pinnedKeys = new Set(pinned.map(entityKey));
   const currentFacts = uniqueEntities([
     ...activeEntities(structured.durableFacts)
       .filter((entity) => entity.type === 'fact' || entity.type === 'preference'),
     ...active
       .filter((entity) => (entity.type === 'fact' || entity.type === 'preference') && entity.reviewStatus === 'confirmed'),
   ])
+    .filter((entity) => !pinnedKeys.has(entityKey(entity)))
     .sort(compareMemoryPriority)
     .slice(0, 10);
 
   const activeTopics = structured.topics
-    .map((topic) => ({ ...topic, entities: activeEntities(topic.entities) }))
+    .map((topic) => ({
+      ...topic,
+      entities: activeEntities(topic.entities).filter((entity) => !pinnedKeys.has(entityKey(entity))),
+    }))
     .filter((topic) => topic.entities.length > 0);
   const multiDayArcs = activeTopics
     .filter((topic) => isMultiDayTopic(topic))
@@ -807,21 +820,30 @@ export function deriveStructuredStateView(
   const emotionWindowMs = 72 * 3_600_000;
   const recentEvents = active
     .filter((entity) => entity.type === 'event' || entity.type === 'decision' || entity.type === 'intention')
+    .filter((entity) => !pinnedKeys.has(entityKey(entity)))
     .filter((entity) => !arcEntityKeys.has(entityKey(entity)))
     .filter((entity) => isWithinWindow(entity.lastSeen, nowMs, recentWindowMs))
     .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime())
     .slice(0, 8);
   const recentEmotions = active
     .filter((entity) => entity.type === 'emotion' && entity.confidence >= 0.5)
+    .filter((entity) => !pinnedKeys.has(entityKey(entity)))
     .filter((entity) => isWithinWindow(entity.lastSeen, nowMs, emotionWindowMs))
     .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime())
     .slice(0, 5);
 
-  return { currentFacts, multiDayArcs, recentEvents, recentEmotions };
+  return { pinned, currentFacts, multiDayArcs, recentEvents, recentEmotions };
 }
 
 export function renderStructuredStateView(view: StructuredStateView): string | null {
   const parts: string[] = [];
+
+  if (view.pinned.length > 0) {
+    const lines = view.pinned.map((entity) => (
+      `- ${entity.content}（固定记忆，优先保留；按类型和时间判断，不自动当作当前状态；${formatDateOnly(entity.lastSeen)}更新）`
+    ));
+    parts.push(`## 固定记忆（用户指定优先）\n${lines.join('\n')}`);
+  }
 
   if (view.currentFacts.length > 0) {
     parts.push(`## 当前事实（稳定/已确认）\n${view.currentFacts.map((entity) => `- ${entity.content}`).join('\n')}`);
@@ -879,7 +901,8 @@ function uniqueEntities(entities: MemoryEntity[]): MemoryEntity[] {
 }
 
 function compareMemoryPriority(a: MemoryEntity, b: MemoryEntity): number {
-  return (b.confidence - a.confidence)
+  return (Number(b.pinned === true) - Number(a.pinned === true))
+    || (b.confidence - a.confidence)
     || (b.occurrences - a.occurrences)
     || (new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime());
 }
@@ -963,7 +986,8 @@ export function mergeMemories(
   topics.sort((a, b) => b.entities.length - a.entities.length);
 
   const durableFacts = activeEntities(mergedEntities).filter(
-    (e) => e.reviewStatus === 'confirmed'
+    (e) => e.pinned === true
+      || e.reviewStatus === 'confirmed'
       || (e.reviewStatus !== 'inferred' && e.confidence >= 0.8 && e.occurrences >= 3),
   );
 

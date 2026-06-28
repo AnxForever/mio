@@ -188,6 +188,58 @@ async function main(): Promise<void> {
     assert(typeof item.usage.lastMentionedAt === 'string', 'usage should expose last mentioned timestamp');
   });
 
+  await test('pin promotes a memory into priority prompt context', async () => {
+    const content = '用户重要边界：不喜欢被要求报备定位';
+    const other = '用户喜欢拿铁';
+    writeStructuredMemoryToDisk({
+      entities: [
+        entity(other, { reviewStatus: 'confirmed', confidence: 1, occurrences: 3 }),
+        entity(content, { type: 'fact', confidence: 0.5, occurrences: 1 }),
+      ],
+      topics: [],
+      durableFacts: [],
+      updatedAt: '2026-06-01T00:00:00.000Z',
+    });
+
+    const item = memories.listMemoryReviewItems().find((candidate) => candidate.content === content);
+    assert(item !== undefined, 'pin target should be listed');
+    assert(item.pinned === false, 'seed memory should not start pinned');
+
+    const pinned = await memories.updateMemoryReviewItem(item.id, { pinned: true });
+    assert(pinned?.pinned === true, 'pin should return pinned=true');
+    assert(pinned.status === 'confirmed', 'pin should confirm the memory');
+    assert(pinned.enabled === true, 'pin should keep memory enabled');
+
+    const stored = readStructuredMemoryFromDisk();
+    assert(stored !== null, 'structured memory should exist');
+    const storedPinned = stored.entities.find((candidate) => candidate.content === content);
+    assert(storedPinned?.pinned === true, 'stored entity should be pinned');
+    assert(typeof storedPinned.pinnedAt === 'string', 'stored entity should record pinnedAt');
+    assert(stored.durableFacts.some((candidate) => candidate.content === content), 'pinned entity should be durable');
+
+    const context = memoryToContext(stored);
+    assert(context.includes('## 固定记忆'), 'prompt context should include pinned section');
+    assert(context.indexOf(content) >= 0, 'prompt context should include pinned content');
+    assert(context.indexOf(content) < context.indexOf(other), 'pinned content should render before normal confirmed facts');
+  });
+
+  await test('unpin removes fixed status without deleting memory', async () => {
+    const content = '用户重要边界：不喜欢被要求报备定位';
+    const item = memories.listMemoryReviewItems().find((candidate) => candidate.content === content);
+    assert(item !== undefined, 'unpin target should be listed');
+
+    const unpinned = await memories.updateMemoryReviewItem(item.id, { pinned: false });
+    assert(unpinned?.pinned === false, 'unpin should return pinned=false');
+
+    const stored = readStructuredMemoryFromDisk();
+    assert(stored !== null, 'structured memory should exist');
+    const storedEntity = stored.entities.find((candidate) => candidate.content === content);
+    assert(storedEntity !== undefined, 'unpinned entity should remain stored');
+    assert(storedEntity.pinned !== true, 'stored entity should no longer be pinned');
+    assert(storedEntity.pinnedAt === undefined, 'stored entity should clear pinnedAt');
+    assert(!memoryToContext(stored).includes('## 固定记忆'), 'prompt context should not include pinned section after unpin');
+  });
+
   await test('edit propagates content changes into vector and lorebook entries', async () => {
     const oldContent = '用户喜欢红茶';
     const newContent = '用户喜欢茉莉茶';

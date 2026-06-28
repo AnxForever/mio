@@ -29,6 +29,7 @@ assert.deepEqual(
   inferredActions.map((action) => [action.kind, action.label, action.patch]),
   [
     ['disable', '禁用', { enabled: false }],
+    ['pin', '固定', { pinned: true }],
     ['confirm', '确认', { reviewStatus: 'confirmed' }],
     ['ignore', '忽略', { reviewStatus: 'ignored' }],
   ],
@@ -36,8 +37,22 @@ assert.deepEqual(
 
 const confirmedActions = memoryReviewActions({ status: 'confirmed' });
 assert.deepEqual(
-  confirmedActions.map((action) => action.kind),
-  ['disable', 'ignore'],
+  confirmedActions.map((action) => [action.kind, action.patch]),
+  [
+    ['disable', { enabled: false }],
+    ['pin', { pinned: true }],
+    ['ignore', { reviewStatus: 'ignored' }],
+  ],
+);
+
+const pinnedActions = memoryReviewActions({ status: 'confirmed', pinned: true });
+assert.deepEqual(
+  pinnedActions.map((action) => [action.kind, action.label, action.patch]),
+  [
+    ['disable', '禁用', { enabled: false }],
+    ['unpin', '取消固定', { pinned: false }],
+    ['ignore', '忽略', { reviewStatus: 'ignored' }],
+  ],
 );
 
 const ignoredActions = memoryReviewActions({ status: 'ignored' });

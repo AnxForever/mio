@@ -37,6 +37,8 @@ export interface MemoryReviewItem {
   provenance?: MemoryEntity['provenance'];
   status: 'confirmed' | 'inferred' | 'ignored';
   durable: boolean;
+  pinned: boolean;
+  pinnedAt?: string;
   topic?: string;
   usage?: MemoryUsageSummary;
 }
@@ -57,6 +59,7 @@ export interface MemoryPatch {
   confidence?: number;
   enabled?: boolean;
   reviewStatus?: MemoryReviewItem['status'];
+  pinned?: boolean;
 }
 
 function entitySignature(entity: MemoryEntity): string {
@@ -114,6 +117,8 @@ function toReviewItem(
     provenance: entity.provenance,
     status,
     durable,
+    pinned: entity.pinned === true,
+    pinnedAt: entity.pinnedAt,
     topic: findTopic(memory, entity),
     usage: usageByContent.get(normalizeMemoryContent(entity.content)),
   };
@@ -165,16 +170,23 @@ export async function updateMemoryReviewItem(id: string, patch: MemoryPatch): Pr
   if (!target) return null;
 
   const oldContent = target.content;
-  const reviewStatus = patch.reviewStatus ?? target.reviewStatus;
+  const reviewStatus = patch.pinned === true && patch.reviewStatus === undefined
+    ? 'confirmed'
+    : patch.reviewStatus ?? target.reviewStatus;
+  const pinned = reviewStatus === 'ignored'
+    ? false
+    : patch.pinned ?? target.pinned ?? false;
   const updatedEntity: MemoryEntity = {
     ...target,
     type: patch.type ?? target.type,
     content: patch.content?.trim() ?? target.content,
-    confidence: reviewStatus === 'confirmed' ? 1 : reviewStatus === 'ignored' ? 0 : patch.confidence ?? target.confidence,
-    occurrences: reviewStatus === 'confirmed' ? Math.max(target.occurrences, 3) : target.occurrences,
-    enabled: reviewStatus === 'ignored' ? false : patch.enabled ?? target.enabled ?? true,
+    confidence: reviewStatus === 'confirmed' || pinned ? 1 : reviewStatus === 'ignored' ? 0 : patch.confidence ?? target.confidence,
+    occurrences: reviewStatus === 'confirmed' || pinned ? Math.max(target.occurrences, 3) : target.occurrences,
+    enabled: reviewStatus === 'ignored' ? false : patch.enabled ?? (patch.pinned === true ? true : target.enabled ?? true),
     reviewStatus,
-    reviewedAt: patch.reviewStatus ? now : target.reviewedAt,
+    reviewedAt: patch.reviewStatus || patch.pinned === true ? now : target.reviewedAt,
+    pinned,
+    pinnedAt: pinned ? target.pinnedAt ?? now : undefined,
     lastSeen: now,
   };
 
