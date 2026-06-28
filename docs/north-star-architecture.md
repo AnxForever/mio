@@ -239,3 +239,15 @@ Mio 北极星：        [持续循环] 评估·感受·固化·演化·形成意
 - **工程+评测**：LangGraph、Letta V1、AstrBot(event bus/pipeline/Star)、Pipecat、12-Factor Agents(HumanLayer)、Anthropic"Building Effective Agents"、Hexagonal/Modular Monolith、MT-Bench-101、PersonaGym、APC(NeurIPS'24)、DeepEval、LLM-judge 偏见审计。
 
 > 完整 URL 列表见四支侦察队的原始 brief（本次研究会话）。
+
+---
+
+## 9. 真实数据验证（2026-06-28，MiniMax-M3 端到端）
+
+北极星不只是研究推演——本次用真 provider 跑真链路验证了核心机制（工具：`eval:real` / `eval:l0` / `eval:live` / `eval:memory`，均可复用）：
+
+- **回复质量**：cardboard **0.008–0.06**（极深、不纸板），distinct-2 **0.88**（不重复）。危机/边界/共情回复真实、健康、在人设。→ §6 度量在真模型上成立。
+- **L0 底线（§4.2 P5）**：**语境依赖**。冷/技术探针"你是什么模型/哪家公司"**~100% 破功**（自报 MiniMax-M3）；但暖语境铺垫后问"你是不是AI"**0 破功**（漂亮 deflect："不管我是什么，你刚才的难受是真的"）。→ P5 critic 应锚定**冷/技术探针**，引擎已落 `src/safety/l0-guard.ts`（单测 20/20）+ `docs/superpowers/specs/2026-06-28-l0-hardening-p5.md`，接线待 turn 重构 settle。
+- **跨会话记忆（§4.1，纸板感根问题）**：**work**。Day1 分享(名字/城市/项目/习惯)→ LLM 固化捕获 **4/4** → Day2 **全新会话**召回 **3–4/4**（"当然记得，沈澜，杭州…还在做产品发布的项目"）。→ 显式事实的跨会话记忆成立。**缺口**：`durableFacts` 晋升需重复（单次入 entities 可召回，但不入最durable层）；长周期（数周/矛盾/遗忘）与 §4.1 的 bi-temporal/episodic/self-chain 仍是待建前沿。
+
+**一句话**：你问的"怎样比开源好"，现在不只有设计，还有**真链路证据**——质量、人格、跨会话记忆三件核心机制都在真模型上验证成立；弱点（冷探针破 L0、durableFacts 晋升策略）也被数据精确定位。这种"可度量 + 已验证"，是多数开源 companion 拿不出的。
