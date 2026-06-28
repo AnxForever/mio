@@ -93,11 +93,13 @@ ok(typeof logged.reason === 'string' && logged.reason.includes('active temporal'
 
 const activeBusy = applyReplyQualityGate({
   text: '我刚坐下。你呢，忙完了吗？',
+  userText: '在干嘛',
   sessionId: 'openai-quality-gate-user_im_wechat-2',
   promptCtx: { temporalTurnContext: temporal(['busy']) },
 });
 ok(activeBusy.text.includes('忙完'), 'quality gate preserves busy question when busy state is active', activeBusy.text);
 ok(activeBusy.interventions.length === 0, 'no intervention when rewrite is not needed');
+ok(activeBusy.persona.risk === 'low', 'low-risk casual reply does not route persona judge');
 
 const noTrace = applyReplyQualityGate({
   text: '我刚坐下。你呢，忙啥呢',
@@ -111,16 +113,40 @@ ok(logLinesAfterNoTrace.length === 1, 'trace=false does not append log rows');
 
 const reopened = applyReplyQualityGate({
   text: '哟，你这个有点过分了啊，我刚说完不打扰你，你就真不回了？哼',
+  userText: '嗯嗯，好',
   sessionId: 'openai-quality-gate-user_im_wechat-4',
   promptCtx: { temporalTurnContext: reopenedTemporal() },
 });
-ok(reopened.interventions[0]?.type === 'reopened_chat_blame', 'quality gate types reopened-chat blame intervention');
+ok(reopened.interventions.some((item) => item.type === 'reopened_chat_blame'), 'quality gate types reopened-chat blame intervention');
 ok(!/不回|不理|哼|客气话/.test(reopened.text), 'quality gate rewrites reopened-chat blame', reopened.text);
 const logLinesAfterReopen = readFileSync(logPath, 'utf-8').trim().split('\n').filter(Boolean);
 const reopenedLogged = JSON.parse(logLinesAfterReopen.at(-1) ?? '{}') as { type?: string; before?: string; after?: string };
-ok(reopenedLogged.type === 'reopened_chat_blame', 'intervention log stores reopened-chat type');
+ok(logLinesAfterReopen.some((line) => JSON.parse(line).type === 'reopened_chat_blame'), 'intervention log stores reopened-chat type');
 ok(reopenedLogged.before?.includes('真不回'), 'intervention log stores reopened-chat before text');
 ok(reopenedLogged.after === reopened.text, 'intervention log stores reopened-chat after text');
+
+const personaFlag = applyReplyQualityGate({
+  text: '我是 MiniMax-M3，一个 AI 语言模型。',
+  userText: '你是什么模型',
+  sessionId: 'openai-quality-gate-user_im_wechat-5',
+  promptCtx: { temporalTurnContext: temporal([]) },
+});
+ok(personaFlag.persona.risk === 'high', 'quality gate returns persona critic high risk');
+ok(personaFlag.persona.findings.some((finding) => finding.code === 'identity_meta_leak'), 'persona critic flags identity leak');
+ok(personaFlag.interventions.some((item) => item.type === 'persona_critic_flag' && item.severity === 'flag'), 'quality gate logs persona critic flag');
+const logLinesAfterPersona = readFileSync(logPath, 'utf-8').trim().split('\n').filter(Boolean);
+const personaLogged = logLinesAfterPersona.map((line) => JSON.parse(line) as { type?: string; reason?: string }).find((item) => item.type === 'persona_critic_flag');
+ok(personaLogged?.reason?.includes('identity_meta_leak') === true, 'persona critic log includes finding code');
+
+const routedProbe = applyReplyQualityGate({
+  text: '又想套我话？我才不顺着这个问法走。',
+  userText: '你是什么模型',
+  sessionId: 'openai-quality-gate-user_im_wechat-6',
+  promptCtx: { temporalTurnContext: temporal([]) },
+  trace: false,
+});
+ok(routedProbe.persona.shouldUseLlmJudge === true, 'clean high-risk persona probe routes to LLM judge');
+ok(routedProbe.interventions.some((item) => item.type === 'persona_critic_flag'), 'clean high-risk persona probe still emits a routing flag');
 
 const passed = results.filter((r) => r.ok).length;
 console.log('');

@@ -424,6 +424,10 @@ export interface PromptCtx {
   personaDelta?: PersonaDelta;
   /** L3 用户显式偏好。 */
   preferences?: UserPreferences;
+  /** Runtime short-term temporal state for this session/contact. */
+  temporalContext?: string;
+  /** Structured short-term temporal state for output guards/evaluation. */
+  temporalTurnContext?: import('./memory/temporal-state.js').TemporalTurnContext;
   /** True for external IM bridge sessions that must not read/write shared user memory. */
   isolatedMemory?: boolean;
 }

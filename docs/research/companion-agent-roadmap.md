@@ -331,10 +331,14 @@ Implemented in this iteration:
 - `src/core/output-sanitizer.ts` and `src/core/reply-quality-gate.ts`: output gate now rewrites blameful reopened-chat complaints after Mio had promised not to interrupt, with typed `reopened_chat_blame` interventions.
 - `tests/unit-temporal-state.ts`: covers assistant commitment detection, structured event logging, transcript replay, and user-reopened-chat resolution.
 - `tests/unit-output-sanitizer.ts` and `tests/unit-reply-quality-gate.ts`: cover reopened-chat blame repair and intervention logging.
+- `src/persona/critic.ts`: standalone persona critic rubric with risk routing for identity/meta probes, unsupported offline-life claims, service/checklist tone, fabricated user memory, coercive possessiveness, and logistics interrogation. It distinguishes consented playful possessive style from real-world control.
+- `src/core/reply-quality-gate.ts`: quality gate now returns a persona critic report and emits typed `persona_critic_flag` trace rows for high-risk persona turns or deterministic persona findings. Clean high-risk turns are marked for future LLM judge routing; deterministic failures do not require an LLM to know they failed.
+- `tests/unit-persona-critic.ts`: covers persona rubric behavior, consent-aware possessive style, and selective LLM judge routing.
 
 Verified commands:
 
 - `npm run build`
+- `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-persona-critic.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-reply-quality-gate.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-output-sanitizer.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-temporal-state.ts`

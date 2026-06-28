@@ -8,6 +8,7 @@ import { logger } from '../utils/logger.js';
 import { getConfig } from '../config.js';
 import { ensureBankStructure } from '../memory/bank.js';
 import { colaDir } from '../memory/paths.js';
+import { renderTemporalAwarenessContext, updateTemporalStateForTurn } from '../memory/temporal-state.js';
 import { reindexBookmarks } from '../memory/vector.js';
 import { pluginRegistry } from '../plugins/index.js';
 import type { Message } from '../types.js';
@@ -47,6 +48,8 @@ export async function prepareTurnContext(
   );
 
   const { ctx: sessionCtx, promptCtx, recovery } = resolveSessionContext(turnInput, sessionId);
+  promptCtx.temporalTurnContext = updateTemporalStateForTurn(sessionId, turnInput.text, new Date());
+  promptCtx.temporalContext = renderTemporalAwarenessContext(promptCtx.temporalTurnContext);
   if (!sessionCtx.isolatedMemory && !turnInput.sessionId) {
     await pluginRegistry().invokeHook('onSessionStart', sessionId);
   }

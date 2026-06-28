@@ -107,6 +107,7 @@ import type {
 } from '../types.js';
 import { prepareTurnContext } from './turn-prepare.js';
 import { maybeHandleEarlyTurnExit } from './turn-silence.js';
+import { applyReplyQualityGate } from './reply-quality-gate.js';
 import { applyPostTurnSideEffects } from './turn-post-effects.js';
 import { getTurnCounter } from './turn-counter.js';
 import { buildConversationMessages } from './turn-conversation.js';
@@ -323,6 +324,13 @@ function registerPromptSections(
     condition: () => sectionEnabled('time'),
   });
 
+  engine.register('temporal-state', {
+    type: 'temporal-state',
+    content: () => ctx.temporalContext ?? '',
+    priority: 'critical',
+    condition: () => sectionEnabled('temporal-state') && !!ctx.temporalContext,
+  });
+
   // 独立生活流露 — medium：让 Mio 偶尔自然带一句自己的近况（人味研究最强调的"有自己的生活"）
   engine.register('own-life', {
     type: 'own-life',
@@ -524,6 +532,8 @@ function buildIsolatedSessionPrivacyContext(): string {
     '这是一个外部 IM 联系人的独立会话。',
     '只使用当前会话 transcript、这个联系人自己的显式偏好和本轮消息作答。',
     '不要引用、猜测或沿用全局用户资料、其他联系人记忆、共同回忆、昵称、最近事件或长期事实。',
+    '本轮请求只代表“刚收到对方这一条消息”。除非对方明说已经隔了很久，或时间线明确显示长时间未回复，否则不要自造等待、冷落、被不理、刚刚生气等后续剧情。',
+    '如果上一条自己说了“不打扰你/你先忙”，对方回“嗯/好/嗯嗯”时，应保持前后一致，不要立刻反悔抱怨。',
   ].join('\n');
 }
 
@@ -663,7 +673,8 @@ function buildPostPrompt(
         '- 不解释工具调用，不提"作为AI"',
       ],
     };
-    return buildXmlContext(sections);
+    const xml = buildXmlContext(sections);
+    return ctx.temporalContext ? `${xml}\n\n${ctx.temporalContext}` : xml;
   }
 
   // Fallback: Markdown-based post prompt (identical to the legacy system prompt
@@ -711,6 +722,8 @@ function buildPostPrompt(
   // Emotional context
   parts.push(buildEmotionContext(ctx.emotionState));
 
+  if (ctx.temporalContext) parts.push(ctx.temporalContext);
+
   // Instructions
   parts.push(EMOTION_NOTE);
 
@@ -730,6 +743,7 @@ function buildIsolatedPostPrompt(ctx: PromptCtx): string {
   if (preferences) parts.push(preferences);
 
   parts.push(buildIsolatedEmotionContext(ctx.emotionState));
+  if (ctx.temporalContext) parts.push(ctx.temporalContext);
   parts.push(EMOTION_NOTE);
 
   return parts.join('\n\n');
@@ -995,17 +1009,24 @@ export async function runTurn(
   const earlyExit = await maybeHandleEarlyTurnExit(prepared);
   if (earlyExit) return earlyExit;
 
-  const { text, toolCallCount, turns, intent, budget } = await runInferenceStage(prepared, opts);
+  const inference = await runInferenceStage(prepared, opts);
+  const quality = applyReplyQualityGate({
+    text: inference.text,
+    userText: turnInput.text,
+    sessionId,
+    promptCtx: prepared.promptCtx,
+  });
+  const text = quality.text;
 
   await applyPostTurnSideEffects({
     input: turnInput,
     text,
     sessionId,
     sessionCtx,
-    intent,
+    intent: inference.intent,
     crisisResult,
     config,
-    budget,
+    budget: inference.budget,
     isNewSession: !turnInput.sessionId,
     capturedDirectiveCount,
   });
@@ -1013,8 +1034,8 @@ export async function runTurn(
   const result: TurnOutput = {
     text,
     sessionId,
-    toolCallCount,
-    turns,
+    toolCallCount: inference.toolCallCount,
+    turns: inference.turns,
     crisisFlagged: crisisResult.shouldIntervene,
     ghosted: false,
   };

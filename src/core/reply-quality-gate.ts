@@ -2,9 +2,14 @@ import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { PromptCtx } from '../types.js';
 import { replyQualityInterventionsPath } from '../memory/paths.js';
+import {
+  assessPersonaReply,
+  renderPersonaCriticSummary,
+  type PersonaCriticReport,
+} from '../persona/critic.js';
 import { sanitizeReopenedChatBlame, sanitizeTemporalPresuppositions } from './output-sanitizer.js';
 
-export type ReplyInterventionType = 'temporal_presupposition' | 'reopened_chat_blame';
+export type ReplyInterventionType = 'temporal_presupposition' | 'reopened_chat_blame' | 'persona_critic_flag';
 
 export interface ReplyQualityIntervention {
   id: string;
@@ -12,7 +17,7 @@ export interface ReplyQualityIntervention {
   sessionId: string;
   type: ReplyInterventionType;
   source: 'deterministic';
-  severity: 'rewrite';
+  severity: 'rewrite' | 'flag';
   reason: string;
   before: string;
   after: string;
@@ -20,6 +25,7 @@ export interface ReplyQualityIntervention {
 
 export interface ReplyQualityGateInput {
   text: string;
+  userText?: string;
   sessionId: string;
   promptCtx: Pick<PromptCtx, 'temporalTurnContext'>;
   trace?: boolean;
@@ -28,6 +34,7 @@ export interface ReplyQualityGateInput {
 export interface ReplyQualityGateResult {
   text: string;
   interventions: ReplyQualityIntervention[];
+  persona: PersonaCriticReport;
 }
 
 export function applyReplyQualityGate(input: ReplyQualityGateInput): ReplyQualityGateResult {
@@ -60,16 +67,32 @@ export function applyReplyQualityGate(input: ReplyQualityGateInput): ReplyQualit
     text = reopenedText;
   }
 
+  const persona = assessPersonaReply({
+    userText: input.userText,
+    replyText: text,
+  });
+  if (persona.risk !== 'low' || persona.findings.length > 0) {
+    interventions.push(createIntervention({
+      sessionId: input.sessionId,
+      type: 'persona_critic_flag',
+      severity: 'flag',
+      reason: renderPersonaCriticSummary(persona),
+      before: text,
+      after: text,
+    }));
+  }
+
   if (input.trace !== false) {
     for (const intervention of interventions) appendReplyIntervention(intervention);
   }
 
-  return { text, interventions };
+  return { text, interventions, persona };
 }
 
 function createIntervention(input: {
   sessionId: string;
   type: ReplyInterventionType;
+  severity?: ReplyQualityIntervention['severity'];
   reason: string;
   before: string;
   after: string;
@@ -81,7 +104,7 @@ function createIntervention(input: {
     sessionId: input.sessionId,
     type: input.type,
     source: 'deterministic',
-    severity: 'rewrite',
+    severity: input.severity ?? 'rewrite',
     reason: input.reason,
     before: input.before,
     after: input.after,

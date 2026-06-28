@@ -178,6 +178,11 @@ export function userActivityPath(userId = 'default'): string {
   return join(userDir(userId), 'user-activity.json');
 }
 
+/** Per-user/contact temporal short-term state. */
+export function temporalStatePath(userId = 'default'): string {
+  return join(userDir(userId), 'temporal-state.json');
+}
+
 /** mid-term memory 目录 (MTM: topic-segmented summaries) */
 export function midTermDir(): string {
   return join(memoryBankDir(), 'mid-term');
@@ -225,6 +230,11 @@ export function transcriptsDir(): string {
 /** 单个会话 transcript 文件 */
 export function transcriptPath(sessionId: string): string {
   return join(transcriptsDir(), `${sessionId}.jsonl`);
+}
+
+/** Reply quality gate intervention trace log. */
+export function replyQualityInterventionsPath(): string {
+  return join(colaDir(), 'quality', 'reply-interventions.jsonl');
 }
 
 function safeUserId(raw: string): string {
