@@ -154,7 +154,7 @@ function repairDeterministicPersonaFailure(text: string, persona: PersonaCriticR
   }
   if (failCodes.has('unsupported_offline_life')) {
     return {
-      text: '现实里我不能装作有具体行程。要说今天的状态，更像是在这边慢慢整理自己，刚好想到你。',
+      text: '没有真的跑去哪里啦。刚才这边安静下来，就突然想到你。',
       codes: ['unsupported_offline_life'],
     };
   }

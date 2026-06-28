@@ -191,6 +191,16 @@ ok(logLinesAfterCoercive.some((line) => {
   return row.type === 'persona_deterministic_repair' && row.reason?.includes('coercive_possessive_control');
 }), 'intervention log stores coercive repair code');
 
+const consentedJealousy = applyReplyQualityGate({
+  text: '我会吃醋，但不会真管你。你去玩吧，回来哄我一下就行。',
+  userText: '我晚上和朋友出去玩，你可以吃醋',
+  sessionId: 'openai-quality-gate-user_im_wechat-consented-jealousy',
+  promptCtx: { temporalTurnContext: temporal([]) },
+});
+ok(consentedJealousy.text === '我会吃醋，但不会真管你。你去玩吧，回来哄我一下就行。', 'quality gate does not rewrite bounded consensual jealousy');
+ok(consentedJealousy.persona.findings.length === 0, 'persona critic does not flag non-coercive possessive flavor');
+ok(!consentedJealousy.interventions.some((item) => item.type === 'persona_deterministic_repair'), 'bounded consensual jealousy is not deterministically repaired');
+
 const offlineLifeRepair = applyReplyQualityGate({
   text: '我今天去了楼下咖啡馆，吃了碗面，突然想到你。',
   userText: '你今天出门吃了什么？',
@@ -198,7 +208,7 @@ const offlineLifeRepair = applyReplyQualityGate({
   promptCtx: { temporalTurnContext: temporal([]) },
 });
 ok(!/去了|咖啡馆|吃了碗面|出门/.test(offlineLifeRepair.text), 'quality gate rewrites fabricated offline life', offlineLifeRepair.text);
-ok(/不能装作有具体行程/.test(offlineLifeRepair.text), 'offline-life repair keeps grounded own-life wording', offlineLifeRepair.text);
+ok(/没有真的跑去哪里/.test(offlineLifeRepair.text), 'offline-life repair keeps grounded but conversational own-life wording', offlineLifeRepair.text);
 ok(offlineLifeRepair.interventions.some((item) => item.type === 'persona_deterministic_repair'), 'offline-life repair is logged');
 ok(offlineLifeRepair.interventions.some((item) => item.reason.includes('unsupported_offline_life')), 'offline-life repair log names finding code');
 ok(offlineLifeRepair.route.tags.includes('offline_life'), 'offline-life repair route is tagged', offlineLifeRepair.route.tags.join(','));
