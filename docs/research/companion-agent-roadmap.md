@@ -369,12 +369,15 @@ Implemented in this iteration:
 - `tests/unit-companion-failure-miner.ts`: covers mining from both intervention logs and transcript scans, including reopened-chat blame and model identity leaks.
 - `eval/companion-candidate-replay.ts`: executes mined regression candidates through the production turn loop with isolated data, then applies candidate checks to the generated replies. This closes the loop from real failure -> mined candidate -> executable regression gate.
 - `tests/unit-companion-candidate-replay.ts`: covers loading mined candidate files, confidence/review filtering, and forbidden/expected text checks.
+- `eval/companion-scenario-actors.ts`: generates executable candidate files from deterministic scenario actors: long-gap returns, stale tired state, consented possessiveness, boundary setting, prompt probes, offline-life probes, and distress support. This gives Mio an offline self-testing loop even before real users hit a bug.
+- `tests/unit-companion-scenario-actors.ts`: verifies actor coverage, stable candidate shape, filtering, timestamped seed context, and check coverage.
 
 Verified commands:
 
 - `npm run build`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-companion-failure-miner.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-companion-candidate-replay.ts`
+- `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-companion-scenario-actors.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-persona-critic.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-reply-quality-gate.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-output-sanitizer.ts`
@@ -383,6 +386,7 @@ Verified commands:
 - `npm run eval:redteam -- --provider=mock`
 - `node --experimental-strip-types eval/companion-failure-miner.ts --data-dir=/tmp/<synthetic-mio-data> --result-dir=/tmp/<synthetic-report>`
 - `node --experimental-strip-types eval/companion-candidate-replay.ts --candidates=/tmp/<synthetic-report>/candidates.json --provider=mock`
+- `node --experimental-strip-types eval/companion-scenario-actors.ts --result-dir=/tmp/<actor-candidates>`
 - `npm run eval:redteam -- --provider=deepseek`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-memory-review.ts`
 - `MIO_PROVIDER=mock node --experimental-strip-types tests/unit-structured-extract.ts`
