@@ -39,6 +39,9 @@ Thumbs.db
 __pycache__/
 *.pyc
 
+# Local research/writing drafts (paper drafts, showcase packs) — kept on disk, not published
+docs/_research/
+
 # Local screenshots / scratch (Playwright captures, design previews)
 /*.png
 /*.pdf
