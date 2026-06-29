@@ -6,16 +6,19 @@
 
 import { Store } from './store.js';
 import { initRouter, route, navigate } from './router.js';
-import { checkAuth } from './auth.js';
+import { checkAuth, logout } from './auth.js';
 import { wsManager } from './ws.js';
 import { el } from './utils/dom.js';
 import { ICONS } from './utils/icons.js';
 import { mascotSrc } from './mascot.js';
+import { renderConsole,    mountConsole,    unmountConsole    } from './views/console.js';
 import { renderChat,       mountChat,       unmountChat       } from './views/chat.js';
 import { renderMessages,   mountMessages,   unmountMessages   } from './views/messages.js';
 import { renderMemories,   mountMemories,   unmountMemories   } from './views/memories.js';
 import { renderMood,       mountMood,       unmountMood       } from './views/mood.js';
 import { renderStudio,     mountStudio,     unmountStudio     } from './views/studio.js';
+import { renderChannels,   mountChannels,   unmountChannels   } from './views/channels.js';
+import { renderExtensions, mountExtensions, unmountExtensions } from './views/extensions.js';
 import { renderAnalytics,  mountAnalytics,  unmountAnalytics  } from './views/analytics.js';
 import { renderSettings,   mountSettings,   unmountSettings   } from './views/settings.js';
 import { renderOnboarding, mountOnboarding, unmountOnboarding } from './views/onboarding.js';
@@ -38,15 +41,35 @@ setAppHeight();
    App Shell
    ═══════════════════════════════════════════════════ */
 
-const NAV_ITEMS = [
-  { route: '/chat',      iconFn: ICONS.chat,      label: 'Chat' },
-  { route: '/memories',  iconFn: ICONS.memory,    label: 'Memories' },
-  { route: '/analytics', iconFn: ICONS.analytics, label: 'Reflections' },
-  { route: '/settings',  iconFn: ICONS.settings,  label: 'Settings' },
+const NAV_GROUPS = [
+  {
+    label: '运行',
+    items: [
+      { route: '/console',  iconFn: ICONS.console,  label: '总览', mobile: true },
+      { route: '/chat',     iconFn: ICONS.chat,     label: '聊天', mobile: true },
+    ],
+  },
+  {
+    label: '配置',
+    items: [
+      { route: '/studio',   iconFn: ICONS.studio,   label: '人格',  mobile: true },
+      { route: '/channels', iconFn: ICONS.channels, label: '微信接入', mobile: true },
+      { route: '/extensions', iconFn: ICONS.plugins, label: '扩展能力' },
+    ],
+  },
+  {
+    label: '观察',
+    items: [
+      { route: '/memories',  iconFn: ICONS.memory,    label: '记忆' },
+      { route: '/analytics', iconFn: ICONS.analytics, label: '数据分析' },
+      { route: '/settings',  iconFn: ICONS.settings,  label: '设置', mobile: true },
+    ],
+  },
 ];
+const NAV_ITEMS = NAV_GROUPS.flatMap((group) => group.items);
 
 let mainEl = null;
-let currentRoute = '/chat';
+let currentRoute = '/console';
 
 function buildShell() {
   root.innerHTML = '';
@@ -62,17 +85,37 @@ function buildShell() {
   brandAvatar.appendChild(brandImg);
   const brandText = el('div', {}, [
     el('div', { className: 'app-sidebar-brand-text', textContent: 'Mio' }),
-    el('div', { className: 'app-sidebar-brand-sub', textContent: 'Private companion' }),
+    el('div', { className: 'app-sidebar-brand-sub', textContent: '智能体控制台' }),
   ]);
   brand.appendChild(brandAvatar);
   brand.appendChild(brandText);
   sidebar.appendChild(brand);
 
-  for (const item of NAV_ITEMS) {
-    sidebar.appendChild(buildNavItem(item));
+  for (const group of NAV_GROUPS) {
+    sidebar.appendChild(el('div', { className: 'app-nav-group-label', textContent: group.label }));
+    for (const item of group.items) {
+      sidebar.appendChild(buildNavItem(item));
+    }
   }
 
-  sidebar.appendChild(el('div', { className: 'app-sidebar-footer', textContent: 'v0.7' }));
+  const authUser = Store.get('authUser');
+  const footerChildren = [
+    el('div', { className: 'app-sidebar-version', textContent: 'v0.7' }),
+    el('div', { className: 'app-sidebar-user', textContent: authUser ? `${authUser.username} · ${authUser.role}` : '本地控制台' }),
+  ];
+  if (Store.get('authToken')) {
+    footerChildren.push(el('button', {
+      className: 'app-sidebar-logout',
+      type: 'button',
+      onClick: async () => {
+        await logout();
+        wsManager.disconnect();
+        window.dispatchEvent(new CustomEvent('mio:authenticated'));
+      },
+      textContent: '退出',
+    }));
+  }
+  sidebar.appendChild(el('div', { className: 'app-sidebar-footer' }, footerChildren));
   shell.appendChild(sidebar);
 
   /* ─── 主内容区 ─── */
@@ -81,7 +124,7 @@ function buildShell() {
 
   /* ─── 底部导航 (Mobile) ─── */
   const bottomNav = el('nav', { className: 'app-bottom-nav', 'aria-label': 'Mobile navigation' });
-  for (const item of NAV_ITEMS) {
+  for (const item of NAV_ITEMS.filter((navItem) => navItem.mobile)) {
     bottomNav.appendChild(buildNavItem(item));
   }
   shell.appendChild(bottomNav);
@@ -95,7 +138,7 @@ function buildNavItem({ route, iconFn, label }) {
   return el('button', {
     className: `app-nav-item`,
     'aria-label': label,
-    'aria-current': null,
+    dataset: { route },
     onClick: (e) => {
       e.preventDefault();
       navigate(route);
@@ -108,10 +151,12 @@ function buildNavItem({ route, iconFn, label }) {
 
 function updateNavHighlight(routeKey) {
   currentRoute = routeKey;
+  const activeRoute = routeKey.startsWith('/studio') ? '/studio' : routeKey;
   root.querySelectorAll('.app-nav-item').forEach(btn => {
-    const isActive = btn.querySelector('.app-nav-label')?.textContent ===
-      NAV_ITEMS.find(n => routeKey.startsWith('/studio') ? n.route === '/studio' : n.route === routeKey)?.label;
+    const isActive = btn.dataset.route === activeRoute;
     btn.classList.toggle('active', isActive);
+    if (isActive) btn.setAttribute('aria-current', 'page');
+    else btn.removeAttribute('aria-current');
   });
 }
 
@@ -121,11 +166,14 @@ function updateNavHighlight(routeKey) {
 
 let currentView = null;
 const viewMap = {
+  '/console':    { render: renderConsole,    mount: mountConsole,    unmount: unmountConsole },
   '/chat':       { render: renderChat,       mount: mountChat,       unmount: unmountChat },
   '/messages':   { render: renderMessages,   mount: mountMessages,   unmount: unmountMessages },
   '/memories':   { render: renderMemories,   mount: mountMemories,   unmount: unmountMemories },
   '/mood':       { render: renderMood,       mount: mountMood,       unmount: unmountMood },
   '/studio':     { render: renderStudio,     mount: mountStudio,     unmount: unmountStudio },
+  '/channels':   { render: renderChannels,   mount: mountChannels,   unmount: unmountChannels },
+  '/extensions': { render: renderExtensions, mount: mountExtensions, unmount: unmountExtensions },
   '/analytics':  { render: renderAnalytics,  mount: mountAnalytics,  unmount: unmountAnalytics },
   '/settings':   { render: renderSettings,   mount: mountSettings,   unmount: unmountSettings },
   '/onboarding': { render: renderOnboarding, mount: mountOnboarding, unmount: unmountOnboarding },
@@ -148,12 +196,15 @@ function switchView(viewName, params) {
 }
 
 /* ─── 路由注册 ─── */
+route('/console',    () => switchView('/console'));
 route('/chat',       () => switchView('/chat'));
 route('/messages',   () => switchView('/messages'));
 route('/memories',   () => switchView('/memories'));
 route('/mood',       () => switchView('/mood'));
 route('/studio',     () => switchView('/studio'));
 route('/studio/:id', (p) => switchView('/studio', p));
+route('/channels',   () => switchView('/channels'));
+route('/extensions', () => switchView('/extensions'));
 route('/analytics',  () => switchView('/analytics'));
 route('/settings',   () => switchView('/settings'));
 route('/onboarding', () => switchView('/onboarding'));
@@ -185,5 +236,9 @@ async function boot() {
 
   initRouter();
 }
+
+window.addEventListener('mio:authenticated', () => {
+  boot();
+});
 
 boot();

@@ -1,0 +1,173 @@
+/* design-system.css — shared primitives for Mio's admin console */
+
+:root {
+  --ui-control-h: 34px;
+  --ui-control-h-lg: 40px;
+  --ui-control-pad-x: 13px;
+  --ui-panel-pad: 16px;
+  --ui-control-radius: var(--ui-radius-sm, 6px);
+}
+
+.ui-panel,
+:where(
+  .admin-panel,
+  .settings-card,
+  .mod-detail-card,
+  .character-card,
+  .memory-card,
+  .memories-result-card,
+  .memories-state,
+  .analytics-view .card,
+  .studio-state,
+  .soul-preview,
+  .mode-switch,
+  .auth-panel,
+  .onboarding-panel
+) {
+  background: var(--ui-surface, #fff);
+  border: 1px solid var(--ui-border, rgba(13, 13, 13, 0.1));
+  border-radius: var(--ui-radius, 8px);
+  box-shadow: var(--ui-shadow-hairline, none);
+}
+
+.ui-button,
+:where(
+  .admin-btn,
+  .btn-primary,
+  .btn-secondary,
+  .memory-action,
+  .memories-search button,
+  .auth-btn,
+  .onboarding-next,
+  .onboarding-choice
+) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  min-height: var(--ui-control-h);
+  padding: 0 var(--ui-control-pad-x);
+  border: 1px solid transparent;
+  border-radius: var(--ui-control-radius);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+  transition:
+    background-color var(--ui-fast, 120ms) var(--ui-ease, ease),
+    border-color var(--ui-fast, 120ms) var(--ui-ease, ease),
+    color var(--ui-fast, 120ms) var(--ui-ease, ease),
+    opacity var(--ui-fast, 120ms) var(--ui-ease, ease),
+    transform var(--ui-fast, 120ms) var(--ui-ease-out, ease),
+    box-shadow var(--ui-fast, 120ms) var(--ui-ease, ease);
+}
+
+.ui-button:active,
+:where(.admin-btn, .btn-primary, .btn-secondary, .memory-action, .auth-btn, .onboarding-next):active {
+  transform: scale(0.985);
+  opacity: 0.78;
+}
+
+.ui-button--primary,
+:where(.btn-primary, .memory-action--primary, .memories-search button, .auth-btn, .onboarding-next) {
+  background: var(--ui-ink, #0d0d0d);
+  color: #fff;
+}
+
+.ui-button--secondary,
+:where(.admin-btn--secondary, .btn-secondary, .memory-action, .onboarding-choice) {
+  background: var(--ui-surface-muted, #f7f7f8);
+  border-color: var(--ui-border-soft, rgba(13, 13, 13, 0.06));
+  color: var(--ui-ink, #0d0d0d);
+}
+
+.ui-button:disabled,
+:where(.onboarding-next, .send-btn):disabled {
+  cursor: not-allowed;
+}
+
+.ui-field,
+:where(
+  .auth-input,
+  .onboarding-input,
+  .settings-select,
+  .memory-edit-text,
+  .memory-edit-type
+) {
+  width: 100%;
+  min-height: var(--ui-control-h-lg);
+  border: 1px solid var(--ui-border-soft, rgba(13, 13, 13, 0.06));
+  border-radius: var(--ui-radius, 8px);
+  background: var(--ui-surface-inset, #f1f1f2);
+  color: var(--ui-ink, #0d0d0d);
+  outline: none;
+  transition:
+    background-color var(--ui-fast, 120ms) var(--ui-ease, ease),
+    border-color var(--ui-fast, 120ms) var(--ui-ease, ease),
+    box-shadow var(--ui-fast, 120ms) var(--ui-ease, ease);
+}
+
+.ui-field:focus,
+:where(.auth-input, .onboarding-input, .settings-select, .memory-edit-text, .memory-edit-type):focus {
+  border-color: rgba(13, 13, 13, 0.22);
+  background: #fff;
+  box-shadow: var(--ui-ring, 0 0 0 3px rgba(13, 13, 13, 0.08));
+}
+
+.ui-pill,
+:where(.admin-status-pill, .admin-badge, .ana-sync-pill) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  max-width: 100%;
+  padding: 0 9px;
+  border: 1px solid var(--ui-border, rgba(13, 13, 13, 0.1));
+  border-radius: 999px;
+  background: var(--ui-surface, #fff);
+  color: var(--ui-ink-2, #5f5f5f);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.ui-icon-button,
+:where(
+  .settings-back,
+  .studio-back-btn,
+  .ana-back,
+  .messages-back,
+  .mood-back,
+  .memories-close,
+  .attachment-preview-clear
+) {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--ui-border-soft, rgba(13, 13, 13, 0.06));
+  border-radius: var(--ui-radius, 8px);
+  background: var(--ui-surface, #fff);
+  color: var(--ui-ink, #0d0d0d);
+}
+
+@media (hover: hover) {
+  .ui-button--primary:hover,
+  :where(.btn-primary, .memory-action--primary, .memories-search button, .auth-btn, .onboarding-next):hover:not(:disabled) {
+    background: #2a2a2a;
+  }
+
+  .ui-button--secondary:hover,
+  :where(.admin-btn--secondary, .btn-secondary, .memory-action, .onboarding-choice):hover {
+    border-color: rgba(13, 13, 13, 0.18);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-button,
+  .ui-field,
+  .ui-panel {
+    transition-duration: 0.01ms;
+  }
+}

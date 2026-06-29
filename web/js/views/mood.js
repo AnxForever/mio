@@ -46,7 +46,7 @@ export class MoodView extends BaseView {
 
     /* ═══ 顶栏 ═══ */
     const header = el('header', { className: 'mood-header' });
-    this.backBtn = el('button', { className: 'mood-back tap', 'aria-label': '返回' });
+    this.backBtn = el('button', { className: 'mood-back tap', 'aria-label': '返回控制台' });
     this.backBtn.appendChild(ICONS.back(22));
     header.appendChild(this.backBtn);
     header.appendChild(el('h1', { className: 'mood-title', textContent: '心情小屋' }));
@@ -155,7 +155,7 @@ export class MoodView extends BaseView {
 
   handleBack() {
     haptic('light');
-    navigate('/messages');
+    navigate('/console');
   }
 
   /* ─── 数据(best-effort,失败优雅降级) ─── */

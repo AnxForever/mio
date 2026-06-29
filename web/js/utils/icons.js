@@ -25,6 +25,13 @@ function svgIcon(paths, size = 20) {
 }
 
 export const ICONS = {
+  console: (size = 20) => svgIcon([
+    'M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5z',
+    'M8 8h8',
+    'M8 12h5',
+    'M8 16h8',
+  ], size),
+
   chat: () => svgIcon([
     'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
   ]),
@@ -45,6 +52,21 @@ export const ICONS = {
     'M9 8h6',
     'M9 12h4',
   ]),
+
+  plugins: (size = 20) => svgIcon([
+    'M8 4h3v5H6V6a2 2 0 0 1 2-2z',
+    'M13 4h3a2 2 0 0 1 2 2v3h-5V4z',
+    'M6 11h5v9H8a2 2 0 0 1-2-2v-7z',
+    'M13 11h5v7a2 2 0 0 1-2 2h-3v-9z',
+  ], size),
+
+  channels: (size = 20) => svgIcon([
+    'M4 7h5a3 3 0 0 1 3 3v0a3 3 0 0 1-3 3H7',
+    'M20 17h-5a3 3 0 0 1-3-3v0a3 3 0 0 1 3-3h2',
+    'M8 17h8',
+    'M8 17l2-2',
+    'M8 17l2 2',
+  ], size),
 
   settings: () => svgIcon([
     'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
@@ -88,4 +110,12 @@ export const ICONS = {
     'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z',
     'M21 21l-4.35-4.35',
   ]),
+
+  trash: (size = 20) => svgIcon([
+    'M3 6h18',
+    'M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2',
+    'M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6',
+    'M10 11v6',
+    'M14 11v6',
+  ], size),
 };

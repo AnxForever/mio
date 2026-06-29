@@ -3,6 +3,7 @@ import { el } from '../utils/dom.js';
 import { Store } from '../store.js';
 import { api } from '../api.js';
 import { wsManager } from '../ws.js';
+import { navigate } from '../router.js';
 import { padToExpression, mascotSrc } from '../mascot.js';
 import { haptic } from '../utils/haptics.js';
 import { getMoodInfo, STAGE_LABELS } from '../utils/constants.js';
@@ -31,6 +32,7 @@ export class ChatView extends BaseView {
     this.streaming = false;
     this.streamBuffer = '';
     this.streamMsgEl = null;
+    this.activeStreamRequestId = null;
     this.pendingImage = null;
     this.ttsEnabled = localStorage.getItem('mio_tts_enabled') === '1';
     this.ttsAvailable = true;
@@ -56,7 +58,7 @@ export class ChatView extends BaseView {
     const header = el('header', { className: 'chat-header' });
 
     /* 返回箭头 */
-    this.backBtn = el('button', { className: 'chat-back tap', 'aria-label': '返回' });
+    this.backBtn = el('button', { className: 'chat-back tap', 'aria-label': '返回控制台' });
     this.backBtn.appendChild(ICONS.back(22));
     header.appendChild(this.backBtn);
 
@@ -78,6 +80,15 @@ export class ChatView extends BaseView {
     info.appendChild(this.nameEl);
     info.appendChild(status);
     header.appendChild(info);
+
+    this.ttsBtn = el('button', {
+      className: `tts-btn tap${this.ttsEnabled ? ' active' : ''}`,
+      'aria-label': '朗读回复',
+      'aria-pressed': this.ttsEnabled ? 'true' : 'false',
+      title: '朗读回复',
+    });
+    this.ttsBtn.appendChild(ICONS.volume(20));
+    header.appendChild(this.ttsBtn);
 
     this.el.appendChild(header);
 
@@ -117,11 +128,11 @@ export class ChatView extends BaseView {
     /* ═══ 输入栏 ═══ */
     const inputArea = el('div', { className: 'chat-input-area' });
 
-    this.attachBtn = el('button', { className: 'attach-btn tap', 'aria-label': 'Attach image' });
+    this.attachBtn = el('button', { className: 'attach-btn tap', 'aria-label': '添加图片', title: '添加图片' });
     this.attachBtn.appendChild(ICONS.image(20));
     inputArea.appendChild(this.attachBtn);
 
-    this.voiceBtn = el('button', { className: 'voice-btn tap', 'aria-label': 'Voice input' });
+    this.voiceBtn = el('button', { className: 'voice-btn tap', 'aria-label': '语音输入', title: '语音输入' });
     this.voiceBtn.appendChild(ICONS.mic(20));
     inputArea.appendChild(this.voiceBtn);
 
@@ -130,22 +141,14 @@ export class ChatView extends BaseView {
       rows: '1',
       placeholder: '说点什么…',
       enterkeyhint: 'send',
-      'aria-label': 'Message input',
+      'aria-label': '输入消息',
     });
     inputWrap.appendChild(this.msgInput);
     inputArea.appendChild(inputWrap);
 
-    this.sendBtn = el('button', { className: 'send-btn tap', disabled: 'disabled', 'aria-label': 'Send message' });
+    this.sendBtn = el('button', { className: 'send-btn tap', disabled: 'disabled', 'aria-label': '发送消息', title: '发送消息' });
     this.sendBtn.appendChild(ICONS.send(18));
     inputArea.appendChild(this.sendBtn);
-
-    this.ttsBtn = el('button', {
-      className: `tts-btn tap${this.ttsEnabled ? ' active' : ''}`,
-      'aria-label': 'Read replies aloud',
-      'aria-pressed': this.ttsEnabled ? 'true' : 'false',
-    });
-    this.ttsBtn.appendChild(ICONS.volume(20));
-    inputArea.appendChild(this.ttsBtn);
 
     this.fileInput = el('input', {
       type: 'file',
@@ -193,7 +196,7 @@ export class ChatView extends BaseView {
     this.on(this.msgInput, 'keydown', this.handleKey);
     this.on(this.msgInput, 'input', this.handleInput);
     this.on(this.chatMessages, 'scroll', this.handleScroll, { passive: true });
-    this.on(this.backBtn, 'click', () => { haptic('light'); window.history.back(); });
+    this.on(this.backBtn, 'click', () => { haptic('light'); navigate('/console'); });
     this.on(this.attachBtn, 'click', this.handleAttach);
     this.on(this.fileInput, 'change', this.handleFileSelected);
     this.on(this.ttsBtn, 'click', this.toggleTts);
@@ -259,6 +262,10 @@ export class ChatView extends BaseView {
   }
 
   unmount() {
+    if (this.activeStreamRequestId) {
+      wsManager.cancelStream(this.activeStreamRequestId);
+      this.activeStreamRequestId = null;
+    }
     super.unmount();
     if (this.recognition) { this.recognition.stop(); this.recognition = null; }
     if (this.currentAudio) {
@@ -363,7 +370,7 @@ export class ChatView extends BaseView {
     this.streamMsgEl = null;
 
     const { onToken, onDone, onError } = this._buildStreamCallbacks(timestamp);
-    await wsManager.sendChat(text, { imagePath: image?.imagePath, onToken, onDone, onError });
+    this.activeStreamRequestId = await wsManager.sendChat(text, { imagePath: image?.imagePath, onToken, onDone, onError });
   }
 
   /** 流式三回调:onToken / onDone / onError */
@@ -392,6 +399,7 @@ export class ChatView extends BaseView {
     };
 
     const onDone = () => {
+      this.activeStreamRequestId = null;
       this.finalizeStream(timestamp);
       haptic('medium');
       this.fetchStatus();
@@ -399,10 +407,16 @@ export class ChatView extends BaseView {
     };
 
     const onError = (err) => {
-      if (this.streamMsgEl) {
-        this.streamMsgEl.textContent = err || '出了点问题，请再试一次。';
-        this.streamMsgEl.classList.add('error');
+      const message = err || '出了点问题，请再试一次。';
+      this.activeStreamRequestId = null;
+      this.streamBuffer = message;
+      if (!this.streamMsgEl) {
+        this.typingEl.classList.remove('show');
+        this.streamMsgEl = this.createStreamBubble();
+        this.chatMessages.insertBefore(this.streamMsgEl, this.typingEl);
       }
+      this.streamMsgEl.textContent = message;
+      this.streamMsgEl.classList.add('error');
       this.finalizeStream(timestamp);
     };
 

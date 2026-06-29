@@ -6,28 +6,51 @@ import { navigate } from '../router.js';
 import { mascotSrc } from '../mascot.js';
 import { renderGenderPicker } from './gender.js';
 
+const UI_TO_BACKEND_MOD = { girlfriend: 'female', boyfriend: 'male' };
+
+function toBackendMod(mod) {
+  return UI_TO_BACKEND_MOD[mod] || mod;
+}
+
 export class OnboardingView extends BaseView {
   constructor(params) {
     super(params);
     this.step = 1;
     this.answers = {};
+    this.progressText = null;
+    this.progressBar = null;
   }
 
   render() {
     this.el = el('div', { className: 'onboarding-view', id: 'onboarding-view' });
 
-    /* 线条猫头像 */
-    const ballWrap = el('div', { className: 'onboarding-ball' });
+    const shell = el('section', { className: 'onboarding-panel ui-panel', 'aria-label': 'Mio 初始设置' });
+
+    const top = el('div', { className: 'onboarding-top' });
     const avatar = el('div', { className: 'avatar', style: { width: '96px', height: '96px' } });
     const img = el('img', { alt: 'Mio', src: mascotSrc('gentle') });
     img.addEventListener('error', () => { img.style.visibility = 'hidden'; });
     avatar.appendChild(img);
-    ballWrap.appendChild(avatar);
-    this.el.appendChild(ballWrap);
+    top.appendChild(el('div', { className: 'onboarding-brand' }, [
+      avatar,
+      el('div', {}, [
+        el('div', { className: 'onboarding-brand-title', textContent: 'Mio' }),
+        el('div', { className: 'onboarding-brand-sub', textContent: '初始设置' }),
+      ]),
+    ]));
+
+    this.progressText = el('span', { className: 'onboarding-progress-text' });
+    this.progressBar = el('i');
+    top.appendChild(el('div', { className: 'onboarding-progress', 'aria-label': '设置进度' }, [
+      this.progressText,
+      el('span', { className: 'onboarding-progress-track', 'aria-hidden': 'true' }, [this.progressBar]),
+    ]));
+    shell.appendChild(top);
 
     /* 内容 */
-    const content = el('div', { id: 'onboarding-content' });
-    this.el.appendChild(content);
+    const content = el('div', { id: 'onboarding-content', className: 'onboarding-content' });
+    shell.appendChild(content);
+    this.el.appendChild(shell);
 
     return this.el;
   }
@@ -47,6 +70,7 @@ export class OnboardingView extends BaseView {
     if (!content) return;
 
     content.innerHTML = '';
+    this.updateProgress(n);
 
     switch (n) {
       case 1: this.renderStep1(content); break;
@@ -63,7 +87,8 @@ export class OnboardingView extends BaseView {
     /* "嘿。" */
     content.appendChild(el('h2', { className: 'onboarding-question', textContent: '嘿。' }));
     content.appendChild(el('button', {
-      className: 'onboarding-next',
+      className: 'onboarding-next ui-button ui-button--primary',
+      type: 'button',
       textContent: '你好',
       onClick: () => { this.step = 2; this.renderStep(2); },
     }));
@@ -77,7 +102,7 @@ export class OnboardingView extends BaseView {
     }));
 
     const input = el('input', {
-      className: 'onboarding-input',
+      className: 'onboarding-input ui-field',
       type: 'text',
       placeholder: '输入你的名字',
       onInput: (e) => {
@@ -88,8 +113,9 @@ export class OnboardingView extends BaseView {
     content.appendChild(input);
 
     const nextBtn = el('button', {
-      className: 'onboarding-next',
-      textContent: '→',
+      className: 'onboarding-next ui-button ui-button--primary',
+      type: 'button',
+      textContent: '继续',
       disabled: 'disabled',
       onClick: () => {
         this.answers.name = input.value.trim();
@@ -119,12 +145,13 @@ export class OnboardingView extends BaseView {
     }));
 
     const nextBtn = el('button', {
-      className: 'onboarding-next',
-      textContent: '→',
+      className: 'onboarding-next ui-button ui-button--primary',
+      type: 'button',
+      textContent: '继续',
       disabled: this.answers.gender ? undefined : 'disabled',
       onClick: () => {
         this.applyGender(this.answers.gender);
-        this.submitOnboarding(this.step, this.answers.gender);
+        this.submitOnboarding(this.step, toBackendMod(this.answers.gender));
         this.step = 4;
         this.renderStep(4);
       },
@@ -142,7 +169,8 @@ export class OnboardingView extends BaseView {
     const choices = el('div', { className: 'onboarding-choices' });
     ['温柔', '冷酷', '活泼', '成熟'].forEach(style => {
       choices.appendChild(el('button', {
-        className: 'onboarding-choice',
+        className: 'onboarding-choice ui-button ui-button--secondary',
+        type: 'button',
         textContent: style,
         onClick: (e) => {
           e.target.classList.toggle('selected');
@@ -154,8 +182,9 @@ export class OnboardingView extends BaseView {
     content.appendChild(choices);
 
     const nextBtn = el('button', {
-      className: 'onboarding-next',
-      textContent: '→',
+      className: 'onboarding-next ui-button ui-button--primary',
+      type: 'button',
+      textContent: '继续',
       disabled: 'disabled',
       onClick: () => {
         this.submitOnboarding(this.step, this.answers.style);
@@ -183,8 +212,9 @@ export class OnboardingView extends BaseView {
     content.appendChild(choices);
 
     const nextBtn = el('button', {
-      className: 'onboarding-next',
-      textContent: '→',
+      className: 'onboarding-next ui-button ui-button--primary',
+      type: 'button',
+      textContent: '继续',
       disabled: 'disabled',
       onClick: () => {
         this.submitOnboarding(this.step, String(this.answers.memoryConsent));
@@ -212,8 +242,9 @@ export class OnboardingView extends BaseView {
     content.appendChild(choices);
 
     const nextBtn = el('button', {
-      className: 'onboarding-next',
-      textContent: '→',
+      className: 'onboarding-next ui-button ui-button--primary',
+      type: 'button',
+      textContent: '继续',
       disabled: 'disabled',
       onClick: () => {
         this.submitOnboarding(this.step, String(this.answers.proactiveOptIn));
@@ -231,7 +262,8 @@ export class OnboardingView extends BaseView {
       el('h2', { textContent: '好的。' }),
       el('p', { textContent: '你之后也可以在设置里改。' }),
       el('button', {
-        className: 'onboarding-next',
+        className: 'onboarding-next ui-button ui-button--primary',
+        type: 'button',
         textContent: '开始对话',
         onClick: () => {
           this.submitOnboarding(7, 'done');
@@ -248,7 +280,7 @@ export class OnboardingView extends BaseView {
       ['false', no],
     ].forEach(([value, label]) => {
       choices.appendChild(el('button', {
-        className: 'onboarding-choice',
+        className: 'onboarding-choice ui-button ui-button--secondary',
         type: 'button',
         textContent: label,
         onClick: (e) => {
@@ -261,12 +293,18 @@ export class OnboardingView extends BaseView {
     return choices;
   }
 
+  updateProgress(step) {
+    const pct = Math.max(0, Math.min(100, Math.round((step / 7) * 100)));
+    if (this.progressText) this.progressText.textContent = `步骤 ${step} / 7`;
+    if (this.progressBar) this.progressBar.style.width = `${pct}%`;
+  }
+
   async submitOnboarding(stepNum, value) {
     try {
       await api.post('/onboarding/next', { step: stepNum, value });
     } catch (err) {
       // 引导流程容忍网络错误，但不静默 — 开发时可在 console 看到
-      if (import.meta.env.DEV) console.warn('[onboarding] submit failed:', err.message);
+      if (import.meta.env?.DEV) console.warn('[onboarding] submit failed:', err.message);
     }
   }
 
@@ -274,9 +312,9 @@ export class OnboardingView extends BaseView {
   async applyGender(mod) {
     if (mod !== 'girlfriend' && mod !== 'boyfriend') return;
     try {
-      await api.post('/mod', { name: mod });
+      await api.post('/mod', { name: toBackendMod(mod) });
     } catch (err) {
-      if (import.meta.env.DEV) console.warn('[onboarding] set gender failed:', err.message);
+      if (import.meta.env?.DEV) console.warn('[onboarding] set gender failed:', err.message);
     }
   }
 }

@@ -1,139 +1,117 @@
-// ⚠️ 资产列表硬编码，修改/新增文件时需同步更新此处
-// TODO: 后续可用 vite-plugin-pwa 的 workbox.generateSW 自动生成 precache manifest
-const CACHE_NAME = 'mio-cache-v1';
-const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/favicon.ico',
-  '/css/reset.css',
-  '/css/tokens.css',
-  '/css/utilities.css',
-  '/css/chat.css',
-  '/css/studio.css',
-  '/css/analytics.css',
-  '/css/settings.css',
-  '/css/views/memories.css',
-  '/css/onboarding.css',
-  '/css/auth.css',
-  '/js/app.js',
-  '/js/api.js',
-  '/js/auth.js',
-  '/js/router.js',
-  '/js/store.js',
-  '/js/ws.js',
-  '/js/utils/constants.js',
-  '/js/utils/dom.js',
-  '/js/utils/easing.js',
-  '/js/utils/haptics.js',
-  '/js/utils/time.js',
-  '/js/components/bubble.js',
-  '/js/components/tab-bar.js',
-  '/js/components/toast.js',
-  '/js/views/analytics.js',
-  '/js/views/auth.js',
-  '/js/views/BaseView.js',
-  '/js/views/chat.js',
-  '/js/views/memories.js',
-  '/js/views/onboarding.js',
-  '/js/views/settings.js',
-  '/js/views/studio.js'
+// Runtime-only service worker.
+// Avoid hardcoded precache manifests so edited CSS/JS is not pinned behind
+// stale query strings during local UI work.
+const CACHE_NAME = 'mio-runtime-v1';
+
+const API_PREFIXES = [
+  '/health',
+  '/status',
+  '/avatar',
+  '/voice',
+  '/chat',
+  '/mod',
+  '/persona',
+  '/onboarding',
+  '/analytics',
+  '/search',
+  '/memories',
+  '/proactive',
+  '/notify',
+  '/admin',
+  '/character',
+  '/characters',
 ];
 
-// 安装时缓存静态资源
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
-    })
-  );
-  self.skipWaiting();
-});
-
-// 激活时清理旧缓存
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((name) => {
-          if (name !== CACHE_NAME) {
-            return caches.delete(name);
-          }
-        })
-      );
-    })
-  );
-  self.clients.claim();
-});
-
-// 拦截请求
-self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-  const apiPrefixes = [
-    '/health',
-    '/status',
-    '/avatar',
-    '/voice',
-    '/chat',
-    '/mod',
-    '/persona',
-    '/onboarding',
-    '/analytics',
-    '/search',
-    '/memories',
-    '/proactive',
-    '/notify',
-    '/admin',
-    '/character',
-    '/characters',
-  ];
-  const isApi = url.pathname.startsWith('/api/')
+function isApiRequest(url) {
+  return url.pathname.startsWith('/api/')
     || url.pathname.startsWith('/ws/')
-    || apiPrefixes.some((prefix) => url.pathname === prefix || url.pathname.startsWith(prefix + '/'));
+    || API_PREFIXES.some((prefix) => url.pathname === prefix || url.pathname.startsWith(prefix + '/'));
+}
 
-  // 仅拦截同源的静态资源请求 (排除 API 和 WS)
-  if (url.origin === location.origin && !isApi) {
-    event.respondWith(
-      caches.match(event.request).then((response) => {
-        // Cache First 策略
-        if (response) {
-          return response;
+function offlineHtml() {
+  return new Response(`
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Mio - 离线</title>
+      <style>
+        body {
+          display: grid;
+          place-items: center;
+          min-height: 100vh;
+          margin: 0;
+          background: #fbfbfc;
+          color: #5f5f5f;
+          font-family: -apple-system, system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
         }
-        return fetch(event.request).then((networkResponse) => {
-          // 动态缓存新请求到的资源
-          if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
-            const responseToCache = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseToCache);
-            });
-          }
-          return networkResponse;
-        }).catch(() => {
-          // 离线且没有缓存的情况，如果是 HTML 请求，可返回一个简单的离线提示页面
-          if (event.request.headers.get('accept').includes('text/html')) {
-            return new Response(`
-              <!DOCTYPE html>
-              <html lang="zh-CN">
-              <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-                <title>Mio - 离线</title>
-                <style>
-                  body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #fafafa; color: #86868b; margin: 0; }
-                  h1 { color: #1d1d1f; }
-                  .ball { width: 64px; height: 64px; background: #e4e4e6; border-radius: 50%; margin-bottom: 24px; }
-                </style>
-              </head>
-              <body>
-                <div class="ball"></div>
-                <h1>似乎断网了</h1>
-                <p>请检查网络连接后重试</p>
-              </body>
-              </html>
-            `, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
-          }
-        });
-      })
+        main {
+          width: min(100% - 32px, 360px);
+          padding: 22px;
+          border: 1px solid rgba(13, 13, 13, .1);
+          border-radius: 8px;
+          background: #fff;
+        }
+        h1 {
+          margin: 0 0 6px;
+          color: #0d0d0d;
+          font-size: 20px;
+        }
+        p { margin: 0; font-size: 14px; line-height: 1.5; }
+      </style>
+    </head>
+    <body>
+      <main>
+        <h1>当前离线</h1>
+        <p>请检查本地 Mio 服务或网络连接后刷新。</p>
+      </main>
+    </body>
+    </html>
+  `, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+}
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(self.skipWaiting());
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    const names = await caches.keys();
+    await Promise.all(
+      names
+        .filter((name) => name.startsWith('mio-') && name !== CACHE_NAME)
+        .map((name) => caches.delete(name)),
     );
-  }
+    await self.clients.claim();
+  })());
+});
+
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  if (request.method !== 'GET') return;
+
+  const url = new URL(request.url);
+  if (url.origin !== location.origin || isApiRequest(url)) return;
+
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
+
+    try {
+      const response = await fetch(request);
+      if (response && response.status === 200 && response.type === 'basic') {
+        await cache.put(request, response.clone());
+      }
+      return response;
+    } catch {
+      const cached = await cache.match(request);
+      if (cached) return cached;
+
+      if (request.mode === 'navigate' || request.headers.get('accept')?.includes('text/html')) {
+        return offlineHtml();
+      }
+
+      return new Response('', { status: 504, statusText: 'Offline' });
+    }
+  })());
 });

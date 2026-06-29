@@ -235,6 +235,7 @@
   flex: 1;
   display: flex;
   align-items: flex-end;
+  min-width: 0;
   min-height: 40px;
   padding: 2px var(--s4);
   border-radius: var(--r-input);
@@ -243,6 +244,7 @@
 
 .chat-input-wrap textarea {
   flex: 1;
+  min-width: 0;
   max-height: 120px;
   padding: 9px 0;
   border: 0;
@@ -279,6 +281,21 @@
 .send-btn {
   background: var(--bubble-me);
   color: #fff;
+}
+
+@media (max-width: 420px) {
+  .chat-input-area {
+    gap: 6px;
+    padding-inline: 8px;
+  }
+
+  .attach-btn,
+  .voice-btn,
+  .tts-btn,
+  .send-btn {
+    width: 34px;
+    height: 34px;
+  }
 }
 
 .attach-btn:disabled,

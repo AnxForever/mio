@@ -105,7 +105,7 @@ export function renderGenderPicker({ value, onSelect } = {}) {
   GENDERS.forEach((g, idx) => {
     const isOn = selected === g.mod;
     const card = el('div', {
-      className: 'gender-card tap' + (isOn ? ' is-selected' : ''),
+      className: 'gender-card ui-panel tap' + (isOn ? ' is-selected' : ''),
       role: 'radio',
       tabindex: isOn || (!selected && idx === 0) ? '0' : '-1',
       'aria-checked': isOn ? 'true' : 'false',

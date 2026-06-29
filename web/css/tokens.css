@@ -12,7 +12,7 @@
   /* 心情点缀(低饱和) */
   --mood-joy: #FFD9A0; --mood-tender: #F5C6D0; --mood-calm: #C5D2C9; --mood-miss: #B8C5CE;
   /* 字体 */
-  --font: -apple-system, system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font: "Manrope", -apple-system, system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
   /* 间距 8pt */
   --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s8:32px;
   /* 圆角 */

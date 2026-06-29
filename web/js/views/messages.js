@@ -51,8 +51,6 @@ export class MessagesView extends BaseView {
     this.cellMio = null;
     this.cellMood = null;
     this.cellWeek = null;
-    this.addBtn = null;
-    this.searchBtn = null;
 
     this.handleMessages = this.handleMessages.bind(this);
     this.handleAvatar = this.handleAvatar.bind(this);
@@ -63,16 +61,10 @@ export class MessagesView extends BaseView {
 
     /* ═══ 顶栏 ═══ */
     const header = el('header', { className: 'messages-header' });
-    header.appendChild(el('h1', { className: 'messages-title', textContent: 'Mio' }));
-
-    const actions = el('div', { className: 'messages-actions' });
-    this.searchBtn = el('button', { className: 'messages-action tap', type: 'button', 'aria-label': '搜索' });
-    this.searchBtn.appendChild(ICONS.search(22));
-    this.addBtn = el('button', { className: 'messages-action tap', type: 'button', 'aria-label': '新对话' });
-    this.addBtn.appendChild(ICONS.plus(22));
-    actions.appendChild(this.searchBtn);
-    actions.appendChild(this.addBtn);
-    header.appendChild(actions);
+    const backBtn = el('button', { className: 'messages-back tap', type: 'button', 'aria-label': '返回控制台' });
+    backBtn.appendChild(ICONS.back(20));
+    header.appendChild(backBtn);
+    header.appendChild(el('h1', { className: 'messages-title', textContent: '消息概览' }));
 
     this.el.appendChild(header);
 
@@ -176,8 +168,7 @@ export class MessagesView extends BaseView {
     this.bindCell(this.cellMood, '/mood');
     this.bindCell(this.cellWeek, '/chat');
 
-    /* 顶栏:+ 新对话 → /chat;搜索暂无目标路由(见报告,待 lead 接线) */
-    this.on(this.addBtn, 'click', () => this.go('/chat'));
+    this.on(this.el.querySelector('.messages-back'), 'click', () => this.go('/console'));
 
     /* 实时联动:消息预览 + 头像表情 */
     this._unsubscribes.push(Store.on('messages', this.handleMessages));

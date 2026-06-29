@@ -1,240 +1,394 @@
-/* ════════════════════════════════════════════════════
-   onboarding.css — 新手引导
-   + 性别选择器(gender.js)样式:全局共享给 onboarding & settings
-   全部基于 tokens.css,零魔法值配色。
-   ════════════════════════════════════════════════════ */
+/* onboarding.css — first-run setup and shared gender picker */
 
 .onboarding-view {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   flex: 1;
   min-height: 0;
-  background: var(--bg);
-  padding: var(--s8) var(--s6);
-  text-align: center;
-  overflow: hidden;
+  overflow: auto;
+  padding: 24px 16px;
+  background: var(--ui-canvas, var(--bg));
+  color: var(--ui-ink, var(--text));
 }
 
-.onboarding-ball {
-  margin-bottom: var(--s8);
+.onboarding-panel {
+  width: min(100%, 480px);
+  padding: 22px;
+  border: 1px solid var(--ui-border, rgba(13, 13, 13, 0.1));
+  border-radius: var(--ui-radius, 8px);
+  background: var(--ui-surface, #fff);
+  box-shadow: var(--ui-shadow-hairline, none);
+  animation: onboarding-panel-in 180ms var(--ui-ease-out, var(--ease)) both;
+}
+
+.onboarding-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.onboarding-brand {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 12px;
+}
+
+.onboarding-brand .avatar {
+  width: 52px !important;
+  height: 52px !important;
+  border: 1px solid var(--ui-border-soft, rgba(13, 13, 13, 0.06));
+  background: var(--ui-surface-muted, #f7f7f8);
+}
+
+.onboarding-brand-title {
+  color: var(--ui-ink, var(--text));
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.onboarding-brand-sub {
+  margin-top: 3px;
+  color: var(--ui-ink-3, var(--text-3));
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.onboarding-progress {
+  display: grid;
+  gap: 7px;
+  width: 118px;
+  flex: 0 0 auto;
+}
+
+.onboarding-progress-text {
+  color: var(--ui-ink-3, var(--text-3));
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-align: right;
+}
+
+.onboarding-progress-track {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--ui-surface-inset, #f1f1f2);
+}
+
+.onboarding-progress-track > i {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ui-ink, #0d0d0d);
+  transition: width var(--ui-slow, 260ms) var(--ui-ease-out, var(--ease));
+}
+
+.onboarding-content {
+  display: grid;
+  justify-items: stretch;
+  gap: 18px;
 }
 
 .onboarding-question {
+  max-width: 390px;
+  color: var(--ui-ink, var(--text));
   font-size: 26px;
-  font-weight: 600;
-  color: var(--text);
-  line-height: 1.3;
-  white-space: pre-line;          /* 让 '\n' 渲染为换行 */
-  margin-bottom: var(--s8);
-  max-width: 300px;
-  animation: ob-rise var(--t) var(--ease) both;
+  font-weight: 650;
+  line-height: 1.22;
+  letter-spacing: 0;
+  white-space: pre-line;
+  animation: onboarding-step-in 180ms var(--ui-ease-out, var(--ease)) both;
 }
 
-/* 文本输入(名字) */
 .onboarding-input {
   width: 100%;
-  max-width: 320px;
-  padding: var(--s4) var(--s5);
-  background: var(--surface);
-  border: 1.5px solid var(--hairline);
-  border-radius: var(--r-input);
-  font-size: 16px;
-  text-align: center;
-  color: var(--text);
-  margin-bottom: var(--s6);
-  transition: border-color var(--t-fast) var(--ease);
+  min-height: 44px;
+  padding: 0 13px;
+  border: 1px solid var(--ui-border-soft, rgba(13, 13, 13, 0.06));
+  border-radius: var(--ui-radius, 8px);
+  background: var(--ui-surface-inset, #f1f1f2);
+  color: var(--ui-ink, var(--text));
+  font-size: 15px;
+  outline: none;
+  transition:
+    background-color var(--ui-fast, 120ms) var(--ui-ease, var(--ease)),
+    border-color var(--ui-fast, 120ms) var(--ui-ease, var(--ease)),
+    box-shadow var(--ui-fast, 120ms) var(--ui-ease, var(--ease));
 }
 
 .onboarding-input:focus {
-  outline: none;
-  border-color: var(--accent);
+  border-color: rgba(13, 13, 13, 0.22);
+  background: #fff;
+  box-shadow: var(--ui-ring, 0 0 0 3px rgba(13, 13, 13, 0.08));
 }
 
 .onboarding-input::placeholder {
-  color: var(--text-3);
+  color: var(--ui-ink-3, var(--text-3));
 }
 
-/* 性格多选 chips */
 .onboarding-choices {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s3);
-  justify-content: center;
-  margin-bottom: var(--s8);
-  max-width: 340px;
-}
-
-.onboarding-choices--binary {
-  width: 100%;
-  max-width: 320px;
-}
-
-.onboarding-choices--binary .onboarding-choice {
-  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .onboarding-choice {
-  padding: var(--s3) var(--s5);
-  background: var(--surface);
-  border: 1.5px solid var(--hairline);
-  border-radius: var(--r-input);
-  font-size: 15px;
-  color: var(--text-2);
-  cursor: pointer;
-  transition: border-color var(--t-fast) var(--ease),
-              color var(--t-fast) var(--ease),
-              background var(--t-fast) var(--ease);
-  animation: ob-rise var(--t) var(--ease) both;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--ui-border, rgba(13, 13, 13, 0.1));
+  border-radius: var(--ui-radius, 8px);
+  background: var(--ui-surface, #fff);
+  color: var(--ui-ink-2, var(--text-2));
+  font-size: 14px;
+  font-weight: 650;
+  transition:
+    background-color var(--ui-fast, 120ms) var(--ui-ease, var(--ease)),
+    border-color var(--ui-fast, 120ms) var(--ui-ease, var(--ease)),
+    color var(--ui-fast, 120ms) var(--ui-ease, var(--ease)),
+    transform var(--ui-fast, 120ms) var(--ui-ease-out, var(--ease));
 }
 
-.onboarding-choice:nth-child(1) { animation-delay: 60ms; }
-.onboarding-choice:nth-child(2) { animation-delay: 120ms; }
-.onboarding-choice:nth-child(3) { animation-delay: 180ms; }
-.onboarding-choice:nth-child(4) { animation-delay: 240ms; }
-
 .onboarding-choice:active {
-  transform: scale(0.96);
+  transform: scale(.99);
 }
 
 .onboarding-choice.selected {
-  border-color: var(--accent);
-  background: var(--bg);
-  color: var(--text);
-  font-weight: 500;
+  border-color: rgba(13, 13, 13, 0.32);
+  background: var(--ui-ink, #0d0d0d);
+  color: #fff;
 }
 
-/* 下一步(主行动,黑色 pill) */
 .onboarding-next {
-  min-width: 120px;
-  padding: var(--s4) var(--s8);
-  background: var(--text);
-  color: var(--bg);
-  border-radius: var(--r-input);
-  font-size: 16px;
-  font-weight: 600;
-  transition: transform var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease);
-  animation: ob-rise var(--t) var(--ease) 120ms both;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 112px;
+  min-height: 40px;
+  padding: 0 15px;
+  border-radius: var(--ui-radius, 8px);
+  background: var(--ui-ink, #0d0d0d);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 650;
+  transition:
+    background-color var(--ui-fast, 120ms) var(--ui-ease, var(--ease)),
+    opacity var(--ui-fast, 120ms) var(--ui-ease, var(--ease)),
+    transform var(--ui-fast, 120ms) var(--ui-ease-out, var(--ease));
 }
 
-.onboarding-next:active {
-  transform: scale(0.97);
+.onboarding-next:active:not(:disabled) {
+  transform: scale(.99);
+  opacity: .78;
 }
 
 .onboarding-next:disabled {
-  opacity: 0.3;
+  cursor: not-allowed;
+  background: #d8d8dc;
+  opacity: 1;
 }
 
-/* 完成页 */
 .onboarding-done {
-  text-align: center;
-  animation: ob-fade var(--t-enter) var(--ease) both;
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  animation: onboarding-step-in 180ms var(--ui-ease-out, var(--ease)) both;
 }
 
 .onboarding-done-check {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  background: var(--mood-calm);
-  color: var(--bg);
   display: grid;
   place-items: center;
-  font-size: 32px;
-  margin: 0 auto var(--s6);
+  width: 38px;
+  height: 38px;
+  border-radius: var(--ui-radius, 8px);
+  background: #12805c;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 650;
 }
 
 .onboarding-done h2 {
+  color: var(--ui-ink, var(--text));
   font-size: 24px;
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: var(--s2);
+  font-weight: 650;
+  line-height: 1.2;
 }
 
 .onboarding-done p {
-  font-size: 15px;
-  color: var(--text-2);
-  margin-bottom: var(--s8);
+  color: var(--ui-ink-2, var(--text-2));
+  font-size: 14px;
+  line-height: 1.45;
 }
 
-/* ════════════════════════════════════════════════════
-   性别选择器 — gender.js(全局共享:onboarding + settings)
-   只出现"她 / 他";选中态用 --accent。
-   ════════════════════════════════════════════════════ */
+.onboarding-done .onboarding-next {
+  justify-self: start;
+  margin-top: 8px;
+}
+
 .gender-picker {
-  display: flex;
-  gap: var(--s4);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
   width: 100%;
-  max-width: 360px;
-  margin-bottom: var(--s8);
 }
 
 .gender-card {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--s2);
-  padding: var(--s5) var(--s4);
-  background: var(--surface);
-  border: 1.5px solid var(--hairline);
-  border-radius: var(--r-card);
-  color: var(--text-3);                 /* 驱动线条形象的 currentColor */
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 136px;
+  padding: 16px 12px;
+  border: 1px solid var(--ui-border, rgba(13, 13, 13, 0.1));
+  border-radius: var(--ui-radius, 8px);
+  background: var(--ui-surface, #fff);
+  color: var(--ui-ink-3, var(--text-3));
   cursor: pointer;
   user-select: none;
-  transition: border-color var(--t-fast) var(--ease),
-              background var(--t-fast) var(--ease),
-              color var(--t-fast) var(--ease);
-  animation: ob-rise var(--t) var(--ease) both;
+  transition:
+    background-color var(--ui-fast, 120ms) var(--ui-ease, var(--ease)),
+    border-color var(--ui-fast, 120ms) var(--ui-ease, var(--ease)),
+    color var(--ui-fast, 120ms) var(--ui-ease, var(--ease)),
+    transform var(--ui-fast, 120ms) var(--ui-ease-out, var(--ease));
 }
 
-.gender-card:nth-child(2) { animation-delay: 60ms; }
+.gender-card:active {
+  transform: scale(.99);
+}
 
 .gender-card:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ui-focus, rgba(13, 13, 13, 0.72));
   outline-offset: 2px;
 }
 
 .gender-card-art {
-  width: 64px;
-  height: 64px;
   display: grid;
   place-items: center;
-  transition: color var(--t) var(--ease), transform var(--t) var(--spring);
+  width: 58px;
+  height: 58px;
+}
+
+.gender-card-art svg {
+  width: 58px;
+  height: 58px;
 }
 
 .gender-card-pronoun {
+  color: var(--ui-ink, var(--text));
   font-size: 24px;
-  font-weight: 600;
-  color: var(--text);
+  font-weight: 650;
   line-height: 1;
 }
 
 .gender-card-roman {
-  color: var(--text-3);                 /* .label 基类提供字号/字距/大写 */
+  color: var(--ui-ink-3, var(--text-3));
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .gender-card.is-selected {
-  border-color: var(--accent);
-  background: var(--bg);
-  color: var(--accent);                 /* 线条形象转暖橙 */
+  border-color: rgba(13, 13, 13, 0.32);
+  background: var(--ui-ink, #0d0d0d);
+  color: #fff;
 }
 
-.gender-card.is-selected .gender-card-art {
-  transform: scale(1.05);
+.gender-card.is-selected .gender-card-pronoun,
+.gender-card.is-selected .gender-card-roman {
+  color: #fff;
 }
 
-/* 入场动画(尊重 reduced-motion 由 base.css 全局接管) */
-@keyframes ob-rise {
-  from { opacity: 0; transform: translateY(12px); }
+@media (hover: hover) {
+  .onboarding-choice:hover,
+  .gender-card:hover {
+    border-color: rgba(13, 13, 13, 0.18);
+    background: var(--ui-surface-raised, #fdfdfd);
+  }
+
+  .onboarding-choice.selected:hover,
+  .gender-card.is-selected:hover {
+    background: #2a2a2a;
+  }
+
+  .onboarding-next:hover:not(:disabled) {
+    background: #2a2a2a;
+  }
+}
+
+@media (max-width: 520px) {
+  .onboarding-panel {
+    padding: 18px;
+  }
+
+  .onboarding-top {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 24px;
+  }
+
+  .onboarding-progress {
+    width: 100%;
+  }
+
+  .onboarding-progress-text {
+    text-align: left;
+  }
+
+  .onboarding-question {
+    font-size: 24px;
+  }
+
+  .onboarding-next {
+    width: 100%;
+  }
+}
+
+@media (max-width: 340px) {
+  .onboarding-choices,
+  .gender-picker {
+    grid-template-columns: 1fr;
+  }
+}
+
+@keyframes onboarding-panel-in {
+  from { opacity: 0; transform: translateY(6px); filter: blur(2px); }
+  to { opacity: 1; transform: none; filter: blur(0); }
+}
+
+@keyframes onboarding-step-in {
+  from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: none; }
 }
 
-@keyframes ob-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-panel,
+  .onboarding-question,
+  .onboarding-done {
+    animation: none;
+  }
+
+  .onboarding-progress-track > i,
+  .onboarding-choice,
+  .onboarding-next,
+  .gender-card {
+    transition-duration: 0.01ms;
+  }
 }
 
-/* ── onboarding 沉浸全屏:激活时隐藏 app shell 导航(.app-main flex:1 自动填满)── */
 .app-shell:has(.onboarding-view) > .app-sidebar,
-.app-shell:has(.onboarding-view) > .app-bottom-nav { display: none; }
+.app-shell:has(.onboarding-view) > .app-bottom-nav {
+  display: none;
+}

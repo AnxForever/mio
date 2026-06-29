@@ -1,278 +1,768 @@
-/* ════════════════════════════════════════════════════
-   analytics.css — 数据页 / "我们的数据"
-
-   白色极简,克制留白。卡片 = --surface 微底 + --r-card 圆角
-   + 0.5px --hairline 描边。强调色(--accent)只用于关系进度,
-   心情分布取 --mood-*。零图表库,纯 DOM/CSS。
-   ════════════════════════════════════════════════════ */
+/* analytics.css — data and observation view */
 
 .analytics-view {
   display: flex;
-  flex-direction: column;
   flex: 1;
+  flex-direction: column;
   min-height: 0;
   height: 100%;
-  background: var(--bg);
   overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
 }
 
-/* ─── 顶栏 ─── */
 .ana-header {
   flex-shrink: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--s2);
+  gap: var(--s3);
   padding: var(--s3) var(--s4);
   background: var(--bg);
   border-bottom: .5px solid var(--hairline);
 }
 
 .ana-back {
+  display: grid;
+  place-items: center;
   width: 32px;
   height: 32px;
   flex-shrink: 0;
-  display: grid;
-  place-items: center;
   border-radius: 50%;
   color: var(--text);
 }
 
-.ana-title {
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -.01em;
-  color: var(--text);
+.ana-title-block {
+  min-width: 0;
 }
 
-/* ─── 滚动内容 ─── */
+.ana-title {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: 0;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ana-subtitle {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ana-sync-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.ana-sync-pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+
+.ana-sync-pill.is-ready::before {
+  background: #12805c;
+  box-shadow: 0 0 0 3px rgba(18, 128, 92, 0.12);
+}
+
 .ana-content {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  align-content: start;
   gap: var(--s4);
   padding: var(--s4) var(--s4) var(--s8);
 }
 
-/* ─── 卡片(复用 .card,scoped 自给样式,不污染其它视图) ─── */
 .analytics-view .card {
+  min-width: 0;
+  padding: var(--s5);
   background: var(--surface);
   border: .5px solid var(--hairline);
   border-radius: var(--r-card);
-  padding: var(--s5);
   animation: ana-rise var(--t) var(--ease) both;
 }
 
-.analytics-view .card:nth-child(2) { animation-delay: 40ms; }
-.analytics-view .card:nth-child(3) { animation-delay: 80ms; }
-.analytics-view .card:nth-child(4) { animation-delay: 120ms; }
-
-.ana-card-title {
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .05em;
-  color: var(--text-2);
-  margin-bottom: var(--s3);
+.ana-overview {
+  display: grid;
+  grid-template-columns: minmax(220px, .68fr) minmax(360px, 1.32fr);
+  gap: var(--s5);
+  align-items: center;
 }
 
-/* ─── 关系卡 ─── */
-.ana-rel-top {
+.ana-overview-kicker {
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.ana-overview-title {
+  margin-top: var(--s2);
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1.22;
+  letter-spacing: 0;
+  text-wrap: balance;
+}
+
+.ana-overview-text {
+  max-width: 36ch;
+  margin-top: var(--s2);
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ana-overview-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.ana-overview-metric {
+  min-width: 0;
+  padding: 13px 14px;
+  border-right: 1px solid var(--hairline);
+}
+
+.ana-overview-metric:last-child {
+  border-bottom: 0;
+  border-right: 0;
+}
+
+.ana-overview-label,
+.ana-card-title,
+.ana-rel-caption {
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.ana-overview-value {
+  display: block;
+  margin-top: 6px;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 19px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ana-overview-hint {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ana-grid {
+  display: grid;
+  gap: var(--s4);
+}
+
+.ana-grid--primary {
+  grid-template-columns: minmax(0, 1.02fr) minmax(0, .98fr);
+}
+
+.ana-grid--secondary {
+  grid-template-columns: minmax(0, .94fr) minmax(0, 1.06fr);
+}
+
+.ana-card {
+  display: grid;
+  gap: var(--s4);
+  align-content: start;
+}
+
+.ana-card-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: var(--s3);
-  margin-bottom: var(--s3);
+}
+
+.ana-card-title {
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.ana-card-meta {
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ana-card-body {
+  display: grid;
+  gap: var(--s4);
+  min-width: 0;
+}
+
+.ana-rel-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4);
+}
+
+.ana-rel-caption {
+  display: block;
+  margin-bottom: 5px;
 }
 
 .ana-rel-stage {
-  font-size: 24px;
-  font-weight: 700;
-  letter-spacing: -.02em;
+  display: block;
   color: var(--text);
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
 }
 
 .ana-rel-count {
   flex-shrink: 0;
-  font-size: 13px;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: #fff;
   color: var(--text-2);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 26px;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
-.ana-rel-next {
-  margin-top: var(--s2);
-  font-size: 13px;
-  color: var(--text-2);
+.ana-rel-progress.progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--hairline);
 }
 
-/* ─── 心情卡 ─── */
+.ana-rel-progress > i {
+  border-radius: inherit;
+}
+
+.ana-stage-rail {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.ana-stage-step {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.ana-stage-step i {
+  display: block;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--hairline);
+}
+
+.ana-stage-step.is-complete,
+.ana-stage-step.is-current {
+  color: var(--text);
+}
+
+.ana-stage-step.is-complete i,
+.ana-stage-step.is-current i {
+  background: var(--text);
+}
+
+.ana-rel-next {
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .ana-mood-head {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: var(--s3);
 }
 
 .ana-mood-emoji {
-  font-size: 32px;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 24px;
   line-height: 1;
 }
 
 .ana-mood-label {
-  font-size: 18px;
-  font-weight: 600;
+  overflow: hidden;
   color: var(--text);
+  font-size: 19px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ana-mood-sub {
-  margin-top: 2px;
+  margin-top: 3px;
+  color: var(--text-2);
   font-size: 12px;
-  color: var(--text-3);
+  line-height: 1.35;
 }
 
 .ana-mood-dist {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: var(--s3);
-  margin-top: var(--s4);
 }
 
 .ana-mood-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 34px;
   align-items: center;
   gap: var(--s3);
 }
 
 .ana-mood-row-name {
-  flex-shrink: 0;
-  width: 48px;
-  font-size: 13px;
+  overflow: hidden;
   color: var(--text-2);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ana-mood-row-count {
-  flex-shrink: 0;
-  width: 28px;
-  text-align: right;
-  font-size: 12px;
   color: var(--text-3);
+  font-size: 12px;
+  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-/* 条形:轨道复用 hairline,填充色由内联 --mood-* 提供 */
 .ana-bar {
-  flex: 1;
   height: 6px;
-  background: var(--hairline);
-  border-radius: 3px;
   overflow: hidden;
+  border-radius: 999px;
+  background: var(--hairline);
 }
 
 .ana-bar > i {
   display: block;
   height: 100%;
-  border-radius: 3px;
+  border-radius: inherit;
   transition: width var(--t-enter) var(--ease);
 }
 
-/* ─── 话题卡(复用 .cell,去左右内边距对齐卡片留白) ─── */
-.analytics-view .cell {
-  padding-left: 0;
-  padding-right: 0;
+.ana-spark-wrap {
+  display: grid;
+  gap: var(--s3);
+  padding-top: var(--s1);
+}
+
+.ana-spark-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.ana-spark-head strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.ana-spark {
+  display: flex;
+  align-items: end;
+  gap: 4px;
+  height: 58px;
+  padding: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.ana-spark span {
+  flex: 1;
+  min-width: 3px;
+  border-radius: 999px;
+  background: var(--text);
+  opacity: .82;
+}
+
+.ana-list {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.ana-topic {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: var(--s3);
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ana-topic:last-child {
+  border-bottom: 0;
+}
+
+.ana-topic-rank {
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+
+.ana-topic-main {
+  min-width: 0;
+}
+
+.ana-topic-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--s3);
+  align-items: baseline;
 }
 
 .ana-topic-name {
-  flex: 1;
-  min-width: 0;
-  font-size: 15px;
-  color: var(--text);
   overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .ana-topic-count {
-  flex-shrink: 0;
-  font-size: 13px;
   color: var(--text-2);
+  font-size: 12px;
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
 
-/* ─── 点滴卡(数字网格) ─── */
+.ana-topic-bar {
+  height: 4px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--hairline);
+}
+
+.ana-topic-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--text);
+  transition: width var(--t-enter) var(--ease);
+}
+
+.ana-topic-date {
+  margin-top: 6px;
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
 .ana-stats {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--s4);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
 }
 
 .ana-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  min-width: 0;
+  padding: 14px;
+  border-right: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ana-stat:nth-child(2n) {
+  border-right: 0;
+}
+
+.ana-stat:nth-last-child(-n + 2) {
+  border-bottom: 0;
 }
 
 .ana-stat-num {
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -.02em;
+  overflow: hidden;
   color: var(--text);
-  line-height: 1.1;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
 .ana-stat-label {
-  font-size: 12px;
+  margin-top: 6px;
   color: var(--text-2);
+  font-size: 12px;
+  font-weight: 650;
 }
 
-/* ─── 卡内占位 ─── */
+.ana-stat-hint {
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ana-timeband {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s2);
+}
+
+.ana-timeitem {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.ana-timeitem span {
+  display: block;
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.ana-timeitem strong {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ana-empty {
   padding: var(--s2) 0;
-  font-size: 14px;
   color: var(--text-3);
+  font-size: 14px;
+  line-height: 1.45;
 }
 
-/* ─── 整页空态 ─── */
 .ana-blank {
   margin: auto;
-  text-align: center;
+  max-width: 360px;
   padding: var(--s8) var(--s4);
+  text-align: center;
 }
 
 .ana-blank-title {
-  font-size: 16px;
-  font-weight: 600;
   color: var(--text);
+  font-size: 16px;
+  font-weight: 650;
 }
 
 .ana-blank-sub {
   margin-top: var(--s2);
-  font-size: 14px;
   color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
-/* ─── 骨架 ─── */
 .ana-skeleton {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--s4);
 }
 
+.ana-skeleton-label {
+  grid-column: 1 / -1;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
 .ana-skel-card {
-  height: 132px;
+  height: 154px;
+  border: .5px solid var(--hairline);
   border-radius: var(--r-card);
   background: var(--surface);
-  border: .5px solid var(--hairline);
   animation: ana-pulse 1.4s var(--ease) infinite;
+}
+
+.ana-skel-card--wide {
+  grid-column: 1 / -1;
+  height: 148px;
 }
 
 @keyframes ana-rise {
   from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: none; }
+  to { opacity: 1; transform: none; }
 }
 
 @keyframes ana-pulse {
   0%, 100% { opacity: 1; }
-  50%      { opacity: .55; }
+  50% { opacity: .55; }
+}
+
+@media (hover: hover) {
+  .analytics-view .card:hover {
+    border-color: rgba(13, 13, 13, 0.14);
+  }
+}
+
+@media (max-width: 900px) {
+  .ana-overview,
+  .ana-grid--primary,
+  .ana-grid--secondary {
+    grid-template-columns: 1fr;
+  }
+
+  .ana-overview {
+    align-items: start;
+  }
+
+  .ana-skeleton {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .ana-overview-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ana-overview-metric {
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .ana-overview-metric:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .ana-overview-metric:nth-last-child(-n + 2) {
+    border-bottom: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .ana-header {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .ana-sync-pill {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .ana-overview-title {
+    font-size: 20px;
+  }
+
+  .ana-overview-metrics,
+  .ana-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .ana-overview-metric,
+  .ana-overview-metric:nth-child(2n),
+  .ana-stat,
+  .ana-stat:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .ana-overview-metric:nth-last-child(-n + 2),
+  .ana-stat:nth-last-child(-n + 2) {
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .ana-overview-metric:last-child,
+  .ana-stat:last-child {
+    border-bottom: 0;
+  }
+
+  .ana-rel-top,
+  .ana-card-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .ana-stage-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ana-topic {
+    grid-template-columns: 28px minmax(0, 1fr);
+    padding: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .analytics-view .card,
+  .ana-skel-card {
+    animation: none;
+  }
+
+  .ana-bar > i,
+  .ana-topic-bar > i {
+    transition-duration: 0.01ms;
+  }
 }

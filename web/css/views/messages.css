@@ -20,31 +20,28 @@
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--s3);
-  padding: var(--s4) var(--s5) var(--s3);
+  min-height: 64px;
+  padding: 14px clamp(16px, 4vw, 40px);
+  border-bottom: .5px solid var(--hairline);
+  background: var(--bg);
 }
 
 .messages-title {
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: 0;
   line-height: 1.2;
   color: var(--text);
 }
 
-.messages-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--s1);
-}
-
-.messages-action {
+.messages-back {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-card);
+  background: var(--bg);
   color: var(--text);
 }
 
@@ -54,10 +51,20 @@
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  padding: var(--s4) clamp(16px, 4vw, 40px) var(--s8);
 }
 
 /* 复用 .cell(含 .cell + .cell 的 .5px 发丝线);这里补充指针态 + 内部排版。 */
-.messages-list .cell { cursor: pointer; }
+.messages-list .cell {
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: var(--r-card);
+}
+
+.messages-list .cell + .cell {
+  margin-top: var(--s2);
+  border-top: 1px solid transparent;
+}
 
 /* 头像(结构尺寸,字面量) */
 .messages-avatar { width: 48px; height: 48px; }

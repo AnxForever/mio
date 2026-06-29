@@ -26,6 +26,8 @@ const _state = {
   connected: false,
   serverUrl: window.location.origin || 'http://127.0.0.1:3000',
   authToken: loadPersisted('auth_token', ''),
+  authBypassed: false,
+  authUser: null,
 
   activeMod: 'girlfriend',
   personaMode: 'base',
@@ -44,7 +46,7 @@ const _state = {
 
   analytics: null,
 
-  route: window.location.hash.slice(1) || '/chat',
+  route: window.location.hash.slice(1) || '/console',
   toast: null,
 };
 

@@ -18,6 +18,16 @@ let alive = true;
 /* WS 流式回调 — 由 sendChat 在发送前注册, onMessage 中调用, done/error 后自动清除 */
 let _streamCallbacks = null;
 
+function createRequestId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `chat-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function isActiveStreamMessage(msg) {
+  if (!_streamCallbacks) return false;
+  return !msg.requestId || msg.requestId === _streamCallbacks.requestId;
+}
+
 function url() {
   const server = Store.get('serverUrl');
   const wsBase = server.replace(/^http/, 'ws');
@@ -73,6 +83,7 @@ function onMessage(ev) {
 
     case 'token':
       /* 流式 token — 通过回调传给 chat.js */
+      if (!isActiveStreamMessage(msg)) return;
       if (_streamCallbacks?.onToken) {
         _streamCallbacks.onToken(msg.chunk);
       }
@@ -80,6 +91,7 @@ function onMessage(ev) {
       break;
 
     case 'done':
+      if (!isActiveStreamMessage(msg)) return;
       Store.set('streaming', false);
       if (msg.sessionId) {
         Store.set('sessionId', msg.sessionId);
@@ -93,6 +105,7 @@ function onMessage(ev) {
       break;
 
     case 'error':
+      if (!isActiveStreamMessage(msg)) return;
       Store.set('streaming', false);
       if (_streamCallbacks?.onError) {
         _streamCallbacks.onError(msg.error || '未知错误');
@@ -171,10 +184,21 @@ export const wsManager = {
    */
   async sendChat(text, { imagePath, onToken, onDone, onError } = {}) {
     if (this.isOpen() && !imagePath) {
+      if (_streamCallbacks) {
+        onError?.('上一条回复还没结束，请等它结束后再发送。');
+        return null;
+      }
+      const requestId = createRequestId();
       /* 注册流式回调 → onMessage 会调用它们 */
-      _streamCallbacks = { onToken, onDone, onError };
-      send({ type: 'chat', text, sessionId: Store.get('sessionId') || undefined });
-      return;
+      _streamCallbacks = { requestId, onToken, onDone, onError };
+      const sent = send({
+        type: 'chat',
+        text,
+        sessionId: Store.get('sessionId') || undefined,
+        requestId,
+      });
+      if (sent) return requestId;
+      _streamCallbacks = null;
     }
 
     /* SSE fallback */
@@ -209,6 +233,13 @@ export const wsManager = {
   switchMod(name) {
     if (this.isOpen()) {
       send({ type: 'switch_mod', name });
+    }
+  },
+
+  cancelStream(requestId) {
+    if (!requestId || _streamCallbacks?.requestId === requestId) {
+      _streamCallbacks = null;
+      Store.set('streaming', false);
     }
   },
 };

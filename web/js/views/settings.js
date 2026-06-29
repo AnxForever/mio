@@ -30,8 +30,8 @@ export class SettingsView extends BaseView {
     const header = el('header', { className: 'settings-header' });
     const backBtn = el('button', {
       className: 'settings-back tap',
-      'aria-label': '返回聊天',
-      onClick: () => navigate('/chat'),
+      'aria-label': '返回控制台',
+      onClick: () => navigate('/console'),
     });
     backBtn.appendChild(ICONS.back());
     header.appendChild(backBtn);
@@ -53,6 +53,8 @@ export class SettingsView extends BaseView {
     container.innerHTML = '';
 
     this.buildGenderSection(container);
+    this.buildModelSection(container);
+    this.buildAccountSection(container);
     this.buildWorkspaceSection(container);
     this.buildMemorySection(container);
     this.buildProactiveSection(container);
@@ -68,6 +70,245 @@ export class SettingsView extends BaseView {
     ]));
   }
 
+  /* ─── 模型 ─── */
+
+  buildModelSection(container) {
+    const { wrap, body } = this.makeSection('模型');
+
+    const providerSelect = el('select', {
+      className: 'settings-select settings-select--wide',
+      name: 'provider',
+      'aria-label': '模型服务',
+    });
+    const modelSelect = el('select', {
+      className: 'settings-select settings-select--wide',
+      name: 'model',
+      'aria-label': '模型',
+    });
+    const status = el('span', { className: 'settings-model-status', textContent: '加载中' });
+    const save = el('button', {
+      className: 'settings-apply-btn',
+      type: 'button',
+      onClick: () => this.saveModelConfig(providerSelect.value, modelSelect.value),
+      textContent: '应用',
+    });
+
+    body.appendChild(this.row({
+      label: '模型服务',
+      desc: '选择本地已配置密钥的模型服务',
+      value: providerSelect,
+    }));
+    body.appendChild(this.row({
+      label: '模型',
+      desc: '切换后下一轮对话立即生效',
+      value: modelSelect,
+    }));
+    body.appendChild(this.row({
+      label: '当前生效',
+      desc: '后端实际解析后的 provider 和 model',
+      value: status,
+    }));
+    body.appendChild(el('div', { className: 'settings-model-actions' }, [save]));
+
+    const hint = el('div', {
+      className: 'settings-hint',
+      textContent: '不会显示或保存 API key；这里只选择运行时使用哪个已配置 provider。',
+    });
+    wrap.appendChild(hint);
+    container.appendChild(wrap);
+
+    this.loadModelConfig(providerSelect, modelSelect, status, hint);
+  }
+
+  async loadModelConfig(providerSelect, modelSelect, status, hint) {
+    try {
+      const data = await api.get('/admin/model-config');
+      this.modelConfig = data;
+      this.populateProviderSelect(providerSelect, data.providers || [], data.current?.provider || 'auto');
+      this.populateModelSelect(modelSelect, providerSelect.value, data.current?.model || data.current?.resolvedModel || '');
+      this.updateModelStatus(status, data.current);
+      this.updateModelHint(hint, data.current);
+      this.on(providerSelect, 'change', () => {
+        this.populateModelSelect(modelSelect, providerSelect.value, '');
+      });
+    } catch {
+      status.textContent = '读取失败';
+      hint.textContent = '模型配置读取失败，请检查服务是否已登录。';
+    }
+  }
+
+  populateProviderSelect(select, providers, current) {
+    select.innerHTML = '';
+    for (const provider of providers) {
+      const disabled = provider.configured ? undefined : 'disabled';
+      const suffix = provider.configured ? '' : ` · 缺少 ${provider.apiKeyEnv || 'key'}`;
+      select.appendChild(el('option', {
+        value: provider.name,
+        textContent: `${provider.label}${suffix}`,
+        disabled,
+      }));
+    }
+    select.value = current;
+    if (select.value !== current) select.value = 'auto';
+  }
+
+  populateModelSelect(select, providerName, currentModel) {
+    const provider = (this.modelConfig?.providers || []).find((item) => item.name === providerName);
+    select.innerHTML = '';
+    if (!provider || provider.name === 'auto') {
+      select.appendChild(el('option', { value: '', textContent: '自动使用 provider 默认模型' }));
+      select.disabled = true;
+      return;
+    }
+
+    select.disabled = false;
+    for (const model of provider.models || []) {
+      select.appendChild(el('option', {
+        value: model.id,
+        textContent: model.label ? `${model.label} · ${model.id}` : model.id,
+      }));
+    }
+    const desired = currentModel || provider.defaultModel || provider.models?.[0]?.id || '';
+    select.value = desired;
+    if (select.value !== desired && provider.models?.[0]) {
+      select.value = provider.models[0].id;
+    }
+  }
+
+  updateModelStatus(status, current) {
+    if (!current) {
+      status.textContent = '未知';
+      status.className = 'settings-model-status';
+      return;
+    }
+    status.textContent = `${current.resolvedLabel || current.resolvedProvider} · ${current.resolvedModel || current.model || '默认'}`;
+    status.className = `settings-model-status ${current.available ? 'is-ready' : 'is-mock'}`;
+  }
+
+  updateModelHint(hint, current) {
+    if (!current) return;
+    const parts = [];
+    if (!current.available) parts.push(current.reason || '当前没有可用真实模型，将使用 MockProvider。');
+    if (current.restartEnvOverrides?.provider || current.restartEnvOverrides?.model) {
+      parts.push('注意：.env 中的 MIO_PROVIDER / COLA_MODEL 会在下次重启时作为启动默认值。');
+    }
+    hint.textContent = parts.length
+      ? parts.join(' ')
+      : '保存后下一轮聊天、微信消息和 OpenAI-compatible 调用都会使用这个模型配置。';
+  }
+
+  async saveModelConfig(provider, model) {
+    try {
+      const data = await api.put('/admin/model-config', {
+        provider,
+        ...(model ? { model } : {}),
+      });
+      this.modelConfig = {
+        ...(this.modelConfig || {}),
+        current: data.current,
+      };
+      toast('模型配置已应用', 'success');
+      const content = this.el.querySelector('#settings-content');
+      if (content) this.buildSettings(content);
+    } catch (err) {
+      toast(err.message || '模型配置保存失败', 'error');
+    }
+  }
+
+  /* ─── 账户 ─── */
+
+  buildAccountSection(container) {
+    const { wrap, body } = this.makeSection('账户');
+    const current = Store.get('authUser');
+    const legacy = !current && Store.get('authToken');
+
+    const usersValue = el('span', { className: 'settings-model-status', textContent: '加载中' });
+    body.appendChild(this.row({
+      label: '当前账号',
+      desc: current ? `${current.username} · ${current.role}` : legacy ? '本地访问令牌 · owner' : '未启用账号系统',
+      value: current || legacy ? el('span', { className: 'settings-model-status is-ready', textContent: current?.role || 'owner' }) : null,
+    }));
+    body.appendChild(this.row({
+      label: '控制台账号',
+      desc: '每个管理员使用自己的账号会话，不再共享一个后台令牌',
+      value: usersValue,
+    }));
+
+    const form = el('div', { className: 'settings-account-form' });
+    const username = el('input', {
+      className: 'settings-input',
+      type: 'text',
+      placeholder: '用户名',
+      autocomplete: 'off',
+      'aria-label': '新账号用户名',
+    });
+    const password = el('input', {
+      className: 'settings-input',
+      type: 'password',
+      placeholder: '至少 8 位密码',
+      autocomplete: 'new-password',
+      'aria-label': '新账号密码',
+    });
+    const role = el('select', {
+      className: 'settings-select',
+      'aria-label': '新账号角色',
+    }, [
+      el('option', { value: 'admin', textContent: 'Admin' }),
+      el('option', { value: 'viewer', textContent: 'Viewer' }),
+    ]);
+    const create = el('button', {
+      className: 'settings-apply-btn',
+      type: 'button',
+      onClick: () => this.createConsoleUser(username.value, password.value, role.value),
+      textContent: '创建账号',
+    });
+    form.appendChild(username);
+    form.appendChild(password);
+    form.appendChild(role);
+    form.appendChild(create);
+    body.appendChild(form);
+
+    wrap.appendChild(el('div', {
+      className: 'settings-hint',
+      textContent: '微信试用者不会进入这里；他们用微信联系人身份隔离。这里管理的是产品控制台账号。',
+    }));
+    container.appendChild(wrap);
+    this.loadAccountSection(usersValue, form);
+  }
+
+  async loadAccountSection(usersValue, form) {
+    try {
+      const me = await api.get('/auth/me');
+      const auth = me?.auth || {};
+      const usersData = await api.get('/admin/users');
+      const users = usersData?.users || [];
+      usersValue.textContent = `${users.length} 个账号`;
+      usersValue.className = 'settings-model-status is-ready';
+      const owner = auth.kind === 'legacy' || auth.role === 'owner';
+      form.hidden = !owner;
+    } catch {
+      usersValue.textContent = '读取失败';
+      usersValue.className = 'settings-model-status is-mock';
+      form.hidden = true;
+    }
+  }
+
+  async createConsoleUser(username, password, role) {
+    const name = String(username || '').trim();
+    if (!name || !password) {
+      toast('请输入用户名和密码', 'error');
+      return;
+    }
+    try {
+      await api.post('/admin/users', { username: name, password, role });
+      toast('控制台账号已创建', 'success');
+      const content = this.el.querySelector('#settings-content');
+      if (content) this.buildSettings(content);
+    } catch (err) {
+      toast(err.message || '账号创建失败', 'error');
+    }
+  }
+
   /* ─── 记忆 ─── */
 
   buildWorkspaceSection(container) {
@@ -77,6 +318,12 @@ export class SettingsView extends BaseView {
       label: '人格工作室',
       desc: '编辑 soul、切换模式、管理角色',
       onClick: () => navigate('/studio'),
+    }));
+
+    body.appendChild(this.row({
+      label: '渠道接入',
+      desc: '配置 ClawBot、OpenAI 客户端和 OneBot',
+      onClick: () => navigate('/channels'),
     }));
 
     body.appendChild(this.row({
@@ -140,22 +387,56 @@ export class SettingsView extends BaseView {
       value: intervalSelect,
     }));
 
+    const quietToggle = this.toggleControl(false, async (checked) => {
+      await this.saveProactivePreference({ quietHours: { enabled: checked } });
+    });
+
+    body.appendChild(this.row({
+      label: '安静时段',
+      desc: '开启后 Mio 在该时段不会主动发消息',
+      value: quietToggle,
+    }));
+
+    const hourOptions = Array.from({ length: 24 }, (_, hour) => [String(hour), `${String(hour).padStart(2, '0')}:00`]);
+    const quietStartSelect = this.selectControl(hourOptions, async (value) => {
+      await this.saveProactivePreference({ quietHours: { startHour: Number(value) } });
+    });
+    const quietEndSelect = this.selectControl(hourOptions, async (value) => {
+      await this.saveProactivePreference({ quietHours: { endHour: Number(value) } });
+    });
+
+    body.appendChild(this.row({
+      label: '安静开始',
+      desc: '默认 23:00',
+      value: quietStartSelect,
+    }));
+
+    body.appendChild(this.row({
+      label: '安静结束',
+      desc: '默认 08:00，结束小时不包含在内',
+      value: quietEndSelect,
+    }));
+
     wrap.appendChild(el('div', {
       className: 'settings-hint',
       textContent: '主动消息应该是可关闭、可预测、不过度打扰的。',
     }));
 
     container.appendChild(wrap);
-    this.loadProactivePreferences(enabledToggle, intervalSelect);
+    this.loadProactivePreferences(enabledToggle, intervalSelect, quietToggle, quietStartSelect, quietEndSelect);
   }
 
-  async loadProactivePreferences(toggle, intervalSelect) {
+  async loadProactivePreferences(toggle, intervalSelect, quietToggle, quietStartSelect, quietEndSelect) {
     try {
       const data = await api.get('/proactive/preferences');
       const prefs = data?.preferences || {};
       const input = toggle.querySelector('input');
       if (input) input.checked = !!prefs.enabled;
       if (prefs.minIntervalMinutes) intervalSelect.value = String(prefs.minIntervalMinutes);
+      const quietInput = quietToggle?.querySelector('input');
+      if (quietInput) quietInput.checked = !!prefs.quietHours?.enabled;
+      if (Number.isInteger(prefs.quietHours?.startHour)) quietStartSelect.value = String(prefs.quietHours.startHour);
+      if (Number.isInteger(prefs.quietHours?.endHour)) quietEndSelect.value = String(prefs.quietHours.endHour);
     } catch {
       toast('主动关心设置读取失败', 'error');
     }

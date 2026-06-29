@@ -76,7 +76,7 @@
   overflow: hidden;
   display: grid;
   place-items: center;
-  animation: mood-rise var(--t-enter) var(--spring) both;
+  animation: mood-rise var(--t) var(--ease) both;
 }
 
 .mood-hero__img {
@@ -85,8 +85,8 @@
   height: 140%;
   object-fit: contain;
   opacity: 0;
-  transform: scale(.96);
-  transition: opacity var(--t) var(--spring), transform var(--t) var(--spring);
+  transform: scale(.99);
+  transition: opacity var(--t) var(--ease), transform var(--t) var(--ease);
 }
 
 .mood-hero__img.is-front {
@@ -197,7 +197,7 @@
 .mood-spec.is-current .mood-spec__label { color: var(--text); font-weight: 600; }
 
 @keyframes mood-rise {
-  from { opacity: 0; transform: translateY(10px) scale(.96); }
+  from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: none; }
 }
 

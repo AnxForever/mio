@@ -109,7 +109,8 @@
 }
 
 .memories-result-card,
-.memory-card {
+.memory-card,
+.memory-temporal {
   background: var(--bg);
   border: .5px solid var(--hairline);
   border-radius: var(--r-card);
@@ -120,12 +121,20 @@
   margin-bottom: var(--s5);
 }
 
+.memories-result-card--compact {
+  margin-bottom: 0;
+}
+
 .memory-result {
   padding: var(--s4);
 }
 
 .memory-result + .memory-result {
   border-top: .5px solid var(--hairline);
+}
+
+.memory-result--disabled {
+  opacity: .68;
 }
 
 .memory-result-title {
@@ -149,6 +158,75 @@
 
 .memory-card {
   padding: var(--s4);
+}
+
+.memory-temporal {
+  padding: var(--s4);
+}
+
+.memory-temporal-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+
+.memory-debug-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.memory-action--debug {
+  min-width: 112px;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.memory-temporal-head .memories-section-label {
+  margin-top: 0;
+}
+
+.memory-temporal-counts,
+.memory-temporal-empty {
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.memory-temporal-row {
+  padding: var(--s3) 0;
+  border-top: .5px solid var(--hairline);
+}
+
+.memory-temporal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.memory-temporal-evidence {
+  margin-top: var(--s2);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.memory-status--temporal-current {
+  color: #047857;
+}
+
+.memory-status--temporal-recently_resolved {
+  color: #1d4ed8;
+}
+
+.memory-status--temporal-recently_expired {
+  color: var(--text-2);
 }
 
 .memory-card--ignored {
@@ -189,7 +267,8 @@
   color: #047857;
 }
 
-.memory-status--ignored {
+.memory-status--ignored,
+.memory-status--wrong {
   color: var(--text-2);
 }
 
@@ -212,6 +291,10 @@
 .memory-actions {
   justify-content: flex-end;
   margin-top: var(--s4);
+}
+
+.memory-actions--compact {
+  margin-top: var(--s3);
 }
 
 .memory-action--primary {
@@ -261,6 +344,7 @@
   }
 
   .memories-list,
+  .memories-header,
   .memories-search-results {
     max-width: 760px;
   }

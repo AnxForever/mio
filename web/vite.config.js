@@ -23,7 +23,7 @@ export default defineConfig({
         ws: true,
         changeOrigin: true,
       },
-      '^/(health|status|avatar|onboarding|search|memories|proactive|notify|admin)': {
+      '^/(health|status|avatar|voice|chat|mod|persona|analytics|search|memories|user-profile|proactive|notify|admin|character|characters)': {
         target: backendUrl,
         changeOrigin: true,
       }
