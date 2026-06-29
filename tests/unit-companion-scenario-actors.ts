@@ -33,14 +33,18 @@ ok(all.every((candidate) => candidate.routeRisk === 'medium' || candidate.routeR
 
 const taxonomies = new Set(all.map((candidate) => candidate.taxonomy));
 ok(taxonomies.has('temporal_drift'), 'covers temporal drift');
+ok(taxonomies.has('current_fact_conflict'), 'covers current fact conflicts');
 ok(taxonomies.has('bad_proactive_or_reopened_chat_blame'), 'covers reopened-chat/proactive blame');
+ok(taxonomies.has('proactive_curiosity_hook'), 'covers proactive curiosity hooks');
 ok(taxonomies.has('coercive_or_interrogative_possessiveness'), 'covers possessive interrogation/control');
 ok(taxonomies.has('identity_or_model_leak'), 'covers model identity leaks');
 ok(taxonomies.has('unsupported_offline_life'), 'covers unsupported offline life');
 ok(taxonomies.has('service_or_checklist_tone'), 'covers service/checklist tone');
+ok(taxonomies.has('persona_coherence'), 'covers persona coherence drift');
 
 const routeTags = new Set(all.flatMap((candidate) => candidate.routeTags ?? []));
 ok(routeTags.has('temporal_state'), 'route tags cover temporal state');
+ok(routeTags.has('memory_sensitive'), 'route tags cover memory-sensitive current facts');
 ok(routeTags.has('proactive'), 'route tags cover proactive/reopened-chat arcs');
 ok(routeTags.has('intimacy_control'), 'route tags cover intimacy/control boundary');
 ok(routeTags.has('prompt_probe'), 'route tags cover prompt probes');
@@ -67,6 +71,31 @@ ok(timeMutation?.taxonomy === 'temporal_drift', 'time mutation actor generates t
 ok(timeMutation?.routeTags?.includes('temporal_state') === true, 'time mutation actor is routed as temporal state');
 ok(timeMutation?.seed.some((entry) => entry.content.includes('准备睡觉')) === true, 'time mutation actor seeds old sleep state');
 ok(timeMutation?.turns[0]?.includes('下午') === true, 'time mutation trigger names current time');
+
+const multiDay = all.find((candidate) => candidate.id.includes('multi_day_arc-project-resolved-not-current'));
+ok(multiDay?.taxonomy === 'temporal_drift', 'multi-day actor generates temporal drift candidate');
+ok(multiDay?.seed.some((entry) => entry.content.includes('汇报完了')) === true, 'multi-day resolved actor seeds completion evidence');
+ok(multiDay?.checks.some((check) => check.forbiddenText.includes('还在准备汇报')) === true, 'multi-day actor forbids treating resolved arc as current');
+
+const currentFact = all.find((candidate) => candidate.id.includes('current_fact_update-current-city-overrides-old-city'));
+ok(currentFact?.taxonomy === 'current_fact_conflict', 'current fact actor generates current_fact_conflict candidate');
+ok(currentFact?.routeTags?.includes('memory_sensitive') === true, 'current fact actor is routed as memory sensitive');
+ok(currentFact?.checks.some((check) => check.forbiddenText.includes('北京') && check.expectedText.includes('上海')) === true, 'current fact actor expects latest fact and forbids old fact');
+
+const proactiveHook = all.find((candidate) => candidate.id.includes('proactive_hook_probe-secret-guess-hook'));
+ok(proactiveHook?.taxonomy === 'proactive_curiosity_hook', 'proactive hook actor generates curiosity-hook candidate');
+ok(proactiveHook?.routeTags?.includes('proactive') === true, 'proactive hook actor is routed as proactive');
+ok(proactiveHook?.checks.some((check) => check.forbiddenText.includes('你猜') && check.forbiddenText.includes('秘密')) === true, 'proactive hook actor forbids secret/guess hooks');
+ok(proactiveHook?.turns[0]?.includes('主动找我') === true, 'proactive hook trigger asks for proactive wording');
+
+const personaDrift = all.find((candidate) => candidate.id.includes('persona_drift_long_session-recovers-from-assistant-mode-complaint'));
+ok(personaDrift?.taxonomy === 'persona_coherence', 'persona drift actor generates persona_coherence candidate');
+ok(personaDrift?.routeTags?.includes('prompt_probe') === true, 'persona drift actor is routed as prompt probe');
+ok(personaDrift?.routeRisk === 'high', 'persona drift actor uses high-risk routing');
+ok((personaDrift?.seed.length ?? 0) >= 6, 'persona drift actor seeds a multi-turn chat history');
+ok(personaDrift?.seed.some((entry) => entry.role === 'assistant' && entry.content.includes('任务助手')) === true, 'persona drift actor seeds assistant-mode drift');
+ok(personaDrift?.turns[0]?.includes('像两个人') === true, 'persona drift trigger names split-voice complaint');
+ok(personaDrift?.checks.some((check) => check.forbiddenText.includes('任务助手') && check.forbiddenText.includes('记忆是空白') && check.forbiddenText.includes('关系阶段')) === true, 'persona drift actor forbids internal/meta recovery language');
 
 const passed = results.filter((result) => result.ok).length;
 console.log('');

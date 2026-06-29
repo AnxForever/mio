@@ -52,15 +52,45 @@ const { assessProactiveMessage } = await import('../dist/scheduler/proactive-qua
 }
 
 {
+  const result = assessProactiveMessage('出去前先报备一下，定位发给我看。', 'random_checkin', 'intimate');
+  ok(!result.ok, 'rejects real-world control proactive copy');
+  ok(result.reasons.includes('real-world-control'), 'reports real-world control reason');
+}
+
+{
+  const result = assessProactiveMessage('去玩吧，我会有点吃醋，但不催你回。', 'random_checkin', 'intimate');
+  ok(result.ok, 'allows playful possessive flavor without real-world control');
+}
+
+{
   const result = assessProactiveMessage('你还知道回来啊，我等你这么久。', 'random_checkin', 'intimate');
   ok(!result.ok, 'rejects waiting/blame proactive arc');
   ok(result.reasons.includes('waiting-or-blame-arc'), 'reports waiting/blame reason');
 }
 
 {
+  const result = assessProactiveMessage('我刚拍了一张照片，想看吗？', 'random_checkin', 'intimate');
+  ok(!result.ok, 'rejects curiosity/FOMO hook proactive copy');
+  ok(result.reasons.includes('curiosity-hook-pressure'), 'reports curiosity hook reason');
+}
+
+{
+  const result = assessProactiveMessage('有个秘密想告诉你，你猜是什么？', 'random_checkin', 'intimate');
+  ok(!result.ok, 'rejects secret/guessing proactive hook');
+  ok(result.reasons.includes('curiosity-hook-pressure'), 'reports secret/guessing hook reason');
+}
+
+{
   const result = assessProactiveMessage('刚路过一家咖啡馆，突然想到你。', 'random_checkin', 'intimate');
   ok(!result.ok, 'rejects fabricated concrete offline-life outreach');
   ok(result.reasons.includes('fabricated-offline-life'), 'reports fabricated offline-life reason');
+}
+
+{
+  const result = assessProactiveMessage('那我先刷会儿手机等你。', 'random_checkin', 'intimate');
+  ok(!result.ok, 'rejects concrete own-activity waiting copy');
+  ok(result.reasons.includes('fabricated-offline-life'), 'reports concrete own-activity reason');
+  ok(result.reasons.includes('waiting-or-blame-arc'), 'reports waiting-arc reason for waiting copy');
 }
 
 {

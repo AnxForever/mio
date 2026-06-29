@@ -53,6 +53,7 @@ const nextDay = new Date('2026-06-28T09:16:00.000Z');
 
 const sleepyCtx = temporal.updateTemporalStateForTurn(sessionId, '有点困了，想睡觉', sleepyAt);
 ok(sleepyCtx.active.some((entry) => entry.kind === 'sleepy' || entry.kind === 'going_to_sleep'), 'sleepy/sleep intent becomes active short-term state');
+ok(sleepyCtx.active.every((entry) => entry.sourceSessionId === sessionId), 'detected temporal states record source session id');
 
 const expiredCtx = temporal.updateTemporalStateForTurn(sessionId, '在干嘛', nextDay);
 ok(!expiredCtx.active.some((entry) => entry.kind === 'sleepy' || entry.kind === 'going_to_sleep'), 'sleep state expires by next afternoon');
@@ -78,6 +79,38 @@ const busyQuery = temporal.queryTemporalState(
 );
 ok(busyQuery.current.some((entry) => entry.kind === 'busy' || entry.kind === 'away'), 'active busy/away state is queryable as current');
 
+const multiDaySessionId = 'openai-temporal-multiday_im_wechat-arc1';
+const multiDayCtx = temporal.updateTemporalStateForTurn(
+  multiDaySessionId,
+  '我这几天一直在赶发布汇报，脑子都是项目',
+  new Date('2026-06-28T10:00:00.000Z'),
+);
+ok(multiDayCtx.active.some((entry) => entry.kind === 'multi_day_arc'), 'multi-day work arc becomes active temporal state');
+const multiDayStillActive = temporal.queryTemporalState(
+  temporal.readTemporalState(multiDaySessionId),
+  new Date('2026-07-01T10:00:00.000Z'),
+);
+ok(multiDayStillActive.current.some((entry) => entry.kind === 'multi_day_arc'), 'multi-day arc stays current across several days');
+const multiDayExpired = temporal.queryTemporalState(
+  temporal.readTemporalState(multiDaySessionId),
+  new Date('2026-07-07T10:01:00.000Z'),
+);
+ok(multiDayExpired.historicalOnly.some((entry) => entry.kind === 'multi_day_arc'), 'multi-day arc becomes historical after validity window');
+const resolvedMultiDaySessionId = 'openai-temporal-multiday-resolved_im_wechat-arc2';
+temporal.updateTemporalStateForTurn(
+  resolvedMultiDaySessionId,
+  '最近一直在准备发布汇报',
+  new Date('2026-06-28T10:00:00.000Z'),
+);
+const resolvedMultiDayCtx = temporal.updateTemporalStateForTurn(
+  resolvedMultiDaySessionId,
+  '汇报完了，终于结束了',
+  new Date('2026-06-30T18:00:00.000Z'),
+);
+ok(!resolvedMultiDayCtx.active.some((entry) => entry.kind === 'multi_day_arc'), 'explicit completion resolves multi-day arc');
+ok(resolvedMultiDayCtx.resolvedRecent.some((entry) => entry.kind === 'multi_day_arc'), 'resolved multi-day arc remains visible as recently resolved context');
+ok(resolvedMultiDayCtx.resolvedRecent.some((entry) => entry.kind === 'multi_day_arc' && typeof entry.resolutionEventId === 'string'), 'resolved multi-day arc records resolution event id');
+
 const promisedSpaceSessionId = 'openai-promised-space_im_wechat-space1';
 const promised = temporal.observeAssistantTemporalCommitments(
   promisedSpaceSessionId,
@@ -90,8 +123,10 @@ ok(promisedState.events.some((event) => event.type === 'assistant_commitment' &&
 const reopenedCtx = temporal.updateTemporalStateForTurn(promisedSpaceSessionId, '嗯嗯，好', new Date('2026-06-28T10:10:00.000Z'));
 ok(!reopenedCtx.active.some((entry) => entry.kind === 'mio_promised_space'), 'user reply resolves Mio no-interrupt promise');
 ok(reopenedCtx.resolvedRecent.some((entry) => entry.kind === 'mio_promised_space' && entry.resolutionReason === 'user_reopened_chat'), 'resolved promise records user_reopened_chat reason');
+ok(reopenedCtx.resolvedRecent.some((entry) => entry.kind === 'mio_promised_space' && typeof entry.resolutionEventId === 'string'), 'resolved promise links back to a resolution event id');
 const reopenedState = temporal.readTemporalState(promisedSpaceSessionId);
-ok(reopenedState.events.some((event) => event.type === 'resolved' && event.reason === 'user_reopened_chat'), 'reopened chat writes structured resolution event');
+const reopenedResolution = reopenedCtx.resolvedRecent.find((entry) => entry.kind === 'mio_promised_space' && typeof entry.resolutionEventId === 'string');
+ok(reopenedState.events.some((event) => event.id === reopenedResolution?.resolutionEventId && event.type === 'resolved' && event.reason === 'user_reopened_chat'), 'reopened chat writes linked structured resolution event');
 const reopenedRendered = temporal.renderTemporalAwarenessContext(reopenedCtx);
 ok(reopenedRendered.includes('用户已经主动重新打开聊天'), 'rendered context explains reopened-chat state');
 ok(reopenedRendered.includes('不要抱怨'), 'rendered context forbids blame after no-interrupt promise');

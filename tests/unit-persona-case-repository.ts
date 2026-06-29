@@ -23,7 +23,7 @@ console.log('\x1b[1mMio — persona case repository tests\x1b[0m\n');
 const now = new Date('2026-06-28T12:00:00.000Z');
 const candidates = generatePersonaCaseCandidates({ now });
 
-ok(PERSONA_CASES.length >= 6, 'defines a useful initial case set', `cases=${PERSONA_CASES.length}`);
+ok(PERSONA_CASES.length >= 40, 'defines a broad 40+ case set', `cases=${PERSONA_CASES.length}`);
 ok(new Set(PERSONA_CASES.map((item) => item.id)).size === PERSONA_CASES.length, 'case ids are unique');
 ok(PERSONA_CASES.every((item) => item.goodReplies.length > 0 && item.badReplies.length > 0), 'every case has good and bad examples');
 ok(PERSONA_CASES.every((item) => item.forbiddenText.length > 0 || item.expectedText.length > 0), 'every case has executable checks');
@@ -42,6 +42,8 @@ ok(taxonomies.has('bad_proactive_or_reopened_chat_blame'), 'covers no-interrupt 
 ok(taxonomies.has('coercive_or_interrogative_possessiveness'), 'covers consented possessiveness boundary');
 ok(taxonomies.has('unsupported_offline_life'), 'covers fake offline life');
 ok(taxonomies.has('identity_or_model_leak'), 'covers model/prompt probes');
+ok(taxonomies.has('current_fact_conflict'), 'covers current fact conflicts');
+ok(taxonomies.has('persona_coherence'), 'covers persona coherence');
 
 const routeTags = new Set(candidates.flatMap((item) => item.routeTags ?? []));
 ok(routeTags.has('temporal_state'), 'route tags cover temporal state');
@@ -50,9 +52,19 @@ ok(routeTags.has('intimacy_control'), 'route tags cover intimacy control');
 ok(routeTags.has('offline_life'), 'route tags cover offline life');
 ok(routeTags.has('prompt_probe'), 'route tags cover prompt probes');
 ok(routeTags.has('service_tone'), 'route tags cover service tone');
+ok(routeTags.has('memory_sensitive'), 'route tags cover memory-sensitive current facts');
 
 const possessiveCases = selectPersonaCases({ categories: ['possessive_style'] });
-ok(possessiveCases.length === 1 && possessiveCases[0]?.id === 'consented-possessive-without-control', 'selects cases by label');
+ok(possessiveCases.some((item) => item.id === 'consented-possessive-without-control'), 'selects cases by label');
+
+const proactiveCases = selectPersonaCases({ categories: ['proactive'] });
+ok(proactiveCases.length >= 3, 'covers proactive cases by label', `proactive=${proactiveCases.length}`);
+
+const currentFactCases = selectPersonaCases({ categories: ['current_fact'] });
+ok(currentFactCases.length >= 4, 'covers current fact cases by label', `currentFact=${currentFactCases.length}`);
+
+const humanLikenessCases = selectPersonaCases({ categories: ['human_likeness'] });
+ok(humanLikenessCases.length >= 4, 'covers human-likeness cases by label', `human=${humanLikenessCases.length}`);
 
 const limited = generatePersonaCaseCandidates({ maxCases: 2, now });
 ok(limited.length === 2, 'maxCases limits candidate generation');

@@ -194,6 +194,172 @@ async function main(): Promise<void> {
     assert(syncMem.entities.some((e) => e.type === 'preference'), 'sync regex still extracts');
   });
 
+  await test('sync path resolves current fact conflicts and keeps latest fact prompt-facing', async () => {
+    const oldFact = {
+      type: 'fact',
+      content: '用户住在北京',
+      confidence: 1,
+      firstSeen: '2026-06-01T00:00:00.000Z',
+      lastSeen: '2026-06-01T00:00:00.000Z',
+      occurrences: 3,
+      source: 'unit',
+      reviewStatus: 'confirmed',
+    };
+    const existing = {
+      entities: [oldFact],
+      durableFacts: [oldFact],
+      topics: [],
+      updatedAt: '2026-06-01T00:00:00.000Z',
+    };
+    const bookmarks = '- <time=2026-06-28T10:00:00.000Z> 用户住在上海. 当前住址';
+    const mem = extractStructuredMemory(bookmarks, existing);
+    const oldStored = mem.entities.find((entity) => entity.content === '用户住在北京');
+    assert(oldStored?.invalidatedAt, 'old current fact should be invalidated');
+    assert(oldStored?.supersededBy?.includes('上海'), `old fact should point at Shanghai successor: ${oldStored?.supersededBy}`);
+
+    const view = deriveStructuredStateView(mem, new Date('2026-06-28T12:00:00.000Z'));
+    assert(!view.currentFacts.some((entity) => entity.content.includes('北京')), 'old city should not remain prompt-facing current fact');
+    assert(view.currentFacts.some((entity) => entity.content.includes('上海')), 'latest city should become prompt-facing current fact');
+  });
+
+  await test('sync path resolves negated calling preference', async () => {
+    const oldPreference = {
+      type: 'preference',
+      content: '喜欢你叫我哥哥',
+      confidence: 0.95,
+      firstSeen: '2026-06-01T00:00:00.000Z',
+      lastSeen: '2026-06-01T00:00:00.000Z',
+      occurrences: 3,
+      source: 'unit',
+    };
+    const existing = {
+      entities: [oldPreference],
+      durableFacts: [oldPreference],
+      topics: [],
+      updatedAt: '2026-06-01T00:00:00.000Z',
+    };
+    const bookmarks = '- <time=2026-06-28T10:00:00.000Z> 以后别叫哥哥了，叫我名字就好. 用户修正称呼偏好';
+    const mem = extractStructuredMemory(bookmarks, existing);
+    const oldStored = mem.entities.find((entity) => entity.content === '喜欢你叫我哥哥');
+    assert(oldStored?.invalidatedAt, 'old calling preference should be invalidated');
+
+    const view = deriveStructuredStateView(mem, new Date('2026-06-28T12:00:00.000Z'));
+    assert(!view.currentFacts.some((entity) => entity.content === '喜欢你叫我哥哥'), 'old calling preference should not remain current');
+    assert(view.currentFacts.some((entity) => entity.content.includes('别叫哥哥')), 'new calling preference should become current');
+  });
+
+  await test('sync path resolves current drink preference conflicts', async () => {
+    const oldPreference = {
+      type: 'preference',
+      content: '喜欢喝咖啡',
+      confidence: 0.95,
+      firstSeen: '2026-06-01T00:00:00.000Z',
+      lastSeen: '2026-06-01T00:00:00.000Z',
+      occurrences: 3,
+      source: 'unit',
+    };
+    const existing = {
+      entities: [oldPreference],
+      durableFacts: [oldPreference],
+      topics: [],
+      updatedAt: '2026-06-01T00:00:00.000Z',
+    };
+    const bookmarks = '- <time=2026-06-28T10:00:00.000Z> 现在不喝咖啡了，改喝奶茶. 用户修正饮品偏好';
+    const mem = extractStructuredMemory(bookmarks, existing);
+    const oldStored = mem.entities.find((entity) => entity.content === '喜欢喝咖啡');
+    assert(oldStored?.invalidatedAt, 'old drink preference should be invalidated');
+
+    const view = deriveStructuredStateView(mem, new Date('2026-06-28T12:00:00.000Z'));
+    const rendered = renderStructuredStateView(view) ?? '';
+    assert(!view.currentFacts.some((entity) => entity.content === '喜欢喝咖啡'), 'old drink preference should not remain current');
+    assert(view.currentFacts.some((entity) => entity.content.includes('奶茶')), 'latest drink preference should become current');
+    assert(!rendered.includes('喜欢喝咖啡'), 'old drink preference should not enter structured prompt context');
+  });
+
+  await test('sync path resolves current support-style conflicts', async () => {
+    const oldPreference = {
+      type: 'preference',
+      content: '难受时需要给我建议',
+      confidence: 0.95,
+      firstSeen: '2026-06-01T00:00:00.000Z',
+      lastSeen: '2026-06-01T00:00:00.000Z',
+      occurrences: 3,
+      source: 'unit',
+    };
+    const existing = {
+      entities: [oldPreference],
+      durableFacts: [oldPreference],
+      topics: [],
+      updatedAt: '2026-06-01T00:00:00.000Z',
+    };
+    const bookmarks = '- <time=2026-06-28T10:00:00.000Z> 今天别给我建议，只想你陪我. 用户修正支持方式';
+    const mem = extractStructuredMemory(bookmarks, existing);
+    const oldStored = mem.entities.find((entity) => entity.content === '难受时需要给我建议');
+    assert(oldStored?.invalidatedAt, 'old support style should be invalidated');
+
+    const view = deriveStructuredStateView(mem, new Date('2026-06-28T12:00:00.000Z'));
+    const rendered = renderStructuredStateView(view) ?? '';
+    assert(!view.currentFacts.some((entity) => entity.content === '难受时需要给我建议'), 'old support style should not remain current');
+    assert(view.currentFacts.some((entity) => entity.content.includes('别给我建议')), 'latest support style should become current');
+    assert(!rendered.includes('难受时需要给我建议'), 'old support style should not enter structured prompt context');
+  });
+
+  await test('sync path resolves current relationship-boundary conflicts', async () => {
+    const oldPreference = {
+      type: 'preference',
+      content: '喜欢你叫我宝贝',
+      confidence: 0.95,
+      firstSeen: '2026-06-01T00:00:00.000Z',
+      lastSeen: '2026-06-01T00:00:00.000Z',
+      occurrences: 3,
+      source: 'unit',
+    };
+    const existing = {
+      entities: [oldPreference],
+      durableFacts: [oldPreference],
+      topics: [],
+      updatedAt: '2026-06-01T00:00:00.000Z',
+    };
+    const bookmarks = '- <time=2026-06-28T10:00:00.000Z> 我们还是慢慢来，别叫宝贝. 用户修正关系边界';
+    const mem = extractStructuredMemory(bookmarks, existing);
+    const oldStored = mem.entities.find((entity) => entity.content === '喜欢你叫我宝贝');
+    assert(oldStored?.invalidatedAt, 'old relationship boundary should be invalidated');
+
+    const view = deriveStructuredStateView(mem, new Date('2026-06-28T12:00:00.000Z'));
+    const rendered = renderStructuredStateView(view) ?? '';
+    assert(!view.currentFacts.some((entity) => entity.content === '喜欢你叫我宝贝'), 'old relationship boundary should not remain current');
+    assert(view.currentFacts.some((entity) => entity.content.includes('慢慢来') || entity.content.includes('别叫宝贝')), 'latest relationship boundary should become current');
+    assert(!rendered.includes('喜欢你叫我宝贝'), 'old relationship boundary should not enter structured prompt context');
+  });
+
+  await test('sync path resolves current project context conflicts', async () => {
+    const oldFact = {
+      type: 'fact',
+      content: '用户现在在做论文',
+      confidence: 0.95,
+      firstSeen: '2026-06-01T00:00:00.000Z',
+      lastSeen: '2026-06-01T00:00:00.000Z',
+      occurrences: 3,
+      source: 'unit',
+    };
+    const existing = {
+      entities: [oldFact],
+      durableFacts: [oldFact],
+      topics: [],
+      updatedAt: '2026-06-01T00:00:00.000Z',
+    };
+    const bookmarks = '- <time=2026-06-28T10:00:00.000Z> 现在不做论文了，改做简历. 用户修正当前项目';
+    const mem = extractStructuredMemory(bookmarks, existing);
+    const oldStored = mem.entities.find((entity) => entity.content === '用户现在在做论文');
+    assert(oldStored?.invalidatedAt, 'old project context should be invalidated');
+
+    const view = deriveStructuredStateView(mem, new Date('2026-06-28T12:00:00.000Z'));
+    const rendered = renderStructuredStateView(view) ?? '';
+    assert(!view.currentFacts.some((entity) => entity.content === '用户现在在做论文'), 'old project context should not remain current');
+    assert(view.currentFacts.some((entity) => entity.content.includes('简历')), 'latest project context should become current');
+    assert(!rendered.includes('用户现在在做论文'), 'old project context should not enter structured prompt context');
+  });
+
   await test('structured state view separates current facts, multi-day arcs, recent events, and emotions', async () => {
     const fact = {
       type: 'fact',

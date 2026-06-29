@@ -71,7 +71,14 @@ const filteredSummary = await runPairwiseExperiment({
   baseline: filteredSets.baseline,
   candidate: filteredSets.candidate,
 });
-ok(filteredSummary.total === 1 && filteredSummary.results[0]?.caseId === 'consented-possessive-without-control', 'can run a label-filtered experiment');
+ok(
+  filteredSummary.total === filteredCases.length
+    && filteredSummary.total >= 1
+    && filteredCases.every((item) => item.labels.includes('possessive_style'))
+    && filteredSummary.results.some((item) => item.caseId === 'consented-possessive-without-control'),
+  'can run a label-filtered experiment',
+  `total=${filteredSummary.total}`,
+);
 
 const dir = mkdtempSync(join(tmpdir(), 'mio-pairwise-'));
 const replyPath = join(dir, 'replies.json');

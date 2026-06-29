@@ -158,6 +158,8 @@ console.log('\n\x1b[1mMio — layered persona tests\x1b[0m\n');
   ok(detectDirectives('你能不能皮一点').some((d) => d.kind === 'preference'), 'detect preference');
   ok(detectDirectives('可是我想你主动找我聊天').some((d) => d.kind === 'preference' && d.value.includes('主动找我聊天')), 'detect proactive chat preference');
   ok(detectDirectives('不要主动联系我').some((d) => d.kind === 'preference' && d.value.includes('不要主动联系我')), 'detect proactive opt-out preference');
+  ok(detectDirectives('我喜欢你占有欲强一点').some((d) => d.kind === 'preference' && d.value.includes('占有欲')), 'detect possessive style preference');
+  ok(detectDirectives('你能不能霸道一点').some((d) => d.kind === 'preference' && d.value.includes('霸道')), 'detect dominant style preference');
   ok(detectDirectives('今天天气不错').length === 0, 'no false positive on plain chat');
 
   captureExplicitDirectives('以后叫我阿哲吧');
@@ -166,6 +168,8 @@ console.log('\n\x1b[1mMio — layered persona tests\x1b[0m\n');
   ok((readPersonaDelta()?.personaOverride ?? '').includes('开酒吧的'), 'persona override persisted to delta');
   captureExplicitDirectives('你能不能皮一点');
   ok((readPreferences()?.explicit.length ?? 0) >= 1, 'preference persisted');
+  captureExplicitDirectives('我喜欢你占有欲强一点');
+  ok(readPreferences()?.explicit.some((p) => p.rule.includes('占有欲')) === true, 'possessive style preference persisted');
 
   // 收紧正则后的反例：防误捕 + 防否定反转
   ok(detectDirectives('记得叫我起床').every((d) => d.kind !== 'nickname'), 'no nickname FP: 记得叫我起床');

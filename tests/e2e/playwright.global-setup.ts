@@ -31,6 +31,11 @@ async function getFreePort(): Promise<number> {
 }
 
 async function globalSetup(): Promise<void> {
+  // The shared E2E server is exercised by both browser route checks and API
+  // tests. Keep its limiter high, then test strict 429 behavior in isolation.
+  process.env.MIO_RATE_LIMIT_MAX ??= '500';
+  process.env.MIO_RATE_LIMIT_WINDOW_MS ??= '60000';
+
   // Suppress server startup logs during tests
   const origLog = console.log;
   const origError = console.error;

@@ -25,6 +25,7 @@ console.log('\n\x1b[1mMio — smart proactive isolation tests\x1b[0m\n');
 
 const {
   decideProactiveMessage,
+  isQuietHour,
   isExternalIMSession,
   recordProactiveMessage,
   updateActivityPattern,
@@ -41,6 +42,7 @@ try {
     minIntervalMinutes: 120,
     baseRate: 10,
     responseThreshold: 0,
+    quietHours: { enabled: false, startHour: 23, endHour: 8 },
   });
 
   const externalSessions = [
@@ -75,6 +77,26 @@ try {
   recordProactiveMessage(true);
   const cDecision = decideProactiveMessage('intimate', longAgo, 'user-c');
   ok(cDecision.shouldMessage, 'global fallback cooldown does not block per-user delivery');
+
+  ok(isQuietHour(23, { enabled: true, startHour: 23, endHour: 8 }), 'quiet hours support ranges that wrap past midnight');
+  ok(isQuietHour(7, { enabled: true, startHour: 23, endHour: 8 }), 'quiet hours include wrapped early-morning range');
+  ok(!isQuietHour(12, { enabled: true, startHour: 23, endHour: 8 }), 'quiet hours exclude daytime outside wrapped range');
+  ok(isQuietHour(10, { enabled: true, startHour: 9, endHour: 18 }), 'quiet hours support same-day ranges');
+  ok(!isQuietHour(18, { enabled: true, startHour: 9, endHour: 18 }), 'quiet hours end hour is exclusive');
+  ok(isQuietHour(3, { enabled: true, startHour: 0, endHour: 0 }), 'same start/end quiet hours mean all day');
+  ok(!isQuietHour(23, { enabled: false, startHour: 23, endHour: 8 }), 'disabled quiet hours do not suppress delivery');
+
+  const currentHour = new Date().getHours();
+  updateSmartProactiveConfig({
+    quietHours: {
+      enabled: true,
+      startHour: currentHour,
+      endHour: (currentHour + 1) % 24,
+    },
+  });
+  const quietDecision = decideProactiveMessage('intimate', longAgo, 'quiet-user');
+  ok(!quietDecision.shouldMessage, 'quiet hours suppress proactive delivery for current hour');
+  ok(quietDecision.reason.includes('quiet hours'), 'quiet-hours skip reason is explicit');
 } finally {
   Math.random = oldRandom;
 }

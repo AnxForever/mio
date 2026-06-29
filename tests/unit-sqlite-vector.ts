@@ -17,7 +17,7 @@
  *   npm run build && MIO_PROVIDER=mock node --experimental-strip-types tests/unit-sqlite-vector.ts
  */
 
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { EmbeddingProvider } from '../dist/memory/embedding.js';
@@ -106,6 +106,16 @@ async function main(): Promise<void> {
     store.deleteBySource('bookmark');
     assert(store.count() === 1, `delete left ${store.count()} entries`);
     assert(store.searchDense(norm([1, 0, 0, 0]), 5, 0.05).length === 0, 'dense rows must be gone after delete');
+  });
+
+  await test('sqlite-vector: quarantines malformed database and rebuilds', () => {
+    writeFileSync(join(mb, 'vector.db'), 'not a sqlite database');
+    store.upsertEntry({ id: 'after-corrupt', text: 'rebuilt', source: 'manual', timestamp: 't1', embeddingType: 'tf', embedding: { rebuilt: 1 } });
+    assert(store.count() === 1, `expected rebuilt db to contain 1 entry, got ${store.count()}`);
+    assert(
+      readdirSync(mb).some((name) => name.startsWith('vector.db.corrupt-')),
+      'corrupt vector.db must be preserved with a .corrupt-* suffix',
+    );
   });
 
   // ─── vector.ts layer — migration FIRST (one-time _migrated latch) ───

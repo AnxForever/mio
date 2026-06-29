@@ -360,7 +360,7 @@ async function main(): Promise<void> {
 
   // ─── Validation schemas ───
   {
-    const { personaBody, searchQuery, characterNameParam, wsClientMessageSchema } = await import('../dist/validation.js');
+    const { personaBody, searchQuery, characterNameParam, wsClientMessageSchema, userProfileEntryBody, userProfileEntryParam } = await import('../dist/validation.js');
 
     await test('validation: persona rejects path-like names', () => {
       const result = personaBody.safeParse({ name: '../evil', gender: 'female', style: '温柔' });
@@ -380,6 +380,66 @@ async function main(): Promise<void> {
     await test('validation: websocket chat enforces non-empty text', () => {
       assert(wsClientMessageSchema.safeParse({ type: 'chat', text: 'hi' }).success, 'valid chat accepted');
       assert(!wsClientMessageSchema.safeParse({ type: 'chat', text: '' }).success, 'empty chat rejected');
+    });
+
+    await test('validation: user profile entry body and id are strict', () => {
+      assert(userProfileEntryBody.safeParse({ content: '用户喜欢乌龙茶' }).success, 'valid profile entry accepted');
+      assert(!userProfileEntryBody.safeParse({ content: '' }).success, 'empty profile entry rejected');
+      assert(userProfileEntryParam.safeParse({ id: 'abcdef1234567890' }).success, 'valid entry id accepted');
+      assert(!userProfileEntryParam.safeParse({ id: '../profile' }).success, 'path-like entry id rejected');
+    });
+  }
+
+  // ─── User profile governance ───
+  {
+    const { hasDurableUserProfileSignal, isSyntheticProfileSignal } = await import('../dist/memory/profile-governance.js');
+    const { decideTargetFile } = await import('../dist/memory/consolidation-phases.js');
+    const { ensureBankStructure } = await import('../dist/memory/bank.js');
+    const { userProfilePath } = await import('../dist/memory/paths.js');
+    const profile = await import('../dist/server/user-profile.js');
+
+    await test('profile governance: detects durable user facts', () => {
+      assert(hasDurableUserProfileSignal('我喜欢乌龙茶'), 'preference is durable');
+      assert(hasDurableUserProfileSignal('我的工作是前端工程师'), 'job fact is durable');
+      assert(!hasDurableUserProfileSignal('今天天气真好'), 'weather chat is not durable');
+    });
+
+    await test('profile governance: filters synthetic test signals', () => {
+      assert(isSyntheticProfileSignal({ text: 'ws test', evidence: '[mock reply to: ws test]' }), 'ws mock test is synthetic');
+      assert(isSyntheticProfileSignal({ text: 'streaming test' }), 'streaming test is synthetic');
+      assert(!isSyntheticProfileSignal({ text: '我喜欢乌龙茶' }), 'real preference is not synthetic');
+    });
+
+    await test('consolidation: routes only durable exchanges into user profile', () => {
+      assertEq(decideTargetFile({
+        what: 'exchange: user said "我喜欢乌龙茶"',
+        evidence: 'agent replied: "记住啦"',
+      }), 'user-profile', 'preference route');
+      assertEq(decideTargetFile({
+        what: 'exchange: user said "今天天气真好"',
+        evidence: 'agent replied: "是啊"',
+      }), 'none', 'small talk route');
+      assertEq(decideTargetFile({
+        what: 'exchange: user said "ws test"',
+        evidence: 'agent replied: "[mock reply to: ws test]"',
+      }), 'none', 'synthetic route');
+    });
+
+    await test('user profile service: append, update, delete one entry', () => {
+      ensureBankStructure();
+      writeFileSync(userProfilePath(), '- [2026-06-01] 用户喜欢咖啡\n', 'utf-8');
+
+      const appended = profile.appendUserProfileEntry('用户喜欢乌龙茶');
+      assert(appended.content === '用户喜欢乌龙茶', 'append returns entry');
+      assert(profile.readUserProfileSnapshot().entries.some((e) => e.content === '用户喜欢乌龙茶'), 'appended entry is listed');
+
+      const updated = profile.updateUserProfileEntry(appended.id, '用户喜欢茉莉茶');
+      assert(updated !== null && updated.content === '用户喜欢茉莉茶', 'update returns updated entry');
+      assert(profile.readUserProfileSnapshot().entries.some((e) => e.content === '用户喜欢茉莉茶'), 'updated entry is listed');
+
+      const deleted = profile.deleteUserProfileEntry(updated.id);
+      assert(deleted, 'delete returns true');
+      assert(!profile.readUserProfileSnapshot().entries.some((e) => e.content === '用户喜欢茉莉茶'), 'deleted entry is gone');
     });
   }
 

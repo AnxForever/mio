@@ -240,6 +240,58 @@ async function main(): Promise<void> {
     });
   });
 
+  // 9. Proxy env vars are translated into an undici dispatcher for Node fetch.
+  await test('proxy: HTTPS proxy env adds a fetch dispatcher', async () => {
+    const oldHttpsProxy = process.env.https_proxy;
+    const oldNoProxy = process.env.no_proxy;
+    process.env.https_proxy = 'http://127.0.0.1:7897';
+    delete process.env.no_proxy;
+    let sawDispatcher = false;
+    const mock = ((_input: unknown, init?: RequestInit & { dispatcher?: unknown }) => {
+      sawDispatcher = Boolean(init?.dispatcher);
+      return Promise.resolve(new Response('ok', { status: 200 }));
+    }) as FetchFn;
+
+    try {
+      await withMockFetch(mock, async () => {
+        const res = await fetchWithRetry('https://api.openai.com/v1/models', {}, { maxRetries: 0, baseDelayMs: 1 });
+        assertEq(res.status, 200, 'status');
+        assert(sawDispatcher, 'proxy dispatcher should be attached');
+      });
+    } finally {
+      if (oldHttpsProxy === undefined) delete process.env.https_proxy;
+      else process.env.https_proxy = oldHttpsProxy;
+      if (oldNoProxy === undefined) delete process.env.no_proxy;
+      else process.env.no_proxy = oldNoProxy;
+    }
+  });
+
+  // 10. NO_PROXY keeps local/private bypasses from being sent through proxy.
+  await test('proxy: NO_PROXY bypasses matching hostnames', async () => {
+    const oldHttpsProxy = process.env.https_proxy;
+    const oldNoProxy = process.env.no_proxy;
+    process.env.https_proxy = 'http://127.0.0.1:7897';
+    process.env.no_proxy = 'api.openai.com';
+    let sawDispatcher = false;
+    const mock = ((_input: unknown, init?: RequestInit & { dispatcher?: unknown }) => {
+      sawDispatcher = Boolean(init?.dispatcher);
+      return Promise.resolve(new Response('ok', { status: 200 }));
+    }) as FetchFn;
+
+    try {
+      await withMockFetch(mock, async () => {
+        const res = await fetchWithRetry('https://api.openai.com/v1/models', {}, { maxRetries: 0, baseDelayMs: 1 });
+        assertEq(res.status, 200, 'status');
+        assert(!sawDispatcher, 'proxy dispatcher should be bypassed');
+      });
+    } finally {
+      if (oldHttpsProxy === undefined) delete process.env.https_proxy;
+      else process.env.https_proxy = oldHttpsProxy;
+      if (oldNoProxy === undefined) delete process.env.no_proxy;
+      else process.env.no_proxy = oldNoProxy;
+    }
+  });
+
   // ─── Summary ───
   const passed = results.filter((r) => r.passed).length;
   const total = results.length;

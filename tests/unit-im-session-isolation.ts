@@ -26,6 +26,19 @@ writeFileSync(
   'GLOBAL USER SECRET PROFILE',
   'utf-8',
 );
+writeFileSync(
+  join(dir, 'emotion-state.json'),
+  JSON.stringify({
+    myMood: 'OWNER_SECRET_MOOD',
+    userMood: 'OWNER_SECRET_USER_MOOD',
+    affection: 99,
+    energy: 'low',
+    lastInteraction: '2026-06-27T00:00:00.000Z',
+    unresolvedThread: null,
+    recentTopics: ['OWNER_SECRET_TOPIC'],
+  }, null, 2),
+  'utf-8',
+);
 
 interface TestResult {
   ok: boolean;
@@ -84,7 +97,7 @@ console.log('\n\x1b[1mMio — IM session isolation tests\x1b[0m\n');
 
 const { runTurn, isIsolatedMemorySession } = await import('../dist/core/agent-loop.js');
 const { readBookmarks } = await import('../dist/memory/bank.js');
-const { readTranscript } = await import('../dist/memory/transcript.js');
+const { appendTranscript, readTranscript } = await import('../dist/memory/transcript.js');
 
 const sessionId = 'openai-wx-user-42_im_wechat-abc123';
 const beforeBookmarks = readBookmarks();
@@ -101,10 +114,14 @@ const modelContext = [
 
 ok(isIsolatedMemorySession(sessionId), 'OpenAI bridge session is isolated');
 ok(isIsolatedMemorySession('onebot-private-10001-deadbeef'), 'OneBot private session is isolated');
+ok(isIsolatedMemorySession('wechat-native-bot_1-user_1'), 'native WeChat session is isolated');
 ok(!isIsolatedMemorySession('local-web-session'), 'local web session is not forced into IM isolation');
 ok(modelContext.includes('IM 联系人隔离'), 'isolated prompt includes privacy constraint');
+ok(modelContext.includes('不要自造等待'), 'isolated prompt prevents fabricated waiting/ignored arcs');
 ok(!modelContext.includes('GLOBAL SECRET MEMORY'), 'isolated prompt omits global bookmarks');
 ok(!modelContext.includes('GLOBAL USER SECRET PROFILE'), 'isolated prompt omits global user profile');
+ok(!modelContext.includes('OWNER_SECRET_MOOD'), 'isolated prompt omits global emotion mood');
+ok(!modelContext.includes('OWNER_SECRET_TOPIC'), 'isolated prompt omits global emotion topics');
 ok(
   !provider.messages.some((message) => String(message.content).includes('GLOBAL SECRET MEMORY')),
   'isolated conversation messages omit global bookmarks',
@@ -138,6 +155,32 @@ ok(!exposedTools.includes('session_read'), 'isolated sessions do not expose tran
 ok(leakProbe.toolCallCount === 1, 'forbidden tool call was attempted during leak probe');
 ok(leakProbeContext.includes('not available in isolated IM contact sessions'), 'forbidden hidden tool call is denied at execution');
 ok(!leakProbeContext.includes('GLOBAL SECRET MEMORY'), 'forbidden hidden tool call does not leak global memory content');
+
+const timedSessionId = 'openai-wx-time-user_im_wechat-abcdef';
+appendTranscript(timedSessionId, {
+  type: 'message',
+  timestamp: '2026-06-27T16:11:10.000Z',
+  role: 'user',
+  content: '有点困了',
+});
+appendTranscript(timedSessionId, {
+  type: 'message',
+  timestamp: '2026-06-27T16:11:14.000Z',
+  role: 'assistant',
+  content: '那早点睡',
+});
+const timedProvider = new CaptureProvider();
+await runTurn(
+  { text: '在干嘛', sessionId: timedSessionId },
+  { provider: timedProvider },
+);
+const timedContext = [
+  timedProvider.systemPrompt,
+  ...timedProvider.messages.map((message) => typeof message.content === 'string' ? message.content : JSON.stringify(message.content)),
+].join('\n\n');
+ok(timedContext.includes('IM 时间边界'), 'isolated prompt includes timestamped IM timeline');
+ok(/\d{4}-\d{2}-\d{2} \d{2}:\d{2} 对方: 有点困了/.test(timedContext), 'timeline preserves old message timestamp');
+ok(timedContext.includes('本轮刚收到 对方: 在干嘛'), 'timeline marks only current message as newly received');
 
 const passed = results.filter((r) => r.ok).length;
 console.log('');

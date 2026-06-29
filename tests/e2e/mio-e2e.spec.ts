@@ -27,7 +27,10 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { createServer } from 'node:http';
+import express from 'express';
 import WebSocket from 'ws';
+import { createRateLimiter } from '../../dist/server/rate-limit.js';
 
 const BASE_URL = () => process.env.MIO_TEST_BASE_URL ?? 'http://127.0.0.1:0';
 const WS_URL = () => process.env.MIO_TEST_WS_URL ?? 'ws://127.0.0.1:0/ws';
@@ -45,6 +48,39 @@ interface ChatResponse {
 interface WsMessage {
   type: string;
   [key: string]: unknown;
+}
+
+interface ProbeServer {
+  baseUrl: string;
+  close: () => Promise<void>;
+}
+
+async function startRateLimitProbe(): Promise<ProbeServer> {
+  const app = express();
+  app.use(createRateLimiter({ max: 3, windowMs: 5_000 }));
+  app.get('/health', (_req, res) => res.json({ ok: true }));
+  app.post('/chat', (_req, res) => res.json({ ok: true }));
+
+  const server = createServer(app);
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      server.off('error', reject);
+      resolve();
+    });
+  });
+
+  const address = server.address();
+  if (!address || typeof address !== 'object') {
+    throw new Error('rate-limit probe did not expose a port');
+  }
+
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    close: () => new Promise<void>((resolve, reject) => {
+      server.close((err) => (err ? reject(err) : resolve()));
+    }),
+  };
 }
 
 /**
@@ -127,6 +163,54 @@ test('GET /status returns config + emotion + provider info', async ({ request })
   expect(body).toHaveProperty('embedding');
   expect(body.embedding).toHaveProperty('provider');
   expect(body.embedding).toHaveProperty('indexEntries');
+});
+
+test('Admin workspace config can be read and updated', async ({ request }) => {
+  const initial = await request.get(`${BASE_URL()}/admin/workspace-config`);
+  expect(initial.status()).toBe(200);
+  const initialBody = await initial.json();
+  const original = initialBody.config;
+  expect(original).toHaveProperty('skills');
+  expect(Array.isArray(original.skills)).toBe(true);
+
+  const e2eSkill = {
+    id: 'e2e-config-skill',
+    name: 'E2E config skill',
+    description: 'Temporary config row used by Playwright.',
+    source: 'external',
+    enabled: true,
+    status: 'planned',
+  };
+  const patchedSkills = [
+    ...original.skills.filter((skill: { id?: string }) => skill.id !== e2eSkill.id),
+    e2eSkill,
+  ];
+
+  try {
+    const saved = await request.put(`${BASE_URL()}/admin/workspace-config`, {
+      headers: { 'Content-Type': 'application/json' },
+      data: { skills: patchedSkills },
+    });
+    expect(saved.status()).toBe(200);
+    const savedBody = await saved.json();
+    expect(savedBody).toHaveProperty('ok', true);
+    expect(savedBody.config.skills.some((skill: { id?: string }) => skill.id === e2eSkill.id)).toBe(true);
+
+    const reread = await request.get(`${BASE_URL()}/admin/workspace-config`);
+    const rereadBody = await reread.json();
+    expect(rereadBody.config.skills.some((skill: { id?: string }) => skill.id === e2eSkill.id)).toBe(true);
+  } finally {
+    await request.put(`${BASE_URL()}/admin/workspace-config`, {
+      headers: { 'Content-Type': 'application/json' },
+      data: {
+        persona: original.persona,
+        roles: original.roles,
+        skills: original.skills,
+        plugins: original.plugins,
+        mcp: original.mcp,
+      },
+    });
+  }
 });
 
 // ─── Test 3: Chat flow ───
@@ -465,24 +549,20 @@ test('Session continuity — two messages with same sessionId', async ({ request
 // ─── Test 15: Rate limiting returns 429 (bonus) ───
 
 test('Rate limiter returns 429 after exceeding limit', async ({ request }) => {
-  // The rate limiter is configured with default max=30 per window.
-  // We'll blast 35 requests from a single IP and expect at least one 429.
-  const promises: Promise<{ status: number }>[] = [];
-  for (let i = 0; i < 35; i++) {
-    promises.push(
-      request
-        .post(`${BASE_URL()}/chat`, {
-          data: { text: `rate limit test ${i}` },
-          headers: { 'Content-Type': 'application/json' },
-        })
-        .then((r) => ({ status: r.status() })),
-    );
-  }
-  const results = await Promise.all(promises);
-  const rateLimited = results.filter((r) => r.status === 429);
-  expect(rateLimited.length).toBeGreaterThan(0);
+  const probe = await startRateLimitProbe();
+  try {
+    const statuses: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      const res = await request.post(`${probe.baseUrl}/chat`);
+      statuses.push(res.status());
+    }
 
-  // Health endpoint should never be rate-limited
-  const healthRes = await request.get(`${BASE_URL()}/health`);
-  expect(healthRes.status()).toBe(200);
+    expect(statuses).toEqual([200, 200, 200, 429]);
+
+    // Health endpoint should never be rate-limited.
+    const healthRes = await request.get(`${probe.baseUrl}/health`);
+    expect(healthRes.status()).toBe(200);
+  } finally {
+    await probe.close();
+  }
 });

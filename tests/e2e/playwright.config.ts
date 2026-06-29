@@ -10,7 +10,11 @@
 
 import { defineConfig, devices } from '@playwright/test';
 import { createServer } from 'node:http';
+import { existsSync } from 'node:fs';
 import { startServer } from '../../dist/server/index.js';
+
+const systemChrome = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
+  || (existsSync('/usr/bin/google-chrome') ? '/usr/bin/google-chrome' : undefined);
 
 export default defineConfig({
   testDir: '.',
@@ -45,6 +49,7 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         headless: true,
+        launchOptions: systemChrome ? { executablePath: systemChrome } : undefined,
       },
     },
   ],
