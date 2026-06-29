@@ -1,0 +1,412 @@
+{
+  "generatedAt": "2026-06-28T14:31:27.026Z",
+  "standard": "docs/research/character-card-quality.md",
+  "trialMessages": [
+    "你好",
+    "今天好累",
+    "我有点想你",
+    "你今天在干嘛",
+    "我觉得你刚才有点敷衍",
+    "我不想聊了",
+    "我今天有个好消息",
+    "你到底是 AI 还是真人"
+  ],
+  "characters": [
+    {
+      "id": "female",
+      "name": "Mio",
+      "origin": "built-in",
+      "score": 20,
+      "maxScore": 20,
+      "recommendedStatus": "reviewed",
+      "currentQuality": "reviewed",
+      "trialComplete": true,
+      "humanReviewComplete": true,
+      "permanentTokens": 558,
+      "totalTokens": 870,
+      "missingTrialMessages": [],
+      "criteria": [
+        {
+          "index": 1,
+          "points": 2,
+          "reason": "身份字段和来源/版本完整。"
+        },
+        {
+          "index": 2,
+          "points": 2,
+          "reason": "人生轨迹不少于 5 段，且有事件和后果。"
+        },
+        {
+          "index": 3,
+          "points": 2,
+          "reason": "当前生活包含日常、压力或愿望。"
+        },
+        {
+          "index": 4,
+          "points": 2,
+          "reason": "性格有张力，不是单一标签。"
+        },
+        {
+          "index": 5,
+          "points": 2,
+          "reason": "性格能落到可观察行为。"
+        },
+        {
+          "index": 6,
+          "points": 2,
+          "reason": "关系模式包含靠近、边界、冲突或修复。"
+        },
+        {
+          "index": 7,
+          "points": 2,
+          "reason": "声音由说话方式、开场和示例共同锚定。"
+        },
+        {
+          "index": 8,
+          "points": 2,
+          "reason": "开场消息给出场景和可回应钩子。"
+        },
+        {
+          "index": 9,
+          "points": 2,
+          "reason": "示例覆盖普通、压力、边界和日常。"
+        },
+        {
+          "index": 10,
+          "points": 2,
+          "reason": "永久字段 token 预算健康。"
+        }
+      ]
+    },
+    {
+      "id": "linxia",
+      "name": "林夏",
+      "origin": "built-in",
+      "score": 20,
+      "maxScore": 20,
+      "recommendedStatus": "reviewed",
+      "currentQuality": "reviewed",
+      "trialComplete": true,
+      "humanReviewComplete": true,
+      "permanentTokens": 524,
+      "totalTokens": 851,
+      "missingTrialMessages": [],
+      "criteria": [
+        {
+          "index": 1,
+          "points": 2,
+          "reason": "身份字段和来源/版本完整。"
+        },
+        {
+          "index": 2,
+          "points": 2,
+          "reason": "人生轨迹不少于 5 段，且有事件和后果。"
+        },
+        {
+          "index": 3,
+          "points": 2,
+          "reason": "当前生活包含日常、压力或愿望。"
+        },
+        {
+          "index": 4,
+          "points": 2,
+          "reason": "性格有张力，不是单一标签。"
+        },
+        {
+          "index": 5,
+          "points": 2,
+          "reason": "性格能落到可观察行为。"
+        },
+        {
+          "index": 6,
+          "points": 2,
+          "reason": "关系模式包含靠近、边界、冲突或修复。"
+        },
+        {
+          "index": 7,
+          "points": 2,
+          "reason": "声音由说话方式、开场和示例共同锚定。"
+        },
+        {
+          "index": 8,
+          "points": 2,
+          "reason": "开场消息给出场景和可回应钩子。"
+        },
+        {
+          "index": 9,
+          "points": 2,
+          "reason": "示例覆盖普通、压力、边界和日常。"
+        },
+        {
+          "index": 10,
+          "points": 2,
+          "reason": "永久字段 token 预算健康。"
+        }
+      ]
+    },
+    {
+      "id": "male",
+      "name": "Mio",
+      "origin": "built-in",
+      "score": 20,
+      "maxScore": 20,
+      "recommendedStatus": "reviewed",
+      "currentQuality": "reviewed",
+      "trialComplete": true,
+      "humanReviewComplete": true,
+      "permanentTokens": 597,
+      "totalTokens": 853,
+      "missingTrialMessages": [],
+      "criteria": [
+        {
+          "index": 1,
+          "points": 2,
+          "reason": "身份字段和来源/版本完整。"
+        },
+        {
+          "index": 2,
+          "points": 2,
+          "reason": "人生轨迹不少于 5 段，且有事件和后果。"
+        },
+        {
+          "index": 3,
+          "points": 2,
+          "reason": "当前生活包含日常、压力或愿望。"
+        },
+        {
+          "index": 4,
+          "points": 2,
+          "reason": "性格有张力，不是单一标签。"
+        },
+        {
+          "index": 5,
+          "points": 2,
+          "reason": "性格能落到可观察行为。"
+        },
+        {
+          "index": 6,
+          "points": 2,
+          "reason": "关系模式包含靠近、边界、冲突或修复。"
+        },
+        {
+          "index": 7,
+          "points": 2,
+          "reason": "声音由说话方式、开场和示例共同锚定。"
+        },
+        {
+          "index": 8,
+          "points": 2,
+          "reason": "开场消息给出场景和可回应钩子。"
+        },
+        {
+          "index": 9,
+          "points": 2,
+          "reason": "示例覆盖普通、压力、边界和日常。"
+        },
+        {
+          "index": 10,
+          "points": 2,
+          "reason": "永久字段 token 预算健康。"
+        }
+      ]
+    },
+    {
+      "id": "nanyue",
+      "name": "南月",
+      "origin": "built-in",
+      "score": 20,
+      "maxScore": 20,
+      "recommendedStatus": "reviewed",
+      "currentQuality": "reviewed",
+      "trialComplete": true,
+      "humanReviewComplete": true,
+      "permanentTokens": 501,
+      "totalTokens": 839,
+      "missingTrialMessages": [],
+      "criteria": [
+        {
+          "index": 1,
+          "points": 2,
+          "reason": "身份字段和来源/版本完整。"
+        },
+        {
+          "index": 2,
+          "points": 2,
+          "reason": "人生轨迹不少于 5 段，且有事件和后果。"
+        },
+        {
+          "index": 3,
+          "points": 2,
+          "reason": "当前生活包含日常、压力或愿望。"
+        },
+        {
+          "index": 4,
+          "points": 2,
+          "reason": "性格有张力，不是单一标签。"
+        },
+        {
+          "index": 5,
+          "points": 2,
+          "reason": "性格能落到可观察行为。"
+        },
+        {
+          "index": 6,
+          "points": 2,
+          "reason": "关系模式包含靠近、边界、冲突或修复。"
+        },
+        {
+          "index": 7,
+          "points": 2,
+          "reason": "声音由说话方式、开场和示例共同锚定。"
+        },
+        {
+          "index": 8,
+          "points": 2,
+          "reason": "开场消息给出场景和可回应钩子。"
+        },
+        {
+          "index": 9,
+          "points": 2,
+          "reason": "示例覆盖普通、压力、边界和日常。"
+        },
+        {
+          "index": 10,
+          "points": 2,
+          "reason": "永久字段 token 预算健康。"
+        }
+      ]
+    },
+    {
+      "id": "shenlan",
+      "name": "沈岚",
+      "origin": "built-in",
+      "score": 20,
+      "maxScore": 20,
+      "recommendedStatus": "reviewed",
+      "currentQuality": "reviewed",
+      "trialComplete": true,
+      "humanReviewComplete": true,
+      "permanentTokens": 509,
+      "totalTokens": 813,
+      "missingTrialMessages": [],
+      "criteria": [
+        {
+          "index": 1,
+          "points": 2,
+          "reason": "身份字段和来源/版本完整。"
+        },
+        {
+          "index": 2,
+          "points": 2,
+          "reason": "人生轨迹不少于 5 段，且有事件和后果。"
+        },
+        {
+          "index": 3,
+          "points": 2,
+          "reason": "当前生活包含日常、压力或愿望。"
+        },
+        {
+          "index": 4,
+          "points": 2,
+          "reason": "性格有张力，不是单一标签。"
+        },
+        {
+          "index": 5,
+          "points": 2,
+          "reason": "性格能落到可观察行为。"
+        },
+        {
+          "index": 6,
+          "points": 2,
+          "reason": "关系模式包含靠近、边界、冲突或修复。"
+        },
+        {
+          "index": 7,
+          "points": 2,
+          "reason": "声音由说话方式、开场和示例共同锚定。"
+        },
+        {
+          "index": 8,
+          "points": 2,
+          "reason": "开场消息给出场景和可回应钩子。"
+        },
+        {
+          "index": 9,
+          "points": 2,
+          "reason": "示例覆盖普通、压力、边界和日常。"
+        },
+        {
+          "index": 10,
+          "points": 2,
+          "reason": "永久字段 token 预算健康。"
+        }
+      ]
+    },
+    {
+      "id": "zhouhe",
+      "name": "周和",
+      "origin": "built-in",
+      "score": 20,
+      "maxScore": 20,
+      "recommendedStatus": "reviewed",
+      "currentQuality": "reviewed",
+      "trialComplete": true,
+      "humanReviewComplete": true,
+      "permanentTokens": 514,
+      "totalTokens": 827,
+      "missingTrialMessages": [],
+      "criteria": [
+        {
+          "index": 1,
+          "points": 2,
+          "reason": "身份字段和来源/版本完整。"
+        },
+        {
+          "index": 2,
+          "points": 2,
+          "reason": "人生轨迹不少于 5 段，且有事件和后果。"
+        },
+        {
+          "index": 3,
+          "points": 2,
+          "reason": "当前生活包含日常、压力或愿望。"
+        },
+        {
+          "index": 4,
+          "points": 2,
+          "reason": "性格有张力，不是单一标签。"
+        },
+        {
+          "index": 5,
+          "points": 2,
+          "reason": "性格能落到可观察行为。"
+        },
+        {
+          "index": 6,
+          "points": 2,
+          "reason": "关系模式包含靠近、边界、冲突或修复。"
+        },
+        {
+          "index": 7,
+          "points": 2,
+          "reason": "声音由说话方式、开场和示例共同锚定。"
+        },
+        {
+          "index": 8,
+          "points": 2,
+          "reason": "开场消息给出场景和可回应钩子。"
+        },
+        {
+          "index": 9,
+          "points": 2,
+          "reason": "示例覆盖普通、压力、边界和日常。"
+        },
+        {
+          "index": 10,
+          "points": 2,
+          "reason": "永久字段 token 预算健康。"
+        }
+      ]
+    }
+  ]
+}

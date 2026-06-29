@@ -114,7 +114,9 @@ WeChat bridge:
 ```bash
 scripts/wechat-bridge/prepare-weclaw-session.sh  # build patched WeClaw
 scripts/wechat-bridge/configure.mjs              # sync .env + ~/.weclaw/config.json
+scripts/wechat-bridge/preflight-companion-gate.sh # run companion gates before restart
 scripts/wechat-bridge/start.sh                   # start Mio + WeClaw
+scripts/wechat-bridge/restart-verified.sh        # gate + stop + start + status
 scripts/wechat-bridge/status.sh                  # check health/config
 scripts/wechat-bridge/stop.sh                    # stop managed processes
 ```
@@ -122,6 +124,25 @@ scripts/wechat-bridge/stop.sh                    # stop managed processes
 `configure.mjs` generates `MIO_AUTH_TOKEN` when missing, sets
 `MIO_OPENAI_REQUIRE_SESSION=true`, and writes the same token into the WeClaw
 HTTP agent config as `api_key`.
+
+Before testing a new persona/memory change through WeChat, prefer:
+
+```bash
+npm run wechat:restart:verified
+```
+
+By default this runs the companion provider matrix in `smoke` mode: compiled
+persona prompt audit, quality gate, reply rubric, redteam, timestamped WeChat
+replay, and reviewed regression replay. Set
+`MIO_COMPANION_GATE_MODE=full` to include scenario actors, persona cases,
+pairwise experiments, and mining. Set `MIO_COMPANION_PROVIDERS` and
+`MIO_COMPANION_MODELS` to run real-provider gates before restart, for example:
+
+```bash
+MIO_COMPANION_PROVIDERS=mock,deepseek \
+MIO_COMPANION_MODELS=deepseek:deepseek-chat \
+npm run wechat:restart:verified
+```
 
 Use the patched WeClaw binary built by `prepare-weclaw-session.sh`. The patch
 adds the WeChat `conversationID` to:
@@ -279,16 +300,96 @@ Streaming: enabled
 The official ChatGPT web product does not directly load a local custom model
 endpoint; use a compatible client or gateway when you need this bridge.
 
+## Mio Native WeChat/iLink
+
+Primary product path: Mio can run a native WeChat iLink channel from the admin
+console. This is the OpenClaw/Hermes-style QR flow: generate a WeChat connection
+QR, scan it in WeChat, Mio saves the iLink bot credentials locally, then a
+background worker long-polls `getUpdates` and sends replies through
+`sendMessage`.
+
+Admin UI:
+
+```text
+http://127.0.0.1:3000/#/channels
+```
+
+Runtime API:
+
+```text
+GET  /admin/wechat-native/status
+POST /admin/wechat-native/login/start
+POST /admin/wechat-native/login/poll
+POST /admin/wechat-native/runtime/start
+POST /admin/wechat-native/runtime/stop
+POST /admin/wechat-native/runtime/restart
+```
+
+State is stored under:
+
+```text
+data/wechat-native/accounts/<accountId>/
+  account.json          # iLink bot token, chmod 0600 when supported
+  sync.json             # getUpdates cursor
+  context-tokens.json   # per-contact reply context token
+```
+
+Incoming direct messages are routed to isolated sessions:
+
+```text
+wechat-native-<account>-<contact>
+```
+
+That keeps transcripts and per-contact preferences under the normal Mio
+per-session boundaries. Current native support is intentionally narrow:
+private text messages and WeChat-provided voice transcription. Media upload,
+media download, allowlists, quota controls, and group policy are the next
+product-hardening layer.
+
 ## WeChat ClawBot/OpenClaw
 
-Use OpenClaw/ClawBot for QR login and WeChat message transport, then point its
-model/provider configuration at Mio:
+Use WeChat's ClawBot/OpenClaw for bot entry and WeChat message transport, then
+point its model/provider configuration at Mio. In this mode Mio is not proxying
+or logging into a personal WeChat account; Mio is just the OpenAI-compatible
+backend that ClawBot calls.
 
 ```text
 base_url: http://127.0.0.1:3000/v1
 model: mio
 api_key: change-me
 ```
+
+### Let other people try it
+
+For ClawBot-based trials, do not ask testers to scan a Mio or WeClaw login QR.
+Give them the ClawBot/robot entry that WeChat provides: bot QR, invite link, or
+the conversation entry inside WeChat. The trial flow should be:
+
+1. Deploy Mio somewhere reachable by ClawBot, preferably behind HTTPS:
+   `https://mio.example.com/v1`.
+2. Set `MIO_AUTH_TOKEN` to a strong token and use the same value as ClawBot's
+   OpenAI-compatible API key.
+3. Set `MIO_OPENAI_REQUIRE_SESSION=true` so requests without a stable user or
+   conversation id are rejected instead of being merged into one fallback
+   session.
+4. Configure ClawBot's custom provider:
+   `base_url=https://mio.example.com/v1`, `model=mio`, `api_key=<token>`,
+   streaming on if supported.
+5. Share the ClawBot bot QR/link/conversation entry with testers. They scan or
+   open that WeChat bot entry and chat there.
+
+The important gateway requirement is stable identity. ClawBot should pass one
+of these on every request:
+
+- `user`
+- `metadata.conversation.id`
+- `X-OpenClaw-User-Id`
+- `X-WeChat-User-Id`
+- `X-Mio-Session-Id`
+
+Mio normalizes that value into an `openai-*` session. Different testers then get
+separate transcripts, per-user preferences, persona deltas, and activity files
+under `data/users/<sessionId>/`.
 
 Copyable provider block:
 

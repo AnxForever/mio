@@ -1,5 +1,9 @@
 # Mio 微信桥 · VPS 24/7 部署
 
+> 适用范围：这份文档是“自建 WeClaw/本地桥接进程”的部署方式，会涉及微信登录态。
+> 如果使用微信自带的 ClawBot/OpenClaw 作为机器人入口，不走这里的扫码登录流程；
+> 请看 [IM Bridge: WeChat ClawBot/OpenClaw and QQ](./im-bridge.md) 的 ClawBot 章节。
+
 把 Mio 后端 + WeClaw（微信扫码接入，与 OpenClaw/Hermes/zcode 同一套机制）常驻在一台
 Linux VPS 上，本地电脑关机/断网都不影响。
 
@@ -40,6 +44,44 @@ bash scripts/wechat-bridge/status.sh          # 健康检查
 ```
 登录后，从另一个微信给登录号发消息，Mio 即以人格回复。
 登录态保存在 `~/.weclaw/`，之后自动恢复。
+
+上线前想确认微信里测到的是最新行为，用带伴侣门禁的重启：
+
+```bash
+npm run wechat:restart:verified
+```
+
+默认 `MIO_COMPANION_GATE_MODE=smoke`，会先跑 compiled persona prompt audit、quality gate、reply rubric、redteam、时间戳微信回放和已审核回归库，通过后才 stop/start。需要完整离线聊天测试时：
+
+```bash
+MIO_COMPANION_GATE_MODE=full npm run wechat:restart:verified
+```
+
+需要多模型/真实 provider 门禁时：
+
+```bash
+MIO_COMPANION_PROVIDERS=mock,deepseek \
+MIO_COMPANION_MODELS=deepseek:deepseek-chat \
+npm run wechat:restart:verified
+```
+
+### 多人试用与用户隔离
+如果你用的是微信 ClawBot/OpenClaw，请不要按本节理解扫码流程。ClawBot 模式下，
+Mio 只是一个 OpenAI-compatible 后端；别人扫的是 ClawBot/机器人入口，由 ClawBot
+把消息转给 Mio。
+
+无论是 ClawBot/OpenClaw 还是自建 WeClaw，只要网关传入稳定的 per-contact session
+hint（例如 `user`、`metadata.conversation.id`、`X-OpenClaw-User-Id` 或
+`X-WeChat-User-Id`），Mio 都会按 `openai-*` session 做隔离：
+
+| 内容 | 多联系人隔离状态 |
+| --- | --- |
+| 对话记录 | `data/transcripts/<sessionId>.jsonl`，按联系人分开 |
+| 显式偏好/称呼/人格微调 | `data/users/<sessionId>/`，按联系人分开 |
+| 可用工具 | 外部 IM 只暴露 `current_time`，不能读文件、全局记忆或其他 transcript |
+| 全局 memory-bank / 用户资料 / 共同回忆 | 外部 IM prompt 不读取，普通聊天也不写入 |
+| 情绪/关系进展 | 外部 IM 使用中性默认上下文，不继承本地主人或其他联系人的全局状态 |
+| 活跃时间模型 | 外部 IM 只写 `data/users/<sessionId>/user-activity.json`，不混入全局聚合 |
 
 ## 4. 开机自启（systemd，VPS 重启自恢复）
 首次跑通后，用 systemd 托管，保证崩溃/重启自动拉起。把 `<USER>` 换成你的用户名。
