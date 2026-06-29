@@ -1,7 +1,0 @@
-target_variant,baseline_variant,comparisons,negative_composite,positive_composite,same_composite,no_gain_with_more_tokens,mean_delta_composite,mean_delta_memory,mean_delta_persona,mean_delta_prompt_tokens
-persona,window,60,18,15,27,45,-0.015,0.074,-0.104,819.017
-persona,rag,60,17,17,26,43,-0.006,0.039,-0.042,605.217
-persona_affect,window,60,28,10,22,50,-0.044,0.061,-0.179,944.883
-persona_affect,rag,60,17,13,30,47,-0.035,0.026,-0.117,731.083
-full,window,60,19,15,26,41,-0.004,0.04,-0.154,932.317
-full,rag,60,15,20,25,39,0.005,0.006,-0.092,718.517

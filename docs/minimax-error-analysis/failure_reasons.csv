@@ -1,7 +1,0 @@
-failure_reason,comparisons
-extra_context_no_gain,118
-context_not_used_or_not_retrieved,92
-literal_success_signal_miss,53
-undetermined_needs_prompt_trace,12
-persona_empty_or_silence_penalty,9
-metric_conflict_ghost,5
