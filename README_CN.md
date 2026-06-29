@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/版本-0.6.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2022-brightgreen" alt="Node">
   <img src="https://img.shields.io/badge/协议-MIT-green" alt="License">
-  <img src="https://img.shields.io/badge/测试-184%20%2B%2011%20e2e-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/测试-184%20%2B%20e2e-brightgreen" alt="Tests">
 </p>
 
 <p align="center">
@@ -90,14 +90,17 @@ npm run build        # 编译 TypeScript + workspace packages
 npm run typecheck    # 根项目 + workspace 类型检查
 npm run dev          # REPL 交互模式
 npm test             # 184 项检查（核心 + Web view-model）
-npm run test:e2e     # 11 项 Playwright E2E 测试
+npm run test:e2e     # Playwright E2E 测试
 ```
 
 ## 文档
 
-- **[CLAUDE.md](CLAUDE.md)** — 完整架构、设计决策、API 端点、编码规范
-- **[docs/mio-showcase-pack-cn.md](docs/mio-showcase-pack-cn.md)** — 产品展示包：定位、架构图、demo 脚本、类人评估指标、Web 展示改造建议
+- **[AGENTS.md](AGENTS.md)** — 完整架构、设计决策、API 端点、编码规范（事实来源）
+- **[docs/deployment.md](docs/deployment.md)** — 生产部署、Docker/systemd、反向代理、CORS、健康检查、日志
+- **[docs/im-bridge.md](docs/im-bridge.md)** — OpenAI 兼容桥接：微信、QQ、ChatGPT 类客户端及自定义网关
 - **[docs/humanlike-agent-architecture.md](docs/humanlike-agent-architecture.md)** — 类人陪伴 Agent 技术架构说明
+- **[docs/north-star-architecture.md](docs/north-star-architecture.md)** — 北极星架构：自我循环
+- **[docs/architecture/](docs/architecture/)** — ADR（架构决策记录）与 RFC（改进提案）
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — 贡献指南
 - **[README.md](README.md)** — English
 

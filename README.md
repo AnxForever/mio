@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/version-0.6.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2022-brightgreen" alt="Node">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
-  <img src="https://img.shields.io/badge/tests-240%20%2B%2015%20e2e-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-184%20%2B%20e2e-brightgreen" alt="Tests">
 </p>
 
 <p align="center">
@@ -89,17 +89,18 @@ packages/
 npm run build        # tsc + workspace packages
 npm run typecheck    # root + workspace typecheck
 npm run dev          # REPL
-npm test             # 240 checks (core + web view-models)
-npm run test:e2e     # 15 Playwright E2E tests
+npm test             # 184 checks (core + web view-models)
+npm run test:e2e     # Playwright E2E tests
 ```
 
 ## Documentation
 
-- **[CLAUDE.md](CLAUDE.md)** — architecture, design decisions, API endpoints, conventions
-- **[docs/mio-showcase-pack-cn.md](docs/mio-showcase-pack-cn.md)** — Chinese product showcase pack: positioning, architecture diagrams, demo script, humanlike metrics, web presentation plan
-- **[docs/humanlike-agent-architecture.md](docs/humanlike-agent-architecture.md)** — Chinese technical architecture explanation for the humanlike companion design
+- **[AGENTS.md](AGENTS.md)** — architecture, design decisions, API endpoints, conventions (source of truth)
 - **[docs/deployment.md](docs/deployment.md)** — production deployment, Docker/systemd, reverse proxy, CORS, health checks, logs
 - **[docs/im-bridge.md](docs/im-bridge.md)** — OpenAI-compatible bridge for WeChat, QQ, ChatGPT-like clients, and custom gateways
+- **[docs/humanlike-agent-architecture.md](docs/humanlike-agent-architecture.md)** — Chinese technical architecture explanation for the humanlike companion design
+- **[docs/north-star-architecture.md](docs/north-star-architecture.md)** — Chinese north-star architecture: the self loop
+- **[docs/architecture/](docs/architecture/)** — ADRs (architecture decisions) and RFCs (improvement proposals)
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — setup, code style, PR process
 - **[README_CN.md](README_CN.md)** — 中文
 
