@@ -29,8 +29,8 @@ export interface RateLimiterOptions {
 
 function resolveOptions(opts?: Partial<RateLimiterOptions>): RateLimiterOptions {
   return {
-    windowMs: parseInt(process.env.MIO_RATE_LIMIT_WINDOW_MS ?? '', 10) || opts?.windowMs || 60_000,
-    max: parseInt(process.env.MIO_RATE_LIMIT_MAX ?? '', 10) || opts?.max || 30,
+    windowMs: opts?.windowMs ?? (parseInt(process.env.MIO_RATE_LIMIT_WINDOW_MS ?? '', 10) || 60_000),
+    max: opts?.max ?? (parseInt(process.env.MIO_RATE_LIMIT_MAX ?? '', 10) || 30),
   };
 }
 

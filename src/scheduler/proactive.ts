@@ -29,6 +29,8 @@ import { buildPreferencePrompt } from '../persona/layered.js';
 import { appendReplyIntervention } from '../core/reply-quality-gate.js';
 import { routeTurn, type TurnRiskTag } from '../core/turn-router.js';
 import type { PersonaRiskLevel } from '../persona/critic.js';
+import { buildTemporalTurnContext } from '../memory/temporal-state.js';
+import { appendProactiveDecisionTrace } from './proactive-trace.js';
 
 /** 主动消息类型 */
 export type ProactiveMessageType = 'morning' | 'evening' | 'random_checkin' | 'emotional_support';
@@ -244,13 +246,40 @@ export class ProactiveScheduler {
       logger.info(
         `[proactive] stage ${relationshipState.stage} does not allow proactive messages`,
       );
+      appendProactiveDecisionTrace({
+        type,
+        userId,
+        stage: relationshipState.stage,
+        outcome: 'skipped',
+        phase: 'permission',
+        reasonCode: 'stage_not_allowed',
+        reason: `Relationship stage ${relationshipState.stage} does not allow proactive messages.`,
+      });
       return null;
     }
 
     // 2b. Smart scheduler gate (unless disabled by feature flag or env var)
     const recordSmartOutcome = opts.recordSmartOutcome ?? true;
+    const temporalSessionId = userId ?? this.ctx?.sessionId;
+    const quietState = activeNoInterruptState(temporalSessionId);
+    if (quietState) {
+      logger.info(`[proactive] no-interrupt/space state active; skipping message: ${quietState.kind}`);
+      appendProactiveDecisionTrace({
+        type,
+        userId,
+        stage: relationshipState.stage,
+        outcome: 'skipped',
+        phase: 'temporal',
+        reasonCode: 'no_interrupt_active',
+        reason: `Active temporal state ${quietState.kind} requires Mio to avoid proactive outreach.`,
+        routeTags: ['proactive', 'temporal_state'],
+      });
+      if (recordSmartOutcome) recordProactiveMessage(false, undefined, userId);
+      return null;
+    }
+
     if (!opts.skipSmartGate) {
-      const passed = this.passSmartGate(config, relationshipState, emotionState, recordSmartOutcome, userId);
+      const passed = this.passSmartGate(config, relationshipState, emotionState, recordSmartOutcome, type, userId);
       if (!passed) return null;
     }
 
@@ -267,6 +296,15 @@ export class ProactiveScheduler {
     const trimmed = result.trim();
     if (trimmed === '[NO_MSG]') {
       logger.info('[proactive] subagent decided no message needed');
+      appendProactiveDecisionTrace({
+        type,
+        userId,
+        stage: relationshipState.stage,
+        outcome: 'skipped',
+        phase: 'generation',
+        reasonCode: 'subagent_no_msg',
+        reason: 'The proactive subagent returned [NO_MSG].',
+      });
       if (recordSmartOutcome) recordProactiveMessage(false, undefined, userId);
       return null;
     }
@@ -274,7 +312,18 @@ export class ProactiveScheduler {
     const quality = assessProactiveMessage(trimmed, type, relationshipState.stage);
     if (!quality.ok) {
       logger.info(`[proactive] quality gate rejected message: ${quality.reasons.join(', ')}`);
-      appendProactiveQualityReject(trimmed, quality.reasons, type, userId);
+      const route = appendProactiveQualityReject(trimmed, quality.reasons, type, userId);
+      appendProactiveDecisionTrace({
+        type,
+        userId,
+        stage: relationshipState.stage,
+        outcome: 'rejected',
+        phase: 'quality_gate',
+        reasonCode: 'quality_gate_reject',
+        reason: quality.reasons.join(', '),
+        messagePreview: trimmed.slice(0, 160),
+        routeTags: route.tags,
+      });
       if (recordSmartOutcome) recordProactiveMessage(false, undefined, userId);
       return null;
     }
@@ -320,6 +369,17 @@ export class ProactiveScheduler {
 
     // 8. 投递到外部通知渠道（Telegram / Webhook）
     await dispatchToNotifyChannels(trimmed, type, userId);
+    appendProactiveDecisionTrace({
+      type,
+      userId,
+      stage: relationshipState.stage,
+      outcome: 'sent',
+      phase: 'dispatch',
+      reasonCode: 'sent',
+      reason: 'Proactive message passed gating and was handed to notification dispatch.',
+      messagePreview: trimmed.slice(0, 160),
+      routeTags: ['proactive'],
+    });
 
     return trimmed;
   }
@@ -341,6 +401,7 @@ export class ProactiveScheduler {
     relationshipState: RelationshipState,
     emotionState: EmotionState,
     recordOutcome: boolean,
+    type: ProactiveMessageType,
     userId?: string,
   ): boolean {
     if (!config.features.smartProactive) return true;
@@ -352,6 +413,16 @@ export class ProactiveScheduler {
     );
     if (!decision.shouldMessage) {
       logger.info(`[proactive] smart scheduler vetoed: ${decision.reason}`);
+      appendProactiveDecisionTrace({
+        type,
+        userId,
+        stage: relationshipState.stage,
+        outcome: 'skipped',
+        phase: 'smart_gate',
+        reasonCode: smartGateReasonCode(decision.reason),
+        reason: decision.reason,
+        routeTags: ['proactive'],
+      });
       if (recordOutcome) recordProactiveMessage(false, undefined, userId);
       return false;
     }
@@ -359,6 +430,14 @@ export class ProactiveScheduler {
     logger.info(`[proactive] smart scheduler approved: ${decision.reason}`);
     return true;
   }
+}
+
+export function smartGateReasonCode(reason: string): string {
+  if (reason.startsWith('quiet hours:')) return 'quiet_hours';
+  if (reason.startsWith('cooldown:')) return 'cooldown';
+  if (reason.includes('smart scheduler disabled')) return 'smart_scheduler_disabled';
+  if (reason.startsWith('roll=')) return 'probability_roll';
+  return 'smart_gate_veto';
 }
 
 /**
@@ -381,6 +460,15 @@ export function proactiveScheduler(
 function weClawOptInMode(): boolean {
   const v = (process.env.MIO_WECLAW_NOTIFY ?? '').trim().toLowerCase();
   return v === 'true' || v === '1' || v === 'on' || v === 'yes';
+}
+
+function activeNoInterruptState(sessionId?: string): { kind: string } | undefined {
+  if (!sessionId?.trim()) return undefined;
+  const temporal = buildTemporalTurnContext(sessionId);
+  return temporal.active.find((entry) => (
+    entry.kind === 'user_requested_space'
+    || entry.kind === 'mio_promised_space'
+  ));
 }
 
 /** 通知渠道分发：将主动消息推送到外部通知渠道 */
@@ -410,7 +498,7 @@ function appendProactiveQualityReject(
   reasons: string[],
   type: ProactiveMessageType,
   userId?: string,
-): void {
+): ReturnType<typeof routeTurn> {
   const timestamp = new Date().toISOString();
   const sessionId = userId ?? 'global-proactive';
   const route = routeTurn({ replyText: text });
@@ -432,6 +520,7 @@ function appendProactiveQualityReject(
     after: '[NO_MSG]',
     turnRoute: route,
   });
+  return route;
 }
 
 function enrichProactiveRejectRoute(
@@ -447,6 +536,19 @@ function enrichProactiveRejectRoute(
   if (reasons.includes('waiting-or-blame-arc') || reasons.includes('pressures-user-to-reply')) {
     addRouteTag(route.tags, 'temporal_state');
     route.risk = maxRisk(route.risk, 'medium');
+  }
+  if (reasons.includes('curiosity-hook-pressure')) {
+    route.risk = maxRisk(route.risk, 'medium');
+  }
+  if (reasons.includes('too-intimate-for-stage')) {
+    addRouteTag(route.tags, 'intimacy_control');
+    route.risk = maxRisk(route.risk, 'medium');
+    route.shouldUseLlmJudge = true;
+  }
+  if (reasons.includes('real-world-control')) {
+    addRouteTag(route.tags, 'intimacy_control');
+    route.risk = maxRisk(route.risk, 'high');
+    route.shouldUseLlmJudge = true;
   }
   if (reasons.includes('meta-or-service-tone')) {
     addRouteTag(route.tags, 'service_tone');
@@ -532,6 +634,9 @@ ${userPreferenceBlock ? `\n## User-specific preferences\n${userPreferenceBlock}`
 - If this is for a specific contact, rely only on contact-scoped recent conversation and user-specific preferences; do not infer private facts from global memories.
 - Keep it short (1-3 sentences).
 - Ask at most one question and never pressure the user to reply.
+- Do not use curiosity/FOMO hooks such as "guess what", "want to see?", "I have a secret", fake photos, or teaser messages that exist mainly to pull a reply.
+- You may briefly imply an abstract inner state or attention state, but do not invent concrete offline activities or physical-world details: no locations, going out, passing by places, eating/drinking, photos/videos, gaming, showering, walking, or "scrolling my phone while waiting for you".
+- Do not make waiting for the user into a story. If you mention your own time, keep it low-pressure and self-contained, e.g. "我这边自己待着" rather than "我等你".
 - If this moment doesn't call for a message (e.g., too soon since last interaction, or context doesn't fit), respond with exactly: [NO_MSG]
 - Write in the user's primary language (Chinese if unsure).
 - Do not include any meta-text, just the message or [NO_MSG].`;

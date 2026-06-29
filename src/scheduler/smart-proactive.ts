@@ -37,6 +37,11 @@ export interface SmartProactiveConfig {
   baseRate: number;             // Poisson base rate λ (default 0.1 per hour)
   stageMultiplier: Record<string, number>;
   responseThreshold: number;    // min predicted response probability to send (default 0.3)
+  quietHours: {
+    enabled: boolean;
+    startHour: number;           // inclusive, 0-23
+    endHour: number;             // exclusive, 0-23; may wrap past midnight
+  };
 }
 
 // ─── Timeseries record for outcome tracking ───
@@ -98,6 +103,11 @@ const DEFAULT_SMART_CONFIG: SmartProactiveConfig = {
     intimate: 1.2,
   },
   responseThreshold: 0.3,
+  quietHours: {
+    enabled: false,
+    startHour: 23,
+    endHour: 8,
+  },
 };
 
 // ─── In-memory cache ───
@@ -185,7 +195,19 @@ function readSmartConfigFile(): SmartProactiveConfig {
   try {
     const raw = readFileSyncSafe(smartProactiveConfigPath(), '');
     if (!raw) return { ...DEFAULT_SMART_CONFIG };
-    return { ...DEFAULT_SMART_CONFIG, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw);
+    return {
+      ...DEFAULT_SMART_CONFIG,
+      ...parsed,
+      quietHours: {
+        ...DEFAULT_SMART_CONFIG.quietHours,
+        ...(parsed.quietHours ?? {}),
+      },
+      stageMultiplier: {
+        ...DEFAULT_SMART_CONFIG.stageMultiplier,
+        ...(parsed.stageMultiplier ?? {}),
+      },
+    };
   } catch {
     return { ...DEFAULT_SMART_CONFIG };
   }
@@ -289,6 +311,15 @@ export function decideProactiveMessage(
     return { shouldMessage: false, confidence: 0, reason: 'smart scheduler disabled' };
   }
 
+  const currentHour = new Date().getHours();
+  if (isQuietHour(currentHour, cfg.quietHours)) {
+    return {
+      shouldMessage: false,
+      confidence: 0,
+      reason: `quiet hours: current hour ${currentHour} is within ${cfg.quietHours.startHour}:00-${cfg.quietHours.endHour}:00`,
+    };
+  }
+
   const { activity, outcomes } = readActivityFile(userId);
   const now = Date.now();
 
@@ -324,7 +355,6 @@ export function decideProactiveMessage(
   }
 
   // Step 2: Poisson probability
-  const currentHour = new Date().getHours();
   const stageMult = cfg.stageMultiplier[relationshipStage] ?? 1.0;
   const hourActivityFactor = Math.max(0.2, activity.hourDistribution[currentHour] * 24); // scale up so avg ~1.0
   const effectiveLambda = cfg.baseRate * stageMult * hourActivityFactor * personalityModifier;
@@ -398,7 +428,18 @@ export function getSmartProactiveConfig(): SmartProactiveConfig {
  */
 export function updateSmartProactiveConfig(patch: Partial<SmartProactiveConfig>): SmartProactiveConfig {
   const current = getSmartProactiveConfig();
-  cachedSmartConfig = { ...current, ...patch };
+  cachedSmartConfig = {
+    ...current,
+    ...patch,
+    quietHours: {
+      ...current.quietHours,
+      ...(patch.quietHours ?? {}),
+    },
+    stageMultiplier: {
+      ...current.stageMultiplier,
+      ...(patch.stageMultiplier ?? {}),
+    },
+  };
   persistSmartConfig();
   return cachedSmartConfig;
 }
@@ -497,6 +538,24 @@ function topHours(arr: number[], n: number): number[] {
   const entries = arr.map((v, i) => ({ v, i }));
   entries.sort((a, b) => b.v - a.v);
   return entries.slice(0, n).map(e => e.i).sort((a, b) => a - b);
+}
+
+export function isQuietHour(
+  hour: number,
+  quietHours: SmartProactiveConfig['quietHours'],
+): boolean {
+  if (!quietHours.enabled) return false;
+  const start = normalizeHour(quietHours.startHour);
+  const end = normalizeHour(quietHours.endHour);
+  const current = normalizeHour(hour);
+  if (start === end) return true;
+  if (start < end) return current >= start && current < end;
+  return current >= start || current < end;
+}
+
+function normalizeHour(hour: number): number {
+  if (!Number.isFinite(hour)) return 0;
+  return ((Math.trunc(hour) % 24) + 24) % 24;
 }
 
 /**

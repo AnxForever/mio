@@ -23,12 +23,19 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { IncomingMessage } from 'node:http';
 import { getConfig } from '../config.js';
+import {
+  hasConsoleUsers,
+  resolveConsoleSession,
+  type AuthContext,
+} from './user-auth.js';
 
 export interface AuthFailure {
   status: 401;
   message: string;
   code: 'missing_authorization' | 'invalid_authorization_format' | 'invalid_api_key';
 }
+
+export type AuthenticatedRequest = Request & { auth?: AuthContext; authenticated?: boolean };
 
 // ─── Token resolution ───
 
@@ -48,7 +55,7 @@ function getToken(): string | null {
  * Check whether auth is enabled for this process.
  */
 export function isAuthEnabled(): boolean {
-  return getToken() !== null;
+  return getToken() !== null || hasConsoleUsers();
 }
 
 // ─── Constant-time comparison ───
@@ -58,6 +65,7 @@ export function isAuthEnabled(): boolean {
  * Prevents timing side-channel attacks on the bearer token.
  */
 function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length === 0 || b.length === 0) return a.length === b.length;
   if (a.length !== b.length) {
     // Still do a constant-time comparison to avoid leaking length
     let diff = a.length ^ b.length;
@@ -74,6 +82,60 @@ function constantTimeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+function parseBearer(authHeader: string | undefined): { token?: string; failure?: AuthFailure } {
+  if (!authHeader) {
+    return {
+      failure: {
+        status: 401,
+        message: 'Missing Authorization header',
+        code: 'missing_authorization',
+      },
+    };
+  }
+
+  const parts = authHeader.split(' ');
+  if (parts.length !== 2 || parts[0].toLowerCase() !== 'bearer') {
+    return {
+      failure: {
+        status: 401,
+        message: 'Invalid Authorization format. Use: Bearer <token>',
+        code: 'invalid_authorization_format',
+      },
+    };
+  }
+
+  return { token: parts[1] };
+}
+
+export function resolveAuthContext(authHeader: string | undefined): { auth?: AuthContext; failure?: AuthFailure } {
+  const legacyToken = getToken();
+  const accountAuthEnabled = hasConsoleUsers();
+  if (!legacyToken && !accountAuthEnabled) {
+    return { auth: { kind: 'none', role: null, user: null } };
+  }
+
+  const parsed = parseBearer(authHeader);
+  if (parsed.failure) return { failure: parsed.failure };
+  const provided = parsed.token || '';
+
+  if (legacyToken && constantTimeEqual(provided, legacyToken)) {
+    return { auth: { kind: 'legacy', role: 'owner', user: null } };
+  }
+
+  if (accountAuthEnabled) {
+    const session = resolveConsoleSession(provided);
+    if (session) return { auth: session };
+  }
+
+  return {
+    failure: {
+      status: 401,
+      message: 'Invalid token',
+      code: 'invalid_api_key',
+    },
+  };
+}
+
 // ─── HTTP middleware ───
 
 /**
@@ -83,12 +145,14 @@ function constantTimeEqual(a: string, b: string): boolean {
  * Responds 401 with a JSON error body when the token is missing or invalid.
  */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  const failure = checkBearerAuth(req.headers.authorization);
+  const { auth, failure } = resolveAuthContext(req.headers.authorization);
   if (failure) {
     res.status(failure.status).json({ error: failure.message });
     return;
   }
 
+  (req as AuthenticatedRequest).auth = auth;
+  (req as AuthenticatedRequest).authenticated = true;
   next();
 }
 
@@ -99,7 +163,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
  * error object so generic clients can surface auth failures cleanly.
  */
 export function requireOpenAIAuth(req: Request, res: Response, next: NextFunction): void {
-  const failure = checkBearerAuth(req.headers.authorization);
+  const { auth, failure } = resolveAuthContext(req.headers.authorization);
   if (failure) {
     res.status(failure.status).json({
       error: {
@@ -111,39 +175,13 @@ export function requireOpenAIAuth(req: Request, res: Response, next: NextFunctio
     return;
   }
 
+  (req as AuthenticatedRequest).auth = auth;
+  (req as AuthenticatedRequest).authenticated = true;
   next();
 }
 
 export function checkBearerAuth(authHeader: string | undefined): AuthFailure | null {
-  const token = getToken();
-  if (!token) return null;
-
-  if (!authHeader) {
-    return {
-      status: 401,
-      message: 'Missing Authorization header',
-      code: 'missing_authorization',
-    };
-  }
-
-  const parts = authHeader.split(' ');
-  if (parts.length !== 2 || parts[0].toLowerCase() !== 'bearer') {
-    return {
-      status: 401,
-      message: 'Invalid Authorization format. Use: Bearer <token>',
-      code: 'invalid_authorization_format',
-    };
-  }
-
-  if (!constantTimeEqual(parts[1], token)) {
-    return {
-      status: 401,
-      message: 'Invalid token',
-      code: 'invalid_api_key',
-    };
-  }
-
-  return null;
+  return resolveAuthContext(authHeader).failure ?? null;
 }
 
 /**
@@ -152,25 +190,19 @@ export function checkBearerAuth(authHeader: string | undefined): AuthFailure | n
  * it just attaches an `authenticated` flag to the request for downstream use.
  */
 export function optionalAuth(req: Request, _res: Response, next: NextFunction): void {
-  const token = getToken();
-  if (!token) {
-    (req as Request & { authenticated: boolean }).authenticated = true;
+  if (!isAuthEnabled()) {
+    (req as AuthenticatedRequest).authenticated = true;
+    (req as AuthenticatedRequest).auth = { kind: 'none', role: null, user: null };
     next();
     return;
   }
 
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    (req as Request & { authenticated: boolean }).authenticated = false;
-    next();
-    return;
-  }
-
-  const parts = authHeader.split(' ');
-  if (parts.length === 2 && parts[0].toLowerCase() === 'bearer' && constantTimeEqual(parts[1], token)) {
-    (req as Request & { authenticated: boolean }).authenticated = true;
+  const { auth, failure } = resolveAuthContext(req.headers.authorization);
+  if (!failure && auth) {
+    (req as AuthenticatedRequest).authenticated = true;
+    (req as AuthenticatedRequest).auth = auth;
   } else {
-    (req as Request & { authenticated: boolean }).authenticated = false;
+    (req as AuthenticatedRequest).authenticated = false;
   }
   next();
 }
@@ -188,12 +220,11 @@ export function optionalAuth(req: Request, _res: Response, next: NextFunction): 
  *   if (!validateWsAuth(req)) { socket.destroy(); return; }
  */
 export function validateWsAuth(req: IncomingMessage): boolean {
-  const token = getToken();
-  if (!token) return true; // auth not configured
+  if (!isAuthEnabled()) return true; // auth not configured
 
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
   const provided = url.searchParams.get('token');
   if (!provided) return false;
 
-  return constantTimeEqual(provided, token);
+  return !resolveAuthContext(`Bearer ${provided}`).failure;
 }

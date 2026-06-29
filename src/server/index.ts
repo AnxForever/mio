@@ -63,16 +63,28 @@ import {
   validate,
   validateParams,
   validateQuery,
+  adminUserCreateBody,
+  authBootstrapBody,
+  authLoginBody,
   chatBody,
   modBody,
+  modelConfigBody,
+  wechatNativeSettingsBody,
   searchQuery,
   analyticsQuery,
   memoryQuery,
   memoryIdParam,
   memoryPatchBody,
+  debugTraceCandidateBody,
+  regressionCandidateIdParam,
+  regressionCandidatePatchBody,
+  regressionCandidatePromoteBody,
+  userProfileEntryParam,
+  userProfileEntryBody,
   proactivePreferencesBody,
   onboardingBody,
   backupPruneBody,
+  workspaceConfigBody,
   characterConfigSchema,
   personaBody,
   personaModeBody,
@@ -99,9 +111,23 @@ import {
 import { searchHandler } from './search.js';
 import {
   deleteMemoryReviewItem,
+  exportDebugTraceRegressionCandidate,
+  getMemoryDebugTrace,
+  getProactiveDecisionReview,
+  getStructuredStateReview,
+  listRegressionCandidateLibrary,
   listMemoryReviewItems,
+  listTemporalStateReview,
+  promoteDebugTraceRegressionCandidate,
+  updateRegressionCandidateLibraryItem,
   updateMemoryReviewItem,
 } from './memories.js';
+import {
+  appendUserProfileEntry,
+  deleteUserProfileEntry,
+  readUserProfileSnapshot,
+  updateUserProfileEntry,
+} from './user-profile.js';
 import {
   getSmartProactiveConfig,
   updateSmartProactiveConfig,
@@ -124,6 +150,25 @@ import { audioUploadsDir, imageUploadsDir, modSoulPath, uploadedAudioPath, uploa
 import { readFileSyncSafe, writeFileSyncSafe } from '../memory/bank.js';
 import { upsertWeClawTarget } from '../memory/persona-delta.js';
 import { refreshPersonaGraph } from '../persona/extractor.js';
+import { readWorkspaceConfig, updateWorkspaceConfig, type WorkspaceConfigPatch } from './workspace-config.js';
+import {
+  authSystemStatus,
+  bootstrapOwner,
+  createConsoleUser,
+  listConsoleUsers,
+  loginConsoleUser,
+  revokeConsoleSession,
+} from './user-auth.js';
+import {
+  getWechatNativeStatus,
+  pollWechatNativeLogin,
+  removeWechatNativeAccount,
+  restartWechatNativeRuntime,
+  startWechatNativeLogin,
+  startWechatNativeRuntime,
+  stopWechatNativeRuntime,
+  updateWechatNativeSettings,
+} from './wechat-native.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve, sep } from 'node:path';
 
@@ -139,7 +184,7 @@ import { dirname, join, resolve, sep } from 'node:path';
  * - `pong`             : response to server's `ping`. Updates the alive flag.
  */
 export type WsClientMessage =
-  | { type: 'chat'; text: string; sessionId?: string }
+  | { type: 'chat'; text: string; sessionId?: string; requestId?: string }
   | { type: 'switch_mod'; name: string }
   | { type: 'subscribe_avatar' }
   | { type: 'ping'; t?: number }
@@ -152,6 +197,19 @@ function safeSend(ws: WebSocket, payload: unknown): void {
   } catch {
     // socket closed between the readyState check and the send; ignore.
   }
+}
+
+function bearerFromRequest(req: Request): string | null {
+  const auth = req.headers.authorization;
+  if (!auth) return null;
+  const parts = auth.split(' ');
+  if (parts.length !== 2 || parts[0].toLowerCase() !== 'bearer') return null;
+  return parts[1] || null;
+}
+
+function isOwnerAuth(req: Request): boolean {
+  const auth = (req as Request & { auth?: { kind?: string; role?: string } }).auth;
+  return auth?.kind === 'legacy' || auth?.role === 'owner';
 }
 
 // ─── Server factory ───
@@ -394,12 +452,78 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     res.json({ ok: true, name: 'mio', version: '0.6.0' });
   });
 
+  app.get('/auth/status', (_req, res) => {
+    res.json(authSystemStatus());
+  });
+
+  app.post('/auth/bootstrap', validate(authBootstrapBody), (req, res) => {
+    try {
+      const result = bootstrapOwner(req.body as { username: string; password: string; setupToken?: string });
+      res.status(201).json(result);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const status = msg.includes('Invalid setup token') ? 403 : 400;
+      res.status(status).json({ error: msg });
+    }
+  });
+
+  app.post('/auth/login', validate(authLoginBody), (req, res) => {
+    try {
+      res.json(loginConsoleUser(req.body as { username: string; password: string }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(401).json({ error: msg });
+    }
+  });
+
+  app.get('/auth/me', requireAuth, (req, res) => {
+    const auth = (req as Request & { auth?: unknown }).auth;
+    res.json({ auth });
+  });
+
+  app.post('/auth/logout', requireAuth, (req, res) => {
+    const token = bearerFromRequest(req);
+    const auth = (req as Request & { auth?: { kind?: string } }).auth;
+    if (token && auth?.kind === 'session') {
+      revokeConsoleSession(token);
+    }
+    res.json({ ok: true });
+  });
+
+  app.get('/admin/users', requireAuth, (_req, res) => {
+    res.json({ users: listConsoleUsers() });
+  });
+
+  app.post('/admin/users', requireAuth, validate(adminUserCreateBody), (req, res) => {
+    if (!isOwnerAuth(req)) {
+      res.status(403).json({ error: 'Owner role required' });
+      return;
+    }
+    try {
+      const body = req.body as { username: string; password: string; role: 'admin' | 'viewer' };
+      const user = createConsoleUser(body);
+      res.status(201).json({ user, users: listConsoleUsers() });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(msg.includes('already exists') ? 409 : 400).json({ error: msg });
+    }
+  });
+
   app.get('/status', (_req, res) => {
     const config = getConfig();
     const emotion = readEmotionState();
     const relationship = readRelationshipState();
     const progress = getProgressInfo();
-    const memStats = indexStats();
+    let memStats: { entries: number; sources: Record<string, number>; types: Record<string, number> } = {
+      entries: 0,
+      sources: {},
+      types: {},
+    };
+    try {
+      memStats = indexStats();
+    } catch (err) {
+      logger.warn(`[status] vector index stats unavailable: ${err instanceof Error ? err.message : String(err)}`);
+    }
     const providerInfo = getProviderInfo(config.provider, config.model);
     res.json({
       config: {
@@ -432,6 +556,83 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       emotion,
       relationship,
       progress,
+    });
+  });
+
+  app.get('/admin/model-config', requireAuth, (_req, res) => {
+    const config = getConfig();
+    const providerInfo = getProviderInfo(config.provider, config.model);
+    res.json({
+      current: {
+        provider: config.provider,
+        model: config.model,
+        resolvedProvider: providerInfo.preset.name,
+        resolvedLabel: providerInfo.preset.label,
+        resolvedModel: providerInfo.model,
+        available: !providerInfo.isMock,
+        reason: providerInfo.reason,
+        restartEnvOverrides: {
+          provider: Boolean(process.env.MIO_PROVIDER),
+          model: Boolean(process.env.COLA_MODEL),
+        },
+      },
+      providers: Object.values(PROVIDER_PRESETS).map((preset) => ({
+        name: preset.name,
+        label: preset.label,
+        configured: preset.name === 'mock' ? true : Boolean(preset.apiKeyEnv && process.env[preset.apiKeyEnv]),
+        apiKeyEnv: preset.apiKeyEnv,
+        defaultModel: preset.defaultModel,
+        supportsVision: preset.supportsVision,
+        supportsToolCalling: preset.supportsToolCalling,
+        models: preset.models,
+      })).concat([{
+        name: 'auto',
+        label: '自动选择已配置模型',
+        configured: true,
+        apiKeyEnv: '',
+        defaultModel: '',
+        supportsVision: true,
+        supportsToolCalling: true,
+        models: [],
+      }]).sort((a, b) => (a.name === 'auto' ? -1 : b.name === 'auto' ? 1 : a.label.localeCompare(b.label, 'zh-CN'))),
+    });
+  });
+
+  app.put('/admin/model-config', requireAuth, validate(modelConfigBody), (req, res) => {
+    const body = req.body as { provider: string; model?: string };
+    const provider = body.provider.trim();
+    const preset = provider === 'auto' ? null : PROVIDER_PRESETS[provider];
+    if (provider !== 'auto' && !preset) {
+      res.status(400).json({ error: `Unknown provider: ${provider}` });
+      return;
+    }
+
+    const model = (body.model || '').trim();
+    if (preset && model && !preset.models.some((candidate) => candidate.id === model)) {
+      res.status(400).json({ error: `Model ${model} is not listed for provider ${provider}` });
+      return;
+    }
+
+    const next = updateConfig({
+      provider: provider as ReturnType<typeof getConfig>['provider'],
+      model: provider === 'auto' ? model : (model || preset?.defaultModel || ''),
+    });
+    const providerInfo = getProviderInfo(next.provider, next.model);
+    res.json({
+      ok: true,
+      current: {
+        provider: next.provider,
+        model: next.model,
+        resolvedProvider: providerInfo.preset.name,
+        resolvedLabel: providerInfo.preset.label,
+        resolvedModel: providerInfo.model,
+        available: !providerInfo.isMock,
+        reason: providerInfo.reason,
+        restartEnvOverrides: {
+          provider: Boolean(process.env.MIO_PROVIDER),
+          model: Boolean(process.env.COLA_MODEL),
+        },
+      },
     });
   });
 
@@ -920,6 +1121,108 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     res.json({ level: logger.level });
   });
 
+  app.get('/admin/workspace-config', requireAuth, (_req, res) => {
+    try {
+      res.json({ config: readWorkspaceConfig() });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  app.put('/admin/workspace-config', requireAuth, validate(workspaceConfigBody), (req, res) => {
+    try {
+      const config = updateWorkspaceConfig(req.body as WorkspaceConfigPatch);
+      res.json({ ok: true, config });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  // ─── Native WeChat/iLink channel ───
+
+  app.get('/admin/wechat-native/status', requireAuth, (_req, res) => {
+    res.json(getWechatNativeStatus());
+  });
+
+  app.put('/admin/wechat-native/settings', requireAuth, validate(wechatNativeSettingsBody), (req, res) => {
+    try {
+      res.json({ ok: true, status: updateWechatNativeSettings(req.body) });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  app.post('/admin/wechat-native/login/start', requireAuth, async (req, res) => {
+    try {
+      const force = Boolean((req.body as { force?: boolean } | undefined)?.force);
+      res.json(await startWechatNativeLogin(force));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  app.post('/admin/wechat-native/login/poll', requireAuth, async (req, res) => {
+    try {
+      const body = req.body as { sessionKey?: string; verifyCode?: string } | undefined;
+      if (!body?.sessionKey || typeof body.sessionKey !== 'string') {
+        res.status(400).json({ error: 'Missing sessionKey' });
+        return;
+      }
+      res.json(await pollWechatNativeLogin({
+        sessionKey: body.sessionKey,
+        verifyCode: typeof body.verifyCode === 'string' ? body.verifyCode : undefined,
+      }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  app.post('/admin/wechat-native/runtime/start', requireAuth, (_req, res) => {
+    try {
+      res.json({ ok: true, status: startWechatNativeRuntime() });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  app.post('/admin/wechat-native/runtime/stop', requireAuth, (_req, res) => {
+    try {
+      res.json({ ok: true, status: stopWechatNativeRuntime() });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  app.post('/admin/wechat-native/runtime/restart', requireAuth, (_req, res) => {
+    try {
+      res.json({ ok: true, status: restartWechatNativeRuntime() });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  app.delete('/admin/wechat-native/accounts/:accountId', requireAuth, (req, res) => {
+    try {
+      const accountId = Array.isArray(req.params.accountId) ? req.params.accountId[0] : req.params.accountId;
+      if (!accountId) {
+        res.status(400).json({ error: 'Missing accountId' });
+        return;
+      }
+      res.json(removeWechatNativeAccount(accountId));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
   // ─── Analytics routes (READ-ONLY) ───
 
   // GET /analytics — full analytics snapshot
@@ -951,13 +1254,82 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   // ─── Memory review ───
 
   app.get('/memories', requireAuth, validateQuery(memoryQuery), async (req, res) => {
-    const { q, limit } = req.query as unknown as { q?: string; limit?: number };
-    const items = listMemoryReviewItems().slice(0, limit ?? 100);
+    const { q, limit, sessionId } = req.query as unknown as { q?: string; limit?: number; sessionId?: string };
+    const resolvedSessionId = sessionId || 'default';
+    const items = listMemoryReviewItems(resolvedSessionId).slice(0, limit ?? 100);
+    const temporalState = listTemporalStateReview(resolvedSessionId);
+    const structuredState = getStructuredStateReview();
+    const debugTrace = getMemoryDebugTrace(resolvedSessionId);
+    const proactiveDecisions = getProactiveDecisionReview(resolvedSessionId);
     const trimmed = q?.trim();
     const searchResults = trimmed
       ? (await searchHandler(trimmed, { maxResults: limit ?? 20 })).results
       : [];
-    res.json({ items, searchResults });
+    res.json({ items, searchResults, temporalState, structuredState, debugTrace, proactiveDecisions });
+  });
+
+  app.post('/memories/debug-trace/regression-candidate', requireAuth, validate(debugTraceCandidateBody), (req, res) => {
+    if (!isOwnerAuth(req)) {
+      res.status(403).json({ error: 'Owner required' });
+      return;
+    }
+
+    try {
+      const exported = exportDebugTraceRegressionCandidate(req.body);
+      res.json({
+        ok: true,
+        resultDir: exported.resultDir,
+        candidatesPath: exported.candidatesPath,
+        reportPath: exported.reportPath,
+        candidate: exported.report.candidates[0],
+      });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  app.post('/memories/debug-trace/regression-candidate/promote', requireAuth, validate(regressionCandidatePromoteBody), (req, res) => {
+    if (!isOwnerAuth(req)) {
+      res.status(403).json({ error: 'Owner required' });
+      return;
+    }
+
+    try {
+      const promoted = promoteDebugTraceRegressionCandidate(req.body);
+      res.json({
+        ok: true,
+        storePath: promoted.storePath,
+        promoted: promoted.promoted,
+        total: promoted.total,
+      });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  app.get('/memories/regression-candidates', requireAuth, (req, res) => {
+    if (!isOwnerAuth(req)) {
+      res.status(403).json({ error: 'Owner required' });
+      return;
+    }
+
+    const limit = Math.max(1, Math.min(100, Number(req.query.limit ?? 50) || 50));
+    res.json(listRegressionCandidateLibrary(limit));
+  });
+
+  app.patch('/memories/regression-candidates/:id', requireAuth, validateParams(regressionCandidateIdParam), validate(regressionCandidatePatchBody), (req, res) => {
+    if (!isOwnerAuth(req)) {
+      res.status(403).json({ error: 'Owner required' });
+      return;
+    }
+
+    const { id } = req.params as { id: string };
+    const candidate = updateRegressionCandidateLibraryItem(id, req.body);
+    if (!candidate) {
+      res.status(404).json({ error: 'Regression candidate not found' });
+      return;
+    }
+    res.json({ item: candidate });
   });
 
   app.patch('/memories/:id', requireAuth, validateParams(memoryIdParam), validate(memoryPatchBody), async (req, res) => {
@@ -975,6 +1347,37 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     const deleted = deleteMemoryReviewItem(id);
     if (!deleted) {
       res.status(404).json({ error: 'Memory not found' });
+      return;
+    }
+    res.json({ ok: true, id });
+  });
+
+  // ─── User profile maintenance ───
+
+  app.get('/user-profile', requireAuth, (_req, res) => {
+    res.json(readUserProfileSnapshot());
+  });
+
+  app.post('/user-profile/entries', requireAuth, validate(userProfileEntryBody), (req, res) => {
+    const entry = appendUserProfileEntry((req.body as { content: string }).content);
+    res.status(201).json({ entry });
+  });
+
+  app.patch('/user-profile/entries/:id', requireAuth, validateParams(userProfileEntryParam), validate(userProfileEntryBody), (req, res) => {
+    const { id } = req.params as { id: string };
+    const entry = updateUserProfileEntry(id, (req.body as { content: string }).content);
+    if (!entry) {
+      res.status(404).json({ error: 'User profile entry not found' });
+      return;
+    }
+    res.json({ entry });
+  });
+
+  app.delete('/user-profile/entries/:id', requireAuth, validateParams(userProfileEntryParam), (req, res) => {
+    const { id } = req.params as { id: string };
+    const deleted = deleteUserProfileEntry(id);
+    if (!deleted) {
+      res.status(404).json({ error: 'User profile entry not found' });
       return;
     }
     res.json({ ok: true, id });
@@ -1079,7 +1482,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       const char = createCharacter(req.body);
       res.json({ success: true, data: char });
     } catch (err) {
-      res.status(500).json({ success: false, error: String(err) });
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(message.includes('already exists') ? 409 : 500).json({ success: false, error: message });
     }
   });
 
@@ -1154,6 +1558,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     let sessionId: string | undefined;
     let alive = true;
     let avatarSubscribed = false;
+    let chatInFlight = false;
 
     // Heartbeat: respond to ping frames; if we miss 2 pongs, terminate the
     // dead connection. Pings happen on the protocol level (built-in ws);
@@ -1231,19 +1636,28 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
 
         case 'chat': {
           if (typeof payload.text !== 'string') {
-            safeSend(ws, { type: 'error', error: 'Missing text' });
+            safeSend(ws, { type: 'error', error: 'Missing text', requestId: payload.requestId });
             return;
           }
+          if (chatInFlight) {
+            safeSend(ws, {
+              type: 'error',
+              error: '上一条回复还没结束，请稍后再发送。',
+              requestId: payload.requestId,
+            });
+            return;
+          }
+          chatInFlight = true;
           sessionId = payload.sessionId ?? sessionId;
           try {
             const result = await runTurn(
               { text: payload.text, sessionId },
               {
-                onToken: (chunk) => safeSend(ws, { type: 'token', chunk }),
+                onToken: (chunk) => safeSend(ws, { type: 'token', chunk, requestId: payload.requestId }),
               },
             );
             sessionId = result.sessionId;
-            safeSend(ws, { type: 'done', ...result });
+            safeSend(ws, { type: 'done', requestId: payload.requestId, ...result });
 
             // If the client subscribed to avatar updates, push the new state.
             if (avatarSubscribed) {
@@ -1254,7 +1668,9 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
             }
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            safeSend(ws, { type: 'error', error: msg });
+            safeSend(ws, { type: 'error', error: msg, requestId: payload.requestId });
+          } finally {
+            chatInFlight = false;
           }
           return;
         }
@@ -1344,6 +1760,9 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       logger.info(`[mio]   POST /admin/backup        create backup`);
       logger.info(`[mio]   GET  /admin/export        export memory as text`);
       logger.info(`[mio]   POST /admin/backups/prune prune old backups`);
+      logger.info(`[mio]   GET  /admin/wechat-native/status native WeChat/iLink status`);
+      logger.info(`[mio]   POST /admin/wechat-native/login/start native WeChat QR login`);
+      startWechatNativeRuntime();
       resolve(p);
     });
   });
@@ -1352,6 +1771,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     port: actualPort,
     close: () =>
       new Promise<void>((resolve) => {
+        stopWechatNativeRuntime();
         wss.close();
         server.close(() => resolve());
       }),
