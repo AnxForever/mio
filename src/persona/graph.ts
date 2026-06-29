@@ -12,6 +12,8 @@
  * form — extracted once, persisted, and incrementally evolved.
  */
 
+import { tokenize, cosine, embed, type Embedding } from '../memory/vector.js';
+
 // ─── Types ───
 
 export interface PersonaNode {
@@ -101,6 +103,43 @@ function stageKey(s: string): StageKey {
   const lower = s.toLowerCase().trim();
   if (STAGE_KEYS.includes(lower as StageKey)) return lower as StageKey;
   return 'acquaintance'; // fallback
+}
+
+// ─── Semantic similarity (offline TF vectors) ───
+//
+// The original retrieval matched only on explicit `triggers` via substring
+// tests, so any persona detail whose trigger list didn't literally contain a
+// context term (e.g. "速写本" / "数位板") was never recalled. To make this a
+// real retrieval step we additionally score each node by TF cosine similarity
+// between the node text and the turn context. This is offline (no API call),
+// reuses the shared tokenizer (CJK bigrams + ASCII), and only ever *raises* a
+// node's score — the trigger match is kept via max().
+
+/** Per-process cache of node TF vectors, keyed by node id. */
+const nodeVecCache = new Map<string, Embedding>();
+
+/** Build (and cache) the TF vector for a node from its content + triggers. */
+function nodeEmbedding(node: PersonaNode): Embedding {
+  const cached = nodeVecCache.get(node.id);
+  if (cached) return cached;
+  const text = `${node.content} ${node.triggers.join(' ')}`;
+  const vec = embed(tokenize(text));
+  nodeVecCache.set(node.id, vec);
+  return vec;
+}
+
+/** Build the query TF vector from the turn's retrieval context. */
+function queryEmbedding(ctx: RetrievalContext): Embedding {
+  const parts = [ctx.intent, ...ctx.topics, ...ctx.recentBookmarks];
+  return embed(tokenize(parts.join(' ')));
+}
+
+/**
+ * Cosine similarity in [0,1] between a node and the query vector.
+ * Negative cosine is clipped to 0 (no negative relevance).
+ */
+function semanticScore(node: PersonaNode, queryVec: Embedding): number {
+  return Math.max(0, cosine(nodeEmbedding(node), queryVec));
 }
 
 // ─── Core API ───
@@ -244,6 +283,9 @@ export function retrieveRelevantNodes(
 
   const contextTermsArr = [...contextTerms].filter(Boolean);
 
+  // Query vector for semantic recall (computed once per turn, offline TF).
+  const queryVec = queryEmbedding(context);
+
   // Score every node
   const scored: { node: PersonaNode; score: number }[] = graph.nodes.map((node) => {
     // ── Trigger match (0-1) ──
@@ -269,11 +311,22 @@ export function retrieveRelevantNodes(
       triggerScore = 0.15;
     }
 
+    // ── Semantic recall (0-1) ──
+    // TF cosine between the node text and the turn context. Catches persona
+    // details that share no literal trigger with the context (e.g. user says
+    // "我画到半夜" → node about "速写本/数位板" now scores on shared art tokens).
+    const semScore = semanticScore(node, queryVec);
+
+    // Recall score = the stronger of explicit trigger match and semantic match.
+    // max() means semantic recall can only ever promote a node, never demote one
+    // that the trigger logic already wanted.
+    const recallScore = Math.max(triggerScore, semScore);
+
     // ── Stage relevance (0-1) ──
     const stageScore = node.stageRelevance[stage] ?? 0.4;
 
     // ── Combined score ──
-    const score = triggerScore * 0.45 + stageScore * 0.25 + node.confidence * 0.30;
+    const score = recallScore * 0.45 + stageScore * 0.25 + node.confidence * 0.30;
     return { node, score: round2(score) };
   });
 
