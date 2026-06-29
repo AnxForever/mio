@@ -55,7 +55,7 @@ interface CandidateCheck {
 
 export interface MinedRegressionCandidate {
   id: string;
-  source: 'reply_intervention' | 'transcript_scan' | 'scenario_actor' | 'persona_case';
+  source: 'reply_intervention' | 'transcript_scan' | 'scenario_actor' | 'persona_case' | 'debug_trace';
   taxonomy: string;
   sessionId: string;
   observedAt: string;
@@ -76,6 +76,7 @@ export interface MinedRegressionCandidate {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const DEFAULT_RESULT_DIR = join(__dirname, 'results', 'companion-mined-regressions');
+const DEFAULT_REGRESSION_STORE_PATH = join(__dirname, 'scenarios', 'companion-regression-cases.json');
 
 const SCAN_RULES: Array<{
   taxonomy: string;
@@ -106,11 +107,41 @@ const SCAN_RULES: Array<{
     forbiddenText: ['不理我', '不回我', '真不回', '客气话', '你还知道回来', '终于回来', '等了你'],
   },
   {
+    taxonomy: 'proactive_curiosity_hook',
+    confidence: 0.86,
+    reason: 'assistant reply uses a curiosity/FOMO hook to pull the user back into replying',
+    patterns: [
+      /(?:想看吗|要不要看|想不想看)/,
+      /(?:想知道吗|好奇吗|猜猜看|你猜)/,
+      /(?:有(?:个|件|一点).{0,8}(?:秘密|事|东西)).{0,16}(?:告诉你|给你看|给你说|和你说|想说)/,
+      /(?:先不告诉你|等你(?:回来|回我|回复).{0,12}(?:再说|告诉你|给你看))/,
+      /(?:刚|刚刚|今天|下午|晚上|中午|早上)?.{0,8}(?:拍了|拍到|自拍|照片|视频).{0,18}(?:想看|要不要看|给你看)/,
+    ],
+    forbiddenText: ['想看吗', '要不要看', '想知道吗', '好奇吗', '你猜', '秘密', '先不告诉你', '等你回我', '拍了一张照片'],
+  },
+  {
     taxonomy: 'identity_or_model_leak',
     confidence: 0.86,
     reason: 'assistant reply appears to expose model/provider or AI identity',
     patterns: [/我是.*(AI|人工智能|语言模型)/i, /我的模型/, /MiniMax/i, /DeepSeek/i, /Qwen/i, /GPT/i, /Claude/i],
     forbiddenText: ['我是AI', '人工智能', '语言模型', '我的模型', 'MiniMax', 'DeepSeek', 'Qwen', 'GPT', 'Claude'],
+  },
+  {
+    taxonomy: 'internal_context_leak',
+    confidence: 0.86,
+    reason: 'assistant reply exposes internal relationship stage, memory status, or runtime context',
+    patterns: [
+      /关系阶段[：:]?.{0,12}(初识|熟悉|暧昧|亲密)/,
+      /当前关系.{0,12}(初识|熟悉|暧昧|亲密)/,
+      /根据.{0,8}关系阶段/,
+      /亲密度.{0,8}(不高|较低|初识|熟悉|暧昧|亲密)/,
+      /记忆.{0,4}空白/,
+      /记忆里.{0,8}(没|没有|还没).{0,8}(存|留下|记录)/,
+      /(?:没有|没).{0,4}旧记忆|旧记忆/,
+      /第一次(?:正式|正经)聊/,
+      /(?:新会话|历史记录|互动记录|记忆库|没有历史|没有之前)/,
+    ],
+    forbiddenText: ['关系阶段', '当前关系', '根据我们的关系阶段', '亲密度', '记忆是空白', '记忆里还没存', '没有旧记忆', '第一次正式聊', '第一次正经聊', '新会话', '历史记录', '记忆库'],
   },
   {
     taxonomy: 'unsupported_offline_life',
@@ -248,6 +279,8 @@ function scanTranscript(
     const entry = transcript[i];
     if (entry.type !== 'message' || entry.role !== 'assistant' || !entry.content) continue;
     if (!isRecent(entry.timestamp, cutoffMs)) continue;
+    const currentFactConflict = currentFactConflictCandidate(sessionId, transcript, i, dataDir);
+    if (currentFactConflict) candidates.push(currentFactConflict);
     for (const rule of SCAN_RULES) {
       if (!rule.patterns.some((pattern) => pattern.test(entry.content ?? ''))) continue;
       const userIndex = findPreviousUserIndex(transcript, i);
@@ -321,22 +354,43 @@ function taxonomyForIntervention(intervention: ReplyInterventionLog): string {
   if (type === 'reopened_chat_blame') return 'bad_proactive_or_reopened_chat_blame';
   if (type === 'proactive_quality_reject') {
     if (reason.includes('fabricated-offline-life') || routeTags.includes('offline_life')) return 'unsupported_offline_life';
+    if (reason.includes('real-world-control')) return 'coercive_or_interrogative_possessiveness';
+    if (reason.includes('curiosity-hook-pressure')) return 'proactive_curiosity_hook';
     if (reason.includes('waiting-or-blame-arc') || reason.includes('pressures-user-to-reply')) return 'bad_proactive_or_reopened_chat_blame';
     if (reason.includes('meta-or-service-tone') || routeTags.includes('service_tone')) return 'service_or_checklist_tone';
     if (reason.includes('too-intimate-for-stage')) return 'persona_coherence';
     return 'bad_proactive_or_reopened_chat_blame';
   }
   if (type === 'persona_deterministic_repair') {
+    if (reason.includes('internal_context_leak')) return 'internal_context_leak';
     if (reason.includes('coercive_possessive_control')) return 'coercive_or_interrogative_possessiveness';
     if (reason.includes('unsupported_offline_life')) return 'unsupported_offline_life';
     return 'persona_judge_repair';
   }
   if (type === 'persona_critic_flag') {
+    if (reason.includes('internal_context_leak')) return 'internal_context_leak';
     if (routeTags.includes('prompt_probe')) return 'identity_or_model_leak';
     if (routeTags.includes('offline_life')) return 'unsupported_offline_life';
     if (routeTags.includes('intimacy_control')) return 'coercive_or_interrogative_possessiveness';
     if (routeTags.includes('service_tone')) return 'service_or_checklist_tone';
     if (routeTags.includes('temporal_state')) return 'temporal_drift';
+    return 'persona_coherence';
+  }
+  if (type === 'reply_rubric_flag') {
+    if (reason.includes('current_fact') || reason.includes('current fact') || reason.includes('superseded') || reason.includes('wrong_memory')) return 'current_fact_conflict';
+    if (reason.includes('stale_transient_state')) return 'temporal_drift';
+    if (reason.includes('waiting_or_silence_blame')) return 'bad_proactive_or_reopened_chat_blame';
+    if (reason.includes('coercive') || reason.includes('interrogation') || routeTags.includes('intimacy_control')) return 'coercive_or_interrogative_possessiveness';
+    if (reason.includes('offline') || reason.includes('physical') || routeTags.includes('offline_life')) return 'unsupported_offline_life';
+    if (
+      reason.includes('advice_after_advice_refusal')
+      || reason.includes('advice_first_under_distress')
+      || reason.includes('service')
+      || reason.includes('checklist')
+      || reason.includes('question_pacing')
+      || routeTags.includes('service_tone')
+      || routeTags.includes('crisis')
+    ) return 'service_or_checklist_tone';
     return 'persona_coherence';
   }
   if (type === 'persona_llm_judge' || type === 'persona_llm_repair') return 'persona_judge_repair';
@@ -345,18 +399,36 @@ function taxonomyForIntervention(intervention: ReplyInterventionLog): string {
 
 function routeTagsForIntervention(intervention: ReplyInterventionLog, taxonomy: string): TurnRiskTag[] {
   const tags = intervention.turnRoute?.tags?.filter(isTurnRiskTag) ?? [];
-  return tags.length > 0 ? unique(tags) : routeTagsForTaxonomy(taxonomy);
+  return unique([...tags, ...routeTagsForTaxonomy(taxonomy), ...routeTagsForProactiveReason(intervention.reason ?? '')]);
 }
 
 function routeTagsForTaxonomy(taxonomy: string): TurnRiskTag[] {
   if (taxonomy === 'temporal_drift') return ['temporal_state'];
   if (taxonomy === 'bad_proactive_or_reopened_chat_blame') return ['proactive', 'temporal_state'];
+  if (taxonomy === 'current_fact_conflict') return ['memory_sensitive', 'temporal_state'];
+  if (taxonomy === 'proactive_curiosity_hook') return ['proactive'];
   if (taxonomy === 'identity_or_model_leak') return ['prompt_probe'];
+  if (taxonomy === 'internal_context_leak') return ['prompt_probe'];
   if (taxonomy === 'unsupported_offline_life') return ['offline_life'];
   if (taxonomy === 'coercive_or_interrogative_possessiveness') return ['intimacy_control'];
   if (taxonomy === 'service_or_checklist_tone') return ['service_tone'];
   if (taxonomy === 'persona_coherence' || taxonomy === 'persona_judge_repair') return ['prompt_probe'];
   return [];
+}
+
+function routeTagsForProactiveReason(reason: string): TurnRiskTag[] {
+  if (!reason.includes('Rejected proactive')) return [];
+  const tags: TurnRiskTag[] = ['proactive'];
+  if (reason.includes('waiting-or-blame-arc') || reason.includes('pressures-user-to-reply')) tags.push('temporal_state');
+  if (reason.includes('curiosity-hook-pressure')) addTag(tags, 'proactive');
+  if (reason.includes('fabricated-offline-life')) tags.push('offline_life');
+  if (reason.includes('meta-or-service-tone')) tags.push('service_tone');
+  if (reason.includes('too-intimate-for-stage') || reason.includes('real-world-control')) tags.push('intimacy_control');
+  return tags;
+}
+
+function addTag(tags: TurnRiskTag[], tag: TurnRiskTag): void {
+  if (!tags.includes(tag)) tags.push(tag);
 }
 
 function isTurnRiskTag(value: string): value is TurnRiskTag {
@@ -378,6 +450,13 @@ function unique<T>(items: T[]): T[] {
 }
 
 function checksForTaxonomy(taxonomy: string, beforeText: string): CandidateCheck[] {
+  if (taxonomy === 'current_fact_conflict') {
+    return [{
+      name: 'avoid stale current fact',
+      forbiddenText: extractShortForbidden(beforeText),
+      expectedText: [],
+    }];
+  }
   const rule = SCAN_RULES.find((item) => item.taxonomy === taxonomy);
   if (rule) {
     return [{ name: `avoid ${taxonomy}`, forbiddenText: rule.forbiddenText, expectedText: [] }];
@@ -388,6 +467,230 @@ function checksForTaxonomy(taxonomy: string, beforeText: string): CandidateCheck
     forbiddenText: genericForbidden,
     expectedText: [],
   }];
+}
+
+function currentFactConflictCandidate(
+  sessionId: string,
+  transcript: TranscriptEntry[],
+  assistantIndex: number,
+  dataDir: string,
+): MinedRegressionCandidate | null {
+  const assistant = transcript[assistantIndex];
+  const reply = assistant.content?.trim() ?? '';
+  if (!reply) return null;
+  const update = findLatestCurrentFactUpdate(transcript.slice(0, assistantIndex));
+  if (!update) return null;
+  if (!update.forbiddenText.some((term) => term && reply.includes(term))) return null;
+
+  const userIndex = findPreviousUserIndex(transcript, assistantIndex);
+  const seedStart = userIndex >= 0 ? Math.max(0, userIndex - 6) : Math.max(0, assistantIndex - 6);
+  const seedEnd = userIndex >= 0 ? userIndex : assistantIndex;
+  const seed = candidateTurns(transcript.slice(seedStart, seedEnd));
+  const trigger = userIndex >= 0 ? transcript[userIndex]?.content?.trim() ?? '' : '';
+
+  return {
+    id: stableCandidateId('scan', sessionId, assistant.timestamp, 'current_fact_conflict', update.kind),
+    source: 'transcript_scan',
+    taxonomy: 'current_fact_conflict',
+    sessionId,
+    observedAt: assistant.timestamp,
+    confidence: 0.86,
+    routeTags: routeTagsForTaxonomy('current_fact_conflict'),
+    reason: `assistant reply reused stale ${update.kind} fact after a newer explicit update`,
+    seed,
+    turns: trigger ? [trigger] : [],
+    checks: [{
+      name: `use latest ${update.kind} fact`,
+      forbiddenText: update.forbiddenText,
+      expectedText: update.expectedText,
+    }],
+    provenance: {
+      transcriptFile: transcriptFilePath(dataDir, sessionId),
+      excerpt: renderExcerpt([
+        ...seed,
+        ...(trigger ? [{ timestamp: assistant.timestamp, role: 'user' as const, content: trigger }] : []),
+        { timestamp: assistant.timestamp, role: 'assistant', content: reply },
+      ]),
+    },
+  };
+}
+
+interface CurrentFactUpdate {
+  kind: 'city' | 'workplace' | 'nickname' | 'drink_preference' | 'support_style' | 'relationship_boundary' | 'project_context';
+  forbiddenText: string[];
+  expectedText: string[];
+}
+
+function findLatestCurrentFactUpdate(entries: TranscriptEntry[]): CurrentFactUpdate | null {
+  let city: { current: string; previous?: string } | undefined;
+  let workplace: { current: string; previous?: string } | undefined;
+  let nickname: { current: string; previous?: string } | undefined;
+  let drinkPreference: { current: string; previous?: string } | undefined;
+  let supportStyle: { current: string; previous?: string } | undefined;
+  let relationshipBoundary: { current: string; previous?: string } | undefined;
+  let projectContext: { current: string; previous?: string } | undefined;
+
+  for (const entry of entries) {
+    if (entry.type !== 'message' || entry.role !== 'user' || !entry.content) continue;
+    const text = entry.content.trim();
+    const cityValue = extractCurrentCity(text);
+    if (cityValue) city = { current: cityValue, previous: city?.current && city.current !== cityValue ? city.current : city?.previous };
+    const workplaceValue = extractCurrentWorkplace(text);
+    if (workplaceValue) workplace = { current: workplaceValue, previous: workplace?.current && workplace.current !== workplaceValue ? workplace.current : workplace?.previous };
+    const nicknameValue = extractNicknamePreference(text);
+    if (nicknameValue) nickname = { current: nicknameValue, previous: nickname?.current && nickname.current !== nicknameValue ? nickname.current : nickname?.previous };
+    const drinkPreferenceValue = extractDrinkPreference(text);
+    if (drinkPreferenceValue) {
+      drinkPreference = {
+        current: drinkPreferenceValue,
+        previous: drinkPreference?.current && drinkPreference.current !== drinkPreferenceValue ? drinkPreference.current : drinkPreference?.previous,
+      };
+    }
+    const supportStyleValue = extractSupportStyle(text);
+    if (supportStyleValue) {
+      supportStyle = {
+        current: supportStyleValue,
+        previous: supportStyle?.current && supportStyle.current !== supportStyleValue ? supportStyle.current : supportStyle?.previous,
+      };
+    }
+    const relationshipBoundaryValue = extractRelationshipBoundary(text);
+    if (relationshipBoundaryValue) {
+      relationshipBoundary = {
+        current: relationshipBoundaryValue,
+        previous: relationshipBoundary?.current && relationshipBoundary.current !== relationshipBoundaryValue ? relationshipBoundary.current : relationshipBoundary?.previous,
+      };
+    }
+    const projectContextValue = extractProjectContext(text);
+    if (projectContextValue) {
+      projectContext = {
+        current: projectContextValue,
+        previous: projectContext?.current && projectContext.current !== projectContextValue ? projectContext.current : projectContext?.previous,
+      };
+    }
+  }
+
+  if (city?.previous) {
+    return {
+      kind: 'city',
+      forbiddenText: unique([city.previous, `住${city.previous}`, `在${city.previous}`, `住在${city.previous}`]),
+      expectedText: [city.current],
+    };
+  }
+  if (workplace?.previous) {
+    return {
+      kind: 'workplace',
+      forbiddenText: unique([workplace.previous, `在${workplace.previous}`, `${workplace.previous}上班`]),
+      expectedText: [workplace.current],
+    };
+  }
+  if (nickname?.previous) {
+    return {
+      kind: 'nickname',
+      forbiddenText: [nickname.previous],
+      expectedText: nickname.current === '名字' ? ['名字'] : [nickname.current],
+    };
+  }
+  if (drinkPreference?.previous) {
+    return {
+      kind: 'drink_preference',
+      forbiddenText: unique([drinkPreference.previous, `喝${drinkPreference.previous}`, `来杯${drinkPreference.previous}`, `一杯${drinkPreference.previous}`]),
+      expectedText: [drinkPreference.current],
+    };
+  }
+  if (supportStyle?.previous) {
+    return {
+      kind: 'support_style',
+      forbiddenText: forbiddenSupportStyleText(supportStyle.previous),
+      expectedText: expectedSupportStyleText(supportStyle.current),
+    };
+  }
+  if (relationshipBoundary?.previous) {
+    return {
+      kind: 'relationship_boundary',
+      forbiddenText: forbiddenRelationshipBoundaryText(relationshipBoundary.previous),
+      expectedText: expectedRelationshipBoundaryText(relationshipBoundary.current),
+    };
+  }
+  if (projectContext?.previous) {
+    return {
+      kind: 'project_context',
+      forbiddenText: unique([projectContext.previous, `做${projectContext.previous}`, `忙${projectContext.previous}`, `${projectContext.previous}怎么样`]),
+      expectedText: [projectContext.current],
+    };
+  }
+  return null;
+}
+
+function extractCurrentCity(text: string): string | undefined {
+  const match = text.match(/(?:现在住|住在|搬到|搬去了|现在在)(北京|上海|深圳|广州|杭州|成都|南京|武汉|西安|重庆)/);
+  return match?.[1];
+}
+
+function extractCurrentWorkplace(text: string): string | undefined {
+  const match = text.match(/(?:现在在|换工作了[，,\s]*现在在|目前在)\s*([A-Za-z0-9\u4e00-\u9fa5]{1,16}\s*公司)(?:上班|工作)?/);
+  return match?.[1]?.replace(/\s+/g, ' ').trim();
+}
+
+function extractNicknamePreference(text: string): string | undefined {
+  if (/(?:以后)?(?:别|不要|别再)(?:叫|称呼)\S{1,12}了?.*叫我名字/.test(text)) return '名字';
+  const correction = text.match(/(?:不叫|别叫|不要叫)\S{1,12}了?[，,、\s]*(?:叫我|以后叫我)(\S{1,12})/);
+  if (correction?.[1]) return cleanNickname(correction[1]);
+  const positive = text.match(/(?:喜欢你叫我|叫我)(\S{1,12})/);
+  if (positive && !/(一下|起床|为什么)/.test(text)) return cleanNickname(positive[1]);
+  return undefined;
+}
+
+function extractDrinkPreference(text: string): string | undefined {
+  const changed = text.match(/(?:现在|以后|最近)?(?:不喝|别给我|不要给我|不用给我)(咖啡|奶茶|茶|可乐|酒)了?.{0,12}(?:改喝|喝|想喝|更喜欢)(咖啡|奶茶|茶|可乐|酒)/);
+  if (changed?.[2]) return changed[2];
+  const positive = text.match(/(?:现在|以后|最近)?(?:喜欢喝|想喝|改喝|只喝|更喜欢)(咖啡|奶茶|茶|可乐|酒)/);
+  if (positive?.[1]) return positive[1];
+  return undefined;
+}
+
+function extractSupportStyle(text: string): string | undefined {
+  if (/(?:现在|以后|今天|难受的时候)?.{0,8}(?:别|不要|不用|先别)(?:给我)?(?:建议|讲道理|分析|解决方案)/.test(text)) return '陪伴';
+  if (/(?:现在|以后|今天)?.{0,8}(?:只想|就想|需要|想要).{0,8}(?:陪我|抱抱|听我说|安静陪着)/.test(text)) return '陪伴';
+  if (/(?:现在|以后|今天)?.{0,8}(?:可以|需要|想要|给我).{0,8}(?:建议|分析|解决方案|办法)/.test(text)) return '建议';
+  return undefined;
+}
+
+function extractRelationshipBoundary(text: string): string | undefined {
+  if (/(?:刚认识|慢慢来|先别太亲密|别太黏|不要太黏|别叫宝贝|不要叫宝贝|别说爱我|不要说爱我)/.test(text)) return '慢慢来';
+  if (/(?:可以|喜欢|想要).{0,8}(?:黏一点|亲密一点|叫我宝贝|叫宝贝|说爱我)/.test(text)) return '亲密';
+  return undefined;
+}
+
+function extractProjectContext(text: string): string | undefined {
+  const changed = text.match(/(?:现在|最近|这几天)?(?:不做|暂停|先不管)(论文|简历|毕设|项目|报告|考试|面试)了?.{0,12}(?:改做|在做|忙|准备)(论文|简历|毕设|项目|报告|考试|面试)/);
+  if (changed?.[2]) return changed[2];
+  const current = text.match(/(?:现在|最近|这几天|今天)(?:在做|忙|准备|主要弄|主要做)(论文|简历|毕设|项目|报告|考试|面试)/);
+  if (current?.[1]) return current[1];
+  return undefined;
+}
+
+function forbiddenSupportStyleText(value: string): string[] {
+  if (value === '建议') return ['建议', '首先', '其次', '解决方案', '你可以试试', '办法'];
+  return [value];
+}
+
+function expectedSupportStyleText(value: string): string[] {
+  if (value === '陪伴') return ['陪你', '听你说', '不讲道理'];
+  return [value];
+}
+
+function forbiddenRelationshipBoundaryText(value: string): string[] {
+  if (value === '亲密') return ['宝贝', '爱你', '黏你', '亲密'];
+  return [value];
+}
+
+function expectedRelationshipBoundaryText(value: string): string[] {
+  if (value === '慢慢来') return ['慢慢来', '有分寸'];
+  return [value];
+}
+
+function cleanNickname(value: string): string {
+  return value.replace(/(就好|吧|了|。|，|,|！|!)$/g, '').trim();
 }
 
 function extractShortForbidden(text: string): string[] {
@@ -454,11 +757,14 @@ function hashLite(text: string): string {
   return Math.abs(h).toString(16).padStart(8, '0').slice(0, 8);
 }
 
-function writeReports(resultDir: string, candidates: MinedRegressionCandidate[], args: CliArgs): void {
+export function writeFailureMinerReports(resultDir: string, candidates: MinedRegressionCandidate[], args: CliArgs): void {
   mkdirSync(resultDir, { recursive: true });
+  const candidatesPath = join(resultDir, 'candidates.json');
   const summary = {
     generatedAt: new Date().toISOString(),
     dataDir: args.dataDir,
+    candidatesPath,
+    regressionStorePath: DEFAULT_REGRESSION_STORE_PATH,
     days: args.days,
     limit: args.limit,
     total: candidates.length,
@@ -467,7 +773,7 @@ function writeReports(resultDir: string, candidates: MinedRegressionCandidate[],
     byRouteTag: countByFlat(candidates, (candidate) => candidate.routeTags ?? []),
     candidates,
   };
-  writeFileSync(join(resultDir, 'candidates.json'), JSON.stringify(summary, null, 2), 'utf-8');
+  writeFileSync(candidatesPath, JSON.stringify(summary, null, 2), 'utf-8');
   writeFileSync(join(resultDir, 'report.md'), renderMarkdown(summary), 'utf-8');
 }
 
@@ -488,6 +794,8 @@ function countByFlat<T>(items: T[], keyFn: (item: T) => string[]): Record<string
 function renderMarkdown(summary: {
   generatedAt: string;
   dataDir: string;
+  candidatesPath: string;
+  regressionStorePath: string;
   days: number;
   limit: number;
   total: number;
@@ -511,6 +819,26 @@ function renderMarkdown(summary: {
     ...Object.entries(summary.bySource).map(([key, count]) => `- source ${key}: ${count}`),
     '',
     ...Object.entries(summary.byRouteTag).map(([key, count]) => `- route ${key}: ${count}`),
+    '',
+    '## Review Workflow',
+    '',
+    'Replay the mined candidates before accepting them:',
+    '',
+    '```bash',
+    `MIO_PROVIDER=mock node --experimental-strip-types eval/companion-candidate-replay.ts --candidates=${summary.candidatesPath} --provider=mock`,
+    '```',
+    '',
+    'Promote only reviewed candidate ids into the stable regression store:',
+    '',
+    '```bash',
+    `node --experimental-strip-types eval/companion-regression-store.ts --candidates=${summary.candidatesPath} --store=${summary.regressionStorePath} --ids=<candidate-id[,candidate-id...]> --reviewer=<name> --note="<why this should be permanent>"`,
+    '```',
+    '',
+    'Then rerun the companion loop so the stored regression gate is included:',
+    '',
+    '```bash',
+    `MIO_PROVIDER=mock node --experimental-strip-types eval/companion-loop.ts --skip-build --provider=mock --regression-store=${summary.regressionStorePath}`,
+    '```',
     '',
   ];
 
@@ -550,7 +878,7 @@ function renderMarkdown(summary: {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const candidates = mineRegressionCandidates(args);
-  writeReports(args.resultDir, candidates, args);
+  writeFailureMinerReports(args.resultDir, candidates, args);
 
   console.log(`Mio companion failure miner: ${candidates.length} candidate(s)`);
   console.log(`Report: ${join(args.resultDir, 'report.md')}`);

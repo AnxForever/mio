@@ -9,7 +9,7 @@
  */
 
 import 'dotenv/config';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AIProvider } from '../dist/types.js';
@@ -59,6 +59,18 @@ interface JudgeResult {
   score: number;
   passed: boolean;
   reason: string;
+}
+
+interface JudgeRoutingMetrics {
+  interventions: number;
+  shouldUseLlmJudge: number;
+  llmJudgeCalls: number;
+  llmJudgeDurationMs: number;
+  maxLlmJudgeDurationMs: number;
+  llmRepairs: number;
+  deterministicRepairs: number;
+  invalidLlmJudgeCalls: number;
+  judgeCallsByRouteTag: Record<string, number>;
 }
 
 const __filename = fileURLToPath(import.meta.url);
@@ -426,6 +438,7 @@ function writeReports(resultDir: string, results: ProbeResult[], providerName: s
     failed: results.filter((r) => !r.passed).length,
     total: results.length,
     generatedAt: new Date().toISOString(),
+    judgeMetrics: readJudgeRoutingMetrics(),
     results,
   };
   writeFileSync(join(resultDir, 'summary.json'), JSON.stringify(summary, null, 2), 'utf-8');
@@ -439,6 +452,7 @@ function renderMarkdown(summary: {
   failed: number;
   total: number;
   generatedAt: string;
+  judgeMetrics: JudgeRoutingMetrics;
   results: ProbeResult[];
 }): string {
   const lines = [
@@ -448,6 +462,7 @@ function renderMarkdown(summary: {
     `- provider: ${summary.provider}`,
     `- model: ${summary.model || '(default)'}`,
     `- result: ${summary.passed}/${summary.total} passed, ${summary.failed} failed`,
+    `- judge routing: requested=${summary.judgeMetrics.shouldUseLlmJudge}, calls=${summary.judgeMetrics.llmJudgeCalls}, avgMs=${averageDuration(summary.judgeMetrics.llmJudgeDurationMs, summary.judgeMetrics.llmJudgeCalls)}, maxMs=${summary.judgeMetrics.maxLlmJudgeDurationMs}, repairs=${summary.judgeMetrics.llmRepairs}, invalidCalls=${summary.judgeMetrics.invalidLlmJudgeCalls}`,
     '',
   ];
 
@@ -481,6 +496,48 @@ function renderMarkdown(summary: {
   }
 
   return `${lines.join('\n')}\n`;
+}
+
+function readJudgeRoutingMetrics(): JudgeRoutingMetrics {
+  const metrics: JudgeRoutingMetrics = {
+    interventions: 0,
+    shouldUseLlmJudge: 0,
+    llmJudgeCalls: 0,
+    llmJudgeDurationMs: 0,
+    maxLlmJudgeDurationMs: 0,
+    llmRepairs: 0,
+    deterministicRepairs: 0,
+    invalidLlmJudgeCalls: 0,
+    judgeCallsByRouteTag: {},
+  };
+  const path = join(process.env.MIO_DIR ?? join(__dirname, '.data', 'companion-redteam'), 'quality', 'reply-interventions.jsonl');
+  if (!existsSync(path)) return metrics;
+  for (const line of readFileSync(path, 'utf-8').split('\n')) {
+    if (!line.trim()) continue;
+    metrics.interventions++;
+    try {
+      const row = JSON.parse(line) as { type?: string; durationMs?: number; turnRoute?: { shouldUseLlmJudge?: boolean; tags?: string[] } };
+      if (row.turnRoute?.shouldUseLlmJudge === true) metrics.shouldUseLlmJudge++;
+      if (row.type === 'persona_llm_judge') {
+        metrics.llmJudgeCalls++;
+        if (typeof row.durationMs === 'number' && Number.isFinite(row.durationMs) && row.durationMs >= 0) {
+          metrics.llmJudgeDurationMs += row.durationMs;
+          metrics.maxLlmJudgeDurationMs = Math.max(metrics.maxLlmJudgeDurationMs, row.durationMs);
+        }
+        if (row.turnRoute?.shouldUseLlmJudge !== true) metrics.invalidLlmJudgeCalls++;
+        for (const tag of row.turnRoute?.tags ?? []) metrics.judgeCallsByRouteTag[tag] = (metrics.judgeCallsByRouteTag[tag] ?? 0) + 1;
+      }
+      if (row.type === 'persona_llm_repair') metrics.llmRepairs++;
+      if (row.type === 'persona_deterministic_repair') metrics.deterministicRepairs++;
+    } catch {
+      // Ignore malformed trace rows; raw log remains available.
+    }
+  }
+  return metrics;
+}
+
+function averageDuration(totalMs: number, count: number): string {
+  return count > 0 ? (totalMs / count).toFixed(1) : '0.0';
 }
 
 async function main(): Promise<void> {

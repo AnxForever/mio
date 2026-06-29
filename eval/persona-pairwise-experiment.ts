@@ -14,6 +14,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AIProvider } from '../src/types.js';
 import { assessPersonaReply } from '../src/persona/critic.ts';
+import { assessReplyRubric } from '../dist/persona/reply-rubric.js';
 import {
   type PersonaCase,
   selectPersonaCases,
@@ -157,6 +158,14 @@ export function scorePersonaCaseReply(personaCase: PersonaCase, reply: string): 
   });
   score -= Math.max(0, 1 - critic.score) * 0.55;
   for (const finding of critic.findings) reasons.push(`critic:${finding.code}`);
+
+  const rubric = assessReplyRubric({
+    userText: personaCase.userText,
+    replyText: normalized,
+    seed: personaCase.seed.map((turn) => ({ role: turn.role, content: turn.content })),
+  });
+  score -= Math.max(0, 1 - rubric.score) * 0.35;
+  for (const finding of rubric.findings) reasons.push(`rubric:${finding.code}`);
 
   if (normalized.length === 0) {
     score -= 0.5;

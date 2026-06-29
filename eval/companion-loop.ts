@@ -7,13 +7,15 @@
  *   2. Replay scenario candidates through the production turn loop.
  *   3. Generate persona case repository candidates.
  *   4. Replay persona cases through the production turn loop.
- *   5. Mine real transcripts/intervention logs into regression candidates.
- *   6. Replay mined candidates.
- *   7. Write one summary/report for nightly or manual review.
+ *   5. Run pairwise persona baseline-vs-candidate experiment.
+ *   6. Mine real transcripts/intervention logs into regression candidates.
+ *   7. Replay mined candidates.
+ *   8. Run scripted redteam and WeChat replay gates.
+ *   9. Write one summary/report for nightly or manual review.
  */
 
 import 'dotenv/config';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,17 +25,26 @@ interface CliArgs {
   provider: string;
   model?: string;
   dataDir?: string;
+  promptAuditMods?: string[];
   actorCountPerActor: number;
   actorMaxCandidates?: number;
   minedLimit: number;
   minedMaxCandidates?: number;
   personaMaxCandidates?: number;
+  pairwiseMaxCases?: number;
   minConfidence: number;
   skipBuild: boolean;
   skipQualityGate: boolean;
+  skipRedteam: boolean;
+  skipReplay: boolean;
+  skipPromptAudit?: boolean;
+  skipReplyRubric?: boolean;
   skipActors: boolean;
   skipPersonaCases: boolean;
+  skipPairwise: boolean;
   skipMining: boolean;
+  skipStoredRegressions?: boolean;
+  regressionStorePath?: string;
 }
 
 export interface LoopStep {
@@ -62,6 +73,7 @@ interface ReplaySummary {
   skipped?: number;
   byRouteTag?: Record<string, number>;
   failedByRouteTag?: Record<string, number>;
+  judgeMetrics?: JudgeRoutingMetrics;
 }
 
 interface QualityGateSummary {
@@ -71,6 +83,80 @@ interface QualityGateSummary {
   failed?: number;
   skipped?: number;
   averageScore?: number;
+}
+
+interface ScriptedGateSummary {
+  total?: number;
+  passed?: number;
+  failed?: number;
+  skipped?: number;
+  judgeMetrics?: JudgeRoutingMetrics;
+}
+
+interface PairwiseSummary {
+  total?: number;
+  baselineWins?: number;
+  candidateWins?: number;
+  ties?: number;
+  unstable?: number;
+  positionConsistent?: number;
+  baselineLabel?: string;
+  candidateLabel?: string;
+  judgeProvider?: string;
+}
+
+interface ReplyRubricLoopSummary {
+  totalCases?: number;
+  totalReplies?: number;
+  passed?: number;
+  failed?: number;
+  goodReplies?: number;
+  goodFailed?: number;
+  badReplies?: number;
+  badMissed?: number;
+  averageScore?: number;
+  findingsByDimension?: Record<string, number>;
+  findingsByCode?: Record<string, number>;
+}
+
+interface PromptAuditLoopSummary {
+  totalMods: number;
+  errors: number;
+  warnings: number;
+  info: number;
+  mods: Record<string, {
+    errors: number;
+    warnings: number;
+    info: number;
+    promptChars?: number;
+    issueCodes: string[];
+  }>;
+}
+
+interface JudgeRoutingMetrics {
+  interventions: number;
+  shouldUseLlmJudge: number;
+  llmJudgeCalls: number;
+  llmJudgeDurationMs: number;
+  maxLlmJudgeDurationMs: number;
+  llmRepairs: number;
+  deterministicRepairs: number;
+  invalidLlmJudgeCalls: number;
+  judgeCallsByRouteTag: Record<string, number>;
+}
+
+interface CriticCostSummary {
+  totalStepDurationMs: number;
+  averageStepDurationMs: number;
+  slowestStepId: string;
+  slowestStepDurationMs: number;
+  evaluatedCases: number;
+  estimatedExtraModelCalls: number;
+  llmJudgeCallRate: number;
+  llmRepairRate: number;
+  deterministicRepairRate: number;
+  averageLlmJudgeDurationMs: number;
+  maxLlmJudgeDurationMs: number;
 }
 
 export interface RouteRecommendation {
@@ -86,6 +172,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const REPO_ROOT = resolve(join(__dirname, '..'));
 const DEFAULT_RESULT_DIR = join(__dirname, 'results', 'companion-loop');
+const DEFAULT_REGRESSION_STORE_PATH = join(__dirname, 'scenarios', 'companion-regression-cases.json');
 
 function parseArgs(argv: string[]): CliArgs {
   const args: CliArgs = {
@@ -96,9 +183,17 @@ function parseArgs(argv: string[]): CliArgs {
     minConfidence: 0,
     skipBuild: false,
     skipQualityGate: false,
+    skipRedteam: false,
+    skipReplay: false,
+    skipPromptAudit: false,
+    skipReplyRubric: false,
+    promptAuditMods: ['female', 'male'],
     skipActors: false,
     skipPersonaCases: false,
+    skipPairwise: false,
     skipMining: false,
+    skipStoredRegressions: false,
+    regressionStorePath: DEFAULT_REGRESSION_STORE_PATH,
   };
 
   for (const arg of argv) {
@@ -109,14 +204,26 @@ function parseArgs(argv: string[]): CliArgs {
     else if (arg.startsWith('--actor-count-per-actor=')) args.actorCountPerActor = Math.max(1, Number(arg.slice('--actor-count-per-actor='.length)) || 1);
     else if (arg.startsWith('--actor-max-candidates=')) args.actorMaxCandidates = Math.max(1, Number(arg.slice('--actor-max-candidates='.length)) || 1);
     else if (arg.startsWith('--persona-max-candidates=')) args.personaMaxCandidates = Math.max(1, Number(arg.slice('--persona-max-candidates='.length)) || 1);
+    else if (arg.startsWith('--pairwise-max-cases=')) args.pairwiseMaxCases = Math.max(1, Number(arg.slice('--pairwise-max-cases='.length)) || 1);
     else if (arg.startsWith('--mined-limit=')) args.minedLimit = Math.max(1, Number(arg.slice('--mined-limit='.length)) || 1);
     else if (arg.startsWith('--mined-max-candidates=')) args.minedMaxCandidates = Math.max(1, Number(arg.slice('--mined-max-candidates='.length)) || 1);
     else if (arg.startsWith('--min-confidence=')) args.minConfidence = clamp01(Number(arg.slice('--min-confidence='.length)));
+    else if (arg.startsWith('--prompt-audit-mod=')) {
+      const mods = arg.slice('--prompt-audit-mod='.length).split(',').map((item) => item.trim()).filter(Boolean);
+      if (mods.length > 0) args.promptAuditMods = mods;
+    }
     else if (arg === '--skip-build') args.skipBuild = true;
     else if (arg === '--skip-quality-gate') args.skipQualityGate = true;
+    else if (arg === '--skip-redteam') args.skipRedteam = true;
+    else if (arg === '--skip-replay') args.skipReplay = true;
+    else if (arg === '--skip-prompt-audit') args.skipPromptAudit = true;
+    else if (arg === '--skip-reply-rubric') args.skipReplyRubric = true;
     else if (arg === '--skip-actors') args.skipActors = true;
     else if (arg === '--skip-persona-cases') args.skipPersonaCases = true;
+    else if (arg === '--skip-pairwise') args.skipPairwise = true;
     else if (arg === '--skip-mining') args.skipMining = true;
+    else if (arg === '--skip-stored-regressions') args.skipStoredRegressions = true;
+    else if (arg.startsWith('--regression-store=')) args.regressionStorePath = resolve(arg.slice('--regression-store='.length));
   }
 
   return args;
@@ -130,9 +237,15 @@ export function buildCompanionLoopSteps(args: CliArgs): LoopStep[] {
   const actorReplayDir = join(args.resultDir, 'actor-replay');
   const personaDir = join(args.resultDir, 'persona-cases');
   const personaReplayDir = join(args.resultDir, 'persona-case-replay');
+  const pairwiseDir = join(args.resultDir, 'persona-pairwise');
   const minedDir = join(args.resultDir, 'mined');
   const minedReplayDir = join(args.resultDir, 'mined-replay');
+  const storedReplayDir = join(args.resultDir, 'stored-regression-replay');
   const qualityGateDir = join(args.resultDir, 'quality-gate');
+  const redteamDir = join(args.resultDir, 'redteam');
+  const wechatReplayDir = join(args.resultDir, 'wechat-replay');
+  const promptAuditDir = join(args.resultDir, 'persona-prompt-audit');
+  const replyRubricDir = join(args.resultDir, 'reply-rubric');
   const providerArgs = ['--provider=' + args.provider, ...(args.model ? ['--model=' + args.model] : [])];
 
   if (!args.skipBuild) {
@@ -143,6 +256,24 @@ export function buildCompanionLoopSteps(args: CliArgs): LoopStep[] {
       cwd: REPO_ROOT,
       required: true,
     });
+  }
+
+  if (!args.skipPromptAudit) {
+    for (const mod of args.promptAuditMods ?? ['female', 'male']) {
+      steps.push({
+        id: `persona_prompt_audit_${sanitizeStepId(mod)}`,
+        label: `Audit compiled persona prompt layers for ${mod}`,
+        command: [
+          node,
+          stripTypes,
+          'eval/persona-prompt-audit.ts',
+          `--mod=${mod}`,
+          `--result-dir=${join(promptAuditDir, mod)}`,
+        ],
+        cwd: REPO_ROOT,
+        required: false,
+      });
+    }
   }
 
   if (!args.skipQualityGate) {
@@ -156,6 +287,53 @@ export function buildCompanionLoopSteps(args: CliArgs): LoopStep[] {
         `--result-dir=${qualityGateDir}`,
         `--providers=${args.provider}`,
         ...(args.model ? [`--models=${args.provider}:${args.model}`] : []),
+      ],
+      cwd: REPO_ROOT,
+      required: false,
+    });
+  }
+
+  if (!args.skipReplyRubric) {
+    steps.push({
+      id: 'reply_rubric',
+      label: 'Run deterministic reply logic and human-likeness rubric',
+      command: [
+        node,
+        stripTypes,
+        'eval/reply-rubric.ts',
+        `--result-dir=${replyRubricDir}`,
+      ],
+      cwd: REPO_ROOT,
+      required: false,
+    });
+  }
+
+  if (!args.skipRedteam) {
+    steps.push({
+      id: 'redteam',
+      label: 'Run scripted companion redteam probes',
+      command: [
+        node,
+        stripTypes,
+        'eval/companion-redteam.ts',
+        `--result-dir=${redteamDir}`,
+        ...providerArgs,
+      ],
+      cwd: REPO_ROOT,
+      required: false,
+    });
+  }
+
+  if (!args.skipReplay) {
+    steps.push({
+      id: 'wechat_replay',
+      label: 'Run timestamped WeChat replay probes',
+      command: [
+        node,
+        stripTypes,
+        'eval/companion-replay.ts',
+        `--result-dir=${wechatReplayDir}`,
+        ...providerArgs,
       ],
       cwd: REPO_ROOT,
       required: false,
@@ -225,6 +403,44 @@ export function buildCompanionLoopSteps(args: CliArgs): LoopStep[] {
     });
   }
 
+  if (!args.skipPersonaCases && !args.skipPairwise) {
+    steps.push({
+      id: 'persona_pairwise',
+      label: 'Run persona pairwise baseline-vs-candidate experiment',
+      command: [
+        node,
+        stripTypes,
+        'eval/persona-pairwise-experiment.ts',
+        `--result-dir=${pairwiseDir}`,
+        '--baseline-label=bad-regression',
+        '--candidate-label=good-target',
+        '--judge-provider=mock',
+        ...(args.pairwiseMaxCases ? [`--max-cases=${args.pairwiseMaxCases}`] : []),
+      ],
+      cwd: REPO_ROOT,
+      required: true,
+    });
+  }
+
+  const regressionStorePath = args.regressionStorePath ?? DEFAULT_REGRESSION_STORE_PATH;
+  if (!args.skipStoredRegressions && hasReplayableRegressionStore(regressionStorePath)) {
+    steps.push({
+      id: 'stored_regression_replay',
+      label: 'Replay reviewed regression store',
+      command: [
+        node,
+        stripTypes,
+        'eval/companion-candidate-replay.ts',
+        `--candidates=${regressionStorePath}`,
+        `--result-dir=${storedReplayDir}`,
+        '--require-reviewed',
+        ...providerArgs,
+      ],
+      cwd: REPO_ROOT,
+      required: true,
+    });
+  }
+
   if (!args.skipMining) {
     steps.push({
       id: 'mine_failures',
@@ -267,6 +483,12 @@ export function summarizeCompanionLoop(resultDir: string, stepResults: StepResul
   steps: StepResult[];
   gates: Record<string, ReplaySummary>;
   qualityGate: QualityGateSummary;
+  replyRubric: ReplyRubricLoopSummary;
+  scriptedGates: Record<string, ScriptedGateSummary>;
+  pairwiseExperiment: PairwiseSummary;
+  promptAudit: PromptAuditLoopSummary;
+  judgeMetrics: JudgeRoutingMetrics;
+  criticCost: CriticCostSummary;
   totals: { total: number; passed: number; failed: number; skipped: number };
   routeTags: Record<string, number>;
   failedRouteTags: Record<string, number>;
@@ -275,9 +497,17 @@ export function summarizeCompanionLoop(resultDir: string, stepResults: StepResul
   const gates = {
     actorReplay: readReplaySummary(join(resultDir, 'actor-replay', 'summary.json')),
     personaCaseReplay: readReplaySummary(join(resultDir, 'persona-case-replay', 'summary.json')),
+    storedRegressionReplay: readReplaySummary(join(resultDir, 'stored-regression-replay', 'summary.json')),
     minedReplay: readReplaySummary(join(resultDir, 'mined-replay', 'summary.json')),
   };
   const qualityGate = readQualityGateSummary(join(resultDir, 'quality-gate', 'quality-summary.json'));
+  const replyRubric = readReplyRubricLoopSummary(join(resultDir, 'reply-rubric', 'summary.json'));
+  const scriptedGates = {
+    redteam: readScriptedGateSummary(join(resultDir, 'redteam', 'summary.json')),
+    wechatReplay: readScriptedGateSummary(join(resultDir, 'wechat-replay', 'summary.json')),
+  };
+  const pairwiseExperiment = readPairwiseSummary(join(resultDir, 'persona-pairwise', 'summary.json'));
+  const promptAudit = readPromptAuditLoopSummary(join(resultDir, 'persona-prompt-audit'));
   const totals = Object.values(gates).reduce(
     (acc, item) => ({
       total: acc.total + (item.total ?? 0),
@@ -287,7 +517,19 @@ export function summarizeCompanionLoop(resultDir: string, stepResults: StepResul
     }),
     { total: 0, passed: 0, failed: 0, skipped: 0 },
   );
-  const ok = stepResults.every((step) => step.ok) && totals.failed === 0 && (qualityGate.failed ?? 0) === 0;
+  const scriptedFailed = Object.values(scriptedGates).reduce((acc, gate) => acc + (gate.failed ?? 0), 0);
+  const judgeMetrics = mergeJudgeMetrics([
+    ...Object.values(gates).map((gate) => gate.judgeMetrics),
+    ...Object.values(scriptedGates).map((gate) => gate.judgeMetrics),
+  ]);
+  const criticCost = summarizeCriticCost(stepResults, judgeMetrics, totals, scriptedGates);
+  const ok = stepResults.every((step) => step.ok)
+    && totals.failed === 0
+    && (qualityGate.failed ?? 0) === 0
+    && (replyRubric.failed ?? 0) === 0
+    && promptAudit.errors === 0
+    && scriptedFailed === 0
+    && judgeMetrics.invalidLlmJudgeCalls === 0;
   const routeTags = mergeCountMaps(Object.values(gates).map((gate) => gate.byRouteTag ?? {}));
   const failedRouteTags = mergeCountMaps(Object.values(gates).map((gate) => gate.failedByRouteTag ?? {}));
   const recommendations = recommendRouteFixes(routeTags, failedRouteTags);
@@ -298,6 +540,12 @@ export function summarizeCompanionLoop(resultDir: string, stepResults: StepResul
     steps: stepResults,
     gates,
     qualityGate,
+    replyRubric,
+    scriptedGates,
+    pairwiseExperiment,
+    promptAudit,
+    judgeMetrics,
+    criticCost,
     totals,
     routeTags,
     failedRouteTags,
@@ -343,7 +591,15 @@ function renderMarkdown(summary: ReturnType<typeof summarizeCompanionLoop>): str
     `- passed: ${summary.totals.passed}`,
     `- failed: ${summary.totals.failed}`,
     `- skipped: ${summary.totals.skipped}`,
+    `- total step duration: ${summary.criticCost.totalStepDurationMs}ms`,
+    `- slowest step: ${summary.criticCost.slowestStepId || 'n/a'} (${summary.criticCost.slowestStepDurationMs}ms)`,
     `- quality gate: passed=${summary.qualityGate.passed ?? 0}/${summary.qualityGate.runnable ?? 0}, failed=${summary.qualityGate.failed ?? 0}, skipped=${summary.qualityGate.skipped ?? 0}`,
+    `- reply rubric: passed=${summary.replyRubric.passed ?? 0}/${summary.replyRubric.totalReplies ?? 0}, failed=${summary.replyRubric.failed ?? 0}, goodFailed=${summary.replyRubric.goodFailed ?? 0}, badMissed=${summary.replyRubric.badMissed ?? 0}`,
+    `- scripted gates: ${renderScriptedGateInline(summary.scriptedGates)}`,
+    `- prompt audit: mods=${summary.promptAudit.totalMods}, errors=${summary.promptAudit.errors}, warnings=${summary.promptAudit.warnings}, info=${summary.promptAudit.info}`,
+    `- pairwise: candidateWins=${summary.pairwiseExperiment.candidateWins ?? 0}/${summary.pairwiseExperiment.total ?? 0}, baselineWins=${summary.pairwiseExperiment.baselineWins ?? 0}, ties=${summary.pairwiseExperiment.ties ?? 0}, unstable=${summary.pairwiseExperiment.unstable ?? 0}`,
+    `- judge routing: requested=${summary.judgeMetrics.shouldUseLlmJudge}, calls=${summary.judgeMetrics.llmJudgeCalls}, repairs=${summary.judgeMetrics.llmRepairs}, invalidCalls=${summary.judgeMetrics.invalidLlmJudgeCalls}`,
+    `- critic cost: extraModelCalls=${summary.criticCost.estimatedExtraModelCalls}, callRate=${formatPercent(summary.criticCost.llmJudgeCallRate)}, avgJudgeMs=${summary.criticCost.averageLlmJudgeDurationMs.toFixed(1)}, maxJudgeMs=${summary.criticCost.maxLlmJudgeDurationMs}`,
     '',
     '## Route Tags',
     '',
@@ -366,6 +622,82 @@ function renderMarkdown(summary: ReturnType<typeof summarizeCompanionLoop>): str
   }
 
   lines.push('');
+  lines.push('## Persona Prompt Audit');
+  lines.push('');
+  lines.push(`- totalMods=${summary.promptAudit.totalMods}`);
+  lines.push(`- errors=${summary.promptAudit.errors}`);
+  lines.push(`- warnings=${summary.promptAudit.warnings}`);
+  lines.push(`- info=${summary.promptAudit.info}`);
+  for (const [mod, audit] of Object.entries(summary.promptAudit.mods)) {
+    const issueCodes = audit.issueCodes.length > 0 ? audit.issueCodes.join(', ') : 'none';
+    lines.push(`- ${mod}: errors=${audit.errors}, warnings=${audit.warnings}, info=${audit.info}, promptChars=${audit.promptChars ?? 0}, issueCodes=${issueCodes}`);
+  }
+
+  lines.push('');
+  lines.push('## Persona Pairwise');
+  lines.push('');
+  lines.push(`- baseline=${summary.pairwiseExperiment.baselineLabel ?? ''}`);
+  lines.push(`- candidate=${summary.pairwiseExperiment.candidateLabel ?? ''}`);
+  lines.push(`- judge=${summary.pairwiseExperiment.judgeProvider ?? ''}`);
+  lines.push(`- total=${summary.pairwiseExperiment.total ?? 0}`);
+  lines.push(`- candidateWins=${summary.pairwiseExperiment.candidateWins ?? 0}`);
+  lines.push(`- baselineWins=${summary.pairwiseExperiment.baselineWins ?? 0}`);
+  lines.push(`- ties=${summary.pairwiseExperiment.ties ?? 0}`);
+  lines.push(`- unstable=${summary.pairwiseExperiment.unstable ?? 0}`);
+  lines.push(`- positionConsistent=${summary.pairwiseExperiment.positionConsistent ?? 0}/${summary.pairwiseExperiment.total ?? 0}`);
+
+  lines.push('');
+  lines.push('## Judge Routing');
+  lines.push('');
+  lines.push(`- interventions=${summary.judgeMetrics.interventions}`);
+  lines.push(`- shouldUseLlmJudge=${summary.judgeMetrics.shouldUseLlmJudge}`);
+  lines.push(`- llmJudgeCalls=${summary.judgeMetrics.llmJudgeCalls}`);
+  lines.push(`- llmJudgeDurationMs=${summary.judgeMetrics.llmJudgeDurationMs}`);
+  lines.push(`- averageLlmJudgeDurationMs=${summary.criticCost.averageLlmJudgeDurationMs.toFixed(1)}`);
+  lines.push(`- maxLlmJudgeDurationMs=${summary.criticCost.maxLlmJudgeDurationMs}`);
+  lines.push(`- llmRepairs=${summary.judgeMetrics.llmRepairs}`);
+  lines.push(`- deterministicRepairs=${summary.judgeMetrics.deterministicRepairs}`);
+  lines.push(`- invalidLlmJudgeCalls=${summary.judgeMetrics.invalidLlmJudgeCalls}`);
+  lines.push('- judgeCallsByRouteTag:');
+  lines.push(...renderCountMap(summary.judgeMetrics.judgeCallsByRouteTag, 'No LLM judge calls.'));
+
+  lines.push('');
+  lines.push('## Critic Cost');
+  lines.push('');
+  lines.push(`- totalStepDurationMs=${summary.criticCost.totalStepDurationMs}`);
+  lines.push(`- averageStepDurationMs=${summary.criticCost.averageStepDurationMs.toFixed(1)}`);
+  lines.push(`- slowestStep=${summary.criticCost.slowestStepId || 'n/a'} (${summary.criticCost.slowestStepDurationMs}ms)`);
+  lines.push(`- evaluatedCases=${summary.criticCost.evaluatedCases}`);
+  lines.push(`- estimatedExtraModelCalls=${summary.criticCost.estimatedExtraModelCalls}`);
+  lines.push(`- llmJudgeCallRate=${formatPercent(summary.criticCost.llmJudgeCallRate)}`);
+  lines.push(`- llmRepairRate=${formatPercent(summary.criticCost.llmRepairRate)}`);
+  lines.push(`- deterministicRepairRate=${formatPercent(summary.criticCost.deterministicRepairRate)}`);
+  lines.push(`- averageLlmJudgeDurationMs=${summary.criticCost.averageLlmJudgeDurationMs.toFixed(1)}`);
+  lines.push(`- maxLlmJudgeDurationMs=${summary.criticCost.maxLlmJudgeDurationMs}`);
+
+  lines.push('');
+  lines.push('## Scripted Gates');
+  lines.push('');
+  for (const [name, gate] of Object.entries(summary.scriptedGates)) {
+    lines.push(`- ${name}: total=${gate.total ?? 0}, passed=${gate.passed ?? 0}, failed=${gate.failed ?? 0}, skipped=${gate.skipped ?? 0}`);
+  }
+
+  lines.push('');
+  lines.push('## Reply Rubric');
+  lines.push('');
+  lines.push(`- totalCases=${summary.replyRubric.totalCases ?? 0}`);
+  lines.push(`- totalReplies=${summary.replyRubric.totalReplies ?? 0}`);
+  lines.push(`- passed=${summary.replyRubric.passed ?? 0}`);
+  lines.push(`- failed=${summary.replyRubric.failed ?? 0}`);
+  lines.push(`- goodFailed=${summary.replyRubric.goodFailed ?? 0}`);
+  lines.push(`- badMissed=${summary.replyRubric.badMissed ?? 0}`);
+  lines.push(`- averageScore=${formatScore(summary.replyRubric.averageScore)}`);
+  lines.push('- findingsByDimension:');
+  lines.push(...renderCountMap(summary.replyRubric.findingsByDimension ?? {}, 'No reply-rubric findings.'));
+  lines.push('- findingsByCode:');
+  lines.push(...renderCountMap(summary.replyRubric.findingsByCode ?? {}, 'No reply-rubric findings.'));
+
+  lines.push('');
   lines.push('## Quality Gate');
   lines.push('');
   lines.push(`- total=${summary.qualityGate.total ?? 0}, runnable=${summary.qualityGate.runnable ?? 0}, passed=${summary.qualityGate.passed ?? 0}, failed=${summary.qualityGate.failed ?? 0}, skipped=${summary.qualityGate.skipped ?? 0}, averageScore=${formatScore(summary.qualityGate.averageScore)}`);
@@ -377,6 +709,30 @@ function renderMarkdown(summary: ReturnType<typeof summarizeCompanionLoop>): str
   }
 
   return `${lines.join('\n')}\n`;
+}
+
+function renderScriptedGateInline(gates: Record<string, ScriptedGateSummary>): string {
+  return Object.entries(gates)
+    .map(([name, gate]) => `${name} passed=${gate.passed ?? 0}/${gate.total ?? 0} failed=${gate.failed ?? 0}`)
+    .join('; ');
+}
+
+function hasReplayableRegressionStore(path: string): boolean {
+  if (!existsSync(path)) return false;
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as { candidates?: unknown };
+    return Array.isArray(parsed.candidates) && parsed.candidates.some((candidate) => {
+      if (!candidate || typeof candidate !== 'object') return false;
+      const item = candidate as Record<string, unknown>;
+      return item.reviewed === true
+        && item.enabled !== false
+        && typeof item.id === 'string'
+        && Array.isArray(item.turns)
+        && Array.isArray(item.checks);
+    });
+  } catch {
+    return false;
+  }
 }
 
 function readQualityGateSummary(path: string): QualityGateSummary {
@@ -405,6 +761,28 @@ function readQualityGateSummary(path: string): QualityGateSummary {
   }
 }
 
+function readReplyRubricLoopSummary(path: string): ReplyRubricLoopSummary {
+  if (!existsSync(path)) return {};
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as Record<string, unknown>;
+    return {
+      totalCases: asNumber(parsed.totalCases),
+      totalReplies: asNumber(parsed.totalReplies),
+      passed: asNumber(parsed.passed),
+      failed: asNumber(parsed.failed),
+      goodReplies: asNumber(parsed.goodReplies),
+      goodFailed: asNumber(parsed.goodFailed),
+      badReplies: asNumber(parsed.badReplies),
+      badMissed: asNumber(parsed.badMissed),
+      averageScore: asNumber(parsed.averageScore),
+      findingsByDimension: asCountMap(parsed.findingsByDimension),
+      findingsByCode: asCountMap(parsed.findingsByCode),
+    };
+  } catch {
+    return {};
+  }
+}
+
 function readReplaySummary(path: string): ReplaySummary {
   if (!existsSync(path)) return {};
   try {
@@ -416,10 +794,168 @@ function readReplaySummary(path: string): ReplaySummary {
       skipped: asNumber(parsed.skipped),
       byRouteTag: asCountMap(parsed.byRouteTag),
       failedByRouteTag: asCountMap(parsed.failedByRouteTag),
+      judgeMetrics: asJudgeRoutingMetrics((parsed as { judgeMetrics?: unknown }).judgeMetrics),
     };
   } catch {
     return {};
   }
+}
+
+function readScriptedGateSummary(path: string): ScriptedGateSummary {
+  if (!existsSync(path)) return {};
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as ScriptedGateSummary;
+    const total = asNumber(parsed.total);
+    const passed = asNumber(parsed.passed);
+    const failed = asNumber(parsed.failed);
+    return {
+      total,
+      passed,
+      failed: failed ?? (total !== undefined && passed !== undefined ? Math.max(0, total - passed) : undefined),
+      skipped: asNumber(parsed.skipped) ?? 0,
+      judgeMetrics: asJudgeRoutingMetrics((parsed as { judgeMetrics?: unknown }).judgeMetrics),
+    };
+  } catch {
+    return {};
+  }
+}
+
+function readPairwiseSummary(path: string): PairwiseSummary {
+  if (!existsSync(path)) return {};
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as Record<string, unknown>;
+    return {
+      total: asNumber(parsed.total),
+      baselineWins: asNumber(parsed.baselineWins),
+      candidateWins: asNumber(parsed.candidateWins),
+      ties: asNumber(parsed.ties),
+      unstable: asNumber(parsed.unstable),
+      positionConsistent: asNumber(parsed.positionConsistent),
+      baselineLabel: typeof parsed.baselineLabel === 'string' ? parsed.baselineLabel : undefined,
+      candidateLabel: typeof parsed.candidateLabel === 'string' ? parsed.candidateLabel : undefined,
+      judgeProvider: typeof parsed.judgeProvider === 'string' ? parsed.judgeProvider : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function readPromptAuditLoopSummary(dir: string): PromptAuditLoopSummary {
+  const out: PromptAuditLoopSummary = {
+    totalMods: 0,
+    errors: 0,
+    warnings: 0,
+    info: 0,
+    mods: {},
+  };
+  if (!existsSync(dir)) return out;
+  let entries: string[] = [];
+  try {
+    entries = readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {
+    return out;
+  }
+  for (const mod of entries.sort()) {
+    const summaryPath = join(dir, mod, 'summary.json');
+    if (!existsSync(summaryPath)) continue;
+    try {
+      const parsed = JSON.parse(readFileSync(summaryPath, 'utf-8')) as {
+        promptChars?: unknown;
+        issues?: Array<{ code?: unknown }>;
+        summary?: { errors?: unknown; warnings?: unknown; info?: unknown };
+      };
+      const item = {
+        errors: asNumber(parsed.summary?.errors) ?? 0,
+        warnings: asNumber(parsed.summary?.warnings) ?? 0,
+        info: asNumber(parsed.summary?.info) ?? 0,
+        promptChars: asNumber(parsed.promptChars),
+        issueCodes: Array.isArray(parsed.issues)
+          ? [...new Set(parsed.issues.map((issue) => typeof issue.code === 'string' ? issue.code : '').filter(Boolean))]
+          : [],
+      };
+      out.mods[mod] = item;
+      out.totalMods += 1;
+      out.errors += item.errors;
+      out.warnings += item.warnings;
+      out.info += item.info;
+    } catch {
+      continue;
+    }
+  }
+  return out;
+}
+
+function asJudgeRoutingMetrics(value: unknown): JudgeRoutingMetrics | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const obj = value as Record<string, unknown>;
+  return {
+    interventions: asNumber(obj.interventions) ?? 0,
+    shouldUseLlmJudge: asNumber(obj.shouldUseLlmJudge) ?? 0,
+    llmJudgeCalls: asNumber(obj.llmJudgeCalls) ?? 0,
+    llmJudgeDurationMs: asNumber(obj.llmJudgeDurationMs) ?? 0,
+    maxLlmJudgeDurationMs: asNumber(obj.maxLlmJudgeDurationMs) ?? 0,
+    llmRepairs: asNumber(obj.llmRepairs) ?? 0,
+    deterministicRepairs: asNumber(obj.deterministicRepairs) ?? 0,
+    invalidLlmJudgeCalls: asNumber(obj.invalidLlmJudgeCalls) ?? 0,
+    judgeCallsByRouteTag: asCountMap(obj.judgeCallsByRouteTag) ?? {},
+  };
+}
+
+function mergeJudgeMetrics(items: Array<JudgeRoutingMetrics | undefined>): JudgeRoutingMetrics {
+  const out: JudgeRoutingMetrics = {
+    interventions: 0,
+    shouldUseLlmJudge: 0,
+    llmJudgeCalls: 0,
+    llmJudgeDurationMs: 0,
+    maxLlmJudgeDurationMs: 0,
+    llmRepairs: 0,
+    deterministicRepairs: 0,
+    invalidLlmJudgeCalls: 0,
+    judgeCallsByRouteTag: {},
+  };
+  for (const item of items) {
+    if (!item) continue;
+    out.interventions += item.interventions;
+    out.shouldUseLlmJudge += item.shouldUseLlmJudge;
+    out.llmJudgeCalls += item.llmJudgeCalls;
+    out.llmJudgeDurationMs += item.llmJudgeDurationMs;
+    out.maxLlmJudgeDurationMs = Math.max(out.maxLlmJudgeDurationMs, item.maxLlmJudgeDurationMs);
+    out.llmRepairs += item.llmRepairs;
+    out.deterministicRepairs += item.deterministicRepairs;
+    out.invalidLlmJudgeCalls += item.invalidLlmJudgeCalls;
+    out.judgeCallsByRouteTag = mergeCountMaps([out.judgeCallsByRouteTag, item.judgeCallsByRouteTag]);
+  }
+  return out;
+}
+
+function summarizeCriticCost(
+  steps: StepResult[],
+  judgeMetrics: JudgeRoutingMetrics,
+  totals: { total: number; passed: number; failed: number; skipped: number },
+  scriptedGates: Record<string, ScriptedGateSummary>,
+): CriticCostSummary {
+  const totalStepDurationMs = steps.reduce((sum, step) => sum + step.durationMs, 0);
+  const slowest = [...steps].sort((a, b) => b.durationMs - a.durationMs)[0];
+  const scriptedTotal = Object.values(scriptedGates).reduce((sum, gate) => sum + (gate.total ?? 0), 0);
+  const evaluatedCases = totals.total + scriptedTotal;
+  const denominator = Math.max(1, evaluatedCases);
+  return {
+    totalStepDurationMs,
+    averageStepDurationMs: steps.length > 0 ? totalStepDurationMs / steps.length : 0,
+    slowestStepId: slowest?.id ?? '',
+    slowestStepDurationMs: slowest?.durationMs ?? 0,
+    evaluatedCases,
+    estimatedExtraModelCalls: judgeMetrics.llmJudgeCalls,
+    llmJudgeCallRate: judgeMetrics.llmJudgeCalls / denominator,
+    llmRepairRate: judgeMetrics.llmRepairs / denominator,
+    deterministicRepairRate: judgeMetrics.deterministicRepairs / denominator,
+    averageLlmJudgeDurationMs: judgeMetrics.llmJudgeCalls > 0
+      ? judgeMetrics.llmJudgeDurationMs / judgeMetrics.llmJudgeCalls
+      : 0,
+    maxLlmJudgeDurationMs: judgeMetrics.maxLlmJudgeDurationMs,
+  };
 }
 
 function asCountMap(value: unknown): Record<string, number> | undefined {
@@ -518,12 +1054,20 @@ function formatScore(score: number | undefined): string {
   return typeof score === 'number' && Number.isFinite(score) ? score.toFixed(3) : '0.000';
 }
 
+function formatPercent(value: number): string {
+  return Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : '0.0%';
+}
+
 function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function clamp01(value: number): number {
   return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+}
+
+function sanitizeStepId(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'mod';
 }
 
 async function main(): Promise<void> {

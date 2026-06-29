@@ -46,6 +46,20 @@ interface CandidateFile {
   candidates?: MinedRegressionCandidate[];
 }
 
+type ReplayableCandidate = MinedRegressionCandidate & { reviewed?: boolean; enabled?: boolean };
+
+interface JudgeRoutingMetrics {
+  interventions: number;
+  shouldUseLlmJudge: number;
+  llmJudgeCalls: number;
+  llmJudgeDurationMs: number;
+  maxLlmJudgeDurationMs: number;
+  llmRepairs: number;
+  deterministicRepairs: number;
+  invalidLlmJudgeCalls: number;
+  judgeCallsByRouteTag: Record<string, number>;
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const DEFAULT_CANDIDATES_PATH = join(__dirname, 'results', 'companion-mined-regressions', 'candidates.json');
@@ -74,23 +88,25 @@ function parseArgs(argv: string[]): CliArgs {
   return args;
 }
 
-export function loadCandidateReplayFile(path: string): MinedRegressionCandidate[] {
+export function loadCandidateReplayFile(path: string): ReplayableCandidate[] {
   if (!existsSync(path)) throw new Error(`Candidate file not found: ${path}`);
-  const parsed = JSON.parse(readFileSync(path, 'utf-8')) as CandidateFile | MinedRegressionCandidate[];
+  const parsed = JSON.parse(readFileSync(path, 'utf-8')) as CandidateFile | ReplayableCandidate[];
   const candidates = Array.isArray(parsed) ? parsed : parsed.candidates;
   if (!Array.isArray(candidates)) throw new Error(`Candidate file has no candidates array: ${path}`);
   return candidates.filter(isReplayableCandidate);
 }
 
-export function selectReplayCandidates(candidates: MinedRegressionCandidate[], args: Pick<CliArgs, 'minConfidence' | 'maxCandidates' | 'requireReviewed'>): MinedRegressionCandidate[] {
+export function selectReplayCandidates(candidates: ReplayableCandidate[], args: Pick<CliArgs, 'minConfidence' | 'maxCandidates' | 'requireReviewed'>): ReplayableCandidate[] {
   const selected = candidates
     .filter((candidate) => candidate.confidence >= args.minConfidence)
-    .filter((candidate) => !args.requireReviewed || candidate.source === 'reply_intervention');
+    .filter((candidate) => candidate.enabled !== false)
+    .filter((candidate) => !args.requireReviewed || candidate.reviewed === true || candidate.source === 'reply_intervention');
   return typeof args.maxCandidates === 'number' ? selected.slice(0, args.maxCandidates) : selected;
 }
 
 export function evaluateCandidateReplies(candidate: MinedRegressionCandidate, replies: string[]): string[] {
-  const text = replies.join('\n\n');
+  const mockDiagnosticOnly = replies.length > 0 && replies.every(isMockDiagnosticReply);
+  const text = replies.map(textForCandidateChecks).join('\n\n');
   const failures: string[] = [];
 
   for (const check of candidate.checks) {
@@ -100,11 +116,29 @@ export function evaluateCandidateReplies(candidate: MinedRegressionCandidate, re
     }
     for (const expected of check.expectedText) {
       const value = expected.trim();
+      if (mockDiagnosticOnly) continue;
       if (value && !text.includes(value)) failures.push(`${check.name}: missing text "${value}"`);
     }
   }
 
   return failures;
+}
+
+export function isProviderInfrastructureError(message: string): boolean {
+  return /fetch failed/i.test(message)
+    || /timed out/i.test(message)
+    || /invalid_api_key/i.test(message)
+    || /API error (401|403|407|429|5\d\d)/i.test(message)
+    || /ECONN|ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN/i.test(message);
+}
+
+function isMockDiagnosticReply(reply: string): boolean {
+  return /^\[mock reply to:[\s\S]*?\]\n\n\(MockProvider — configure MIO_PROVIDER plus a real provider API key to call a model\. System prompt length: \d+ chars\.\)$/.test(reply.trim());
+}
+
+function textForCandidateChecks(reply: string): string {
+  if (!isMockDiagnosticReply(reply)) return reply;
+  return reply.trim().replace(/^\[mock reply to:[\s\S]*?\]\n\n/, '');
 }
 
 async function runCandidate(candidate: MinedRegressionCandidate, provider: AIProvider): Promise<CandidateReplayResult> {
@@ -179,6 +213,7 @@ function writeReports(resultDir: string, results: CandidateReplayResult[], args:
       results.filter((result) => !result.passed && !result.skipped),
       (result) => result.routeTags ?? [],
     ),
+    judgeMetrics: readJudgeRoutingMetrics(),
     results,
   };
 
@@ -199,6 +234,7 @@ function renderMarkdown(summary: {
   skipped: number;
   byRouteTag: Record<string, number>;
   failedByRouteTag: Record<string, number>;
+  judgeMetrics: JudgeRoutingMetrics;
   results: CandidateReplayResult[];
 }): string {
   const lines = [
@@ -217,10 +253,21 @@ function renderMarkdown(summary: {
     ...Object.entries(summary.byRouteTag).map(([key, count]) => `- ${key}: ${count}`),
     ...(Object.keys(summary.failedByRouteTag).length > 0 ? ['', 'Failed route tags:', ...Object.entries(summary.failedByRouteTag).map(([key, count]) => `- ${key}: ${count}`)] : []),
     '',
+    '## Judge Routing',
+    '',
+    `- interventions: ${summary.judgeMetrics.interventions}`,
+    `- shouldUseLlmJudge: ${summary.judgeMetrics.shouldUseLlmJudge}`,
+    `- llmJudgeCalls: ${summary.judgeMetrics.llmJudgeCalls}`,
+    `- avgLlmJudgeDurationMs: ${averageDuration(summary.judgeMetrics.llmJudgeDurationMs, summary.judgeMetrics.llmJudgeCalls)}`,
+    `- maxLlmJudgeDurationMs: ${summary.judgeMetrics.maxLlmJudgeDurationMs}`,
+    `- llmRepairs: ${summary.judgeMetrics.llmRepairs}`,
+    `- deterministicRepairs: ${summary.judgeMetrics.deterministicRepairs}`,
+    `- invalidLlmJudgeCalls: ${summary.judgeMetrics.invalidLlmJudgeCalls}`,
+    '',
   ];
 
   for (const result of summary.results) {
-    lines.push(`## ${result.passed ? 'PASS' : 'FAIL'} ${result.id}`);
+    lines.push(`## ${result.passed ? 'PASS' : result.skipped ? 'SKIP' : 'FAIL'} ${result.id}`);
     lines.push('');
     lines.push(`- taxonomy: ${result.taxonomy}`);
     if (result.routeTags && result.routeTags.length > 0) lines.push(`- routeTags: ${result.routeTags.join(', ')}`);
@@ -247,7 +294,51 @@ function renderMarkdown(summary: {
   return `${lines.join('\n')}\n`;
 }
 
-function isReplayableCandidate(value: MinedRegressionCandidate): boolean {
+function readJudgeRoutingMetrics(): JudgeRoutingMetrics {
+  const metrics: JudgeRoutingMetrics = {
+    interventions: 0,
+    shouldUseLlmJudge: 0,
+    llmJudgeCalls: 0,
+    llmJudgeDurationMs: 0,
+    maxLlmJudgeDurationMs: 0,
+    llmRepairs: 0,
+    deterministicRepairs: 0,
+    invalidLlmJudgeCalls: 0,
+    judgeCallsByRouteTag: {},
+  };
+  const path = join(process.env.MIO_DIR ?? join(__dirname, '.data', 'companion-candidate-replay'), 'quality', 'reply-interventions.jsonl');
+  if (!existsSync(path)) return metrics;
+  for (const line of readFileSync(path, 'utf-8').split('\n')) {
+    if (!line.trim()) continue;
+    metrics.interventions++;
+    try {
+      const row = JSON.parse(line) as { type?: string; durationMs?: number; turnRoute?: { shouldUseLlmJudge?: boolean; tags?: string[] } };
+      if (row.turnRoute?.shouldUseLlmJudge === true) metrics.shouldUseLlmJudge++;
+      if (row.type === 'persona_llm_judge') {
+        metrics.llmJudgeCalls++;
+        if (typeof row.durationMs === 'number' && Number.isFinite(row.durationMs) && row.durationMs >= 0) {
+          metrics.llmJudgeDurationMs += row.durationMs;
+          metrics.maxLlmJudgeDurationMs = Math.max(metrics.maxLlmJudgeDurationMs, row.durationMs);
+        }
+        if (row.turnRoute?.shouldUseLlmJudge !== true) metrics.invalidLlmJudgeCalls++;
+        for (const tag of row.turnRoute?.tags ?? []) {
+          metrics.judgeCallsByRouteTag[tag] = (metrics.judgeCallsByRouteTag[tag] ?? 0) + 1;
+        }
+      }
+      if (row.type === 'persona_llm_repair') metrics.llmRepairs++;
+      if (row.type === 'persona_deterministic_repair') metrics.deterministicRepairs++;
+    } catch {
+      // Ignore malformed trace rows; the raw log remains available for inspection.
+    }
+  }
+  return metrics;
+}
+
+function averageDuration(totalMs: number, count: number): string {
+  return count > 0 ? (totalMs / count).toFixed(1) : '0.0';
+}
+
+function isReplayableCandidate(value: ReplayableCandidate): boolean {
   return !!value
     && typeof value.id === 'string'
     && typeof value.taxonomy === 'string'
@@ -295,6 +386,7 @@ async function main(): Promise<void> {
       console.log(result.passed ? 'PASS' : `FAIL (${result.failures.length})`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      const providerError = isProviderInfrastructureError(msg);
       results.push({
         id: candidate.id,
         taxonomy: candidate.taxonomy,
@@ -304,19 +396,21 @@ async function main(): Promise<void> {
         routeRisk: candidate.routeRisk,
         routeTags: candidate.routeTags,
         passed: false,
-        skipped: false,
+        skipped: providerError,
         replies: [],
-        failures: [`candidate replay error: ${msg}`],
+        failures: [`${providerError ? 'provider unavailable' : 'candidate replay error'}: ${msg}`],
         reason: candidate.reason,
       });
-      console.log(`ERROR ${msg}`);
+      console.log(`${providerError ? 'SKIP provider error' : 'ERROR'} ${msg}`);
     }
   }
 
   writeReports(args.resultDir, results, args, provider.name);
   const failed = results.filter((result) => !result.passed && !result.skipped);
+  const passed = results.filter((result) => result.passed).length;
+  const skipped = results.filter((result) => result.skipped).length;
   console.log(`\nReport: ${join(args.resultDir, 'report.md')}`);
-  console.log(`Summary: ${results.length - failed.length}/${results.length} passed, ${failed.length} failed`);
+  console.log(`Summary: ${passed}/${results.length} passed, ${failed.length} failed, ${skipped} skipped`);
   if (failed.length > 0) process.exit(1);
 }
 
