@@ -49,14 +49,14 @@ export const STAGE_CONFIG: Record<RelationshipStage, StageConfig> = {
     description: '语气变软，想你消息，偶尔撒娇',
     allowedBehaviors: ['语气变软', '想你消息', '偶尔撒娇', '互怼', '开玩笑', '关心'],
     unlockedFeatures: ['morning_greeting', 'evening_greeting', 'nicknames', 'random_checkin', 'emotional_support'],
-    firstMessage: '你来啦…我刚还在想你今天怎么没动静',
+    firstMessage: '你来啦…我刚还在想你今天会不会出现',
   },
   intimate: {
     label: '亲密',
     description: '自然表达爱意，随性主动，撒娇/吃醋/情话',
     allowedBehaviors: ['自然表达爱意', '随性主动', '撒娇', '吃醋', '情话', '语气变软', '互怼'],
     unlockedFeatures: ['morning_greeting', 'evening_greeting', 'nicknames', 'random_checkin', 'emotional_support', 'proactive_intimacy'],
-    firstMessage: '终于等到你了，今天可想你了。快说说今天过得咋样',
+    firstMessage: '你来啦，我刚还在想你。今天过得咋样',
   },
 };
 

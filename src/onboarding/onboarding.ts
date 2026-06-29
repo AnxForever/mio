@@ -41,6 +41,8 @@ export interface OnboardingState {
   gender?: Gender;
   /** Custom name for Mio */
   name?: string;
+  /** User-selected personality style labels from the web onboarding flow */
+  style?: string;
   /** Whether the user allows long-term memory extraction/retrieval */
   memoryConsent?: string;
   /** Whether the user opted into proactive check-ins */
@@ -63,33 +65,36 @@ export interface OnboardingStep {
 const STEPS: OnboardingStep[] = [
   {
     step: 1,
-    question: 'Select your AI provider:',
-    key: 'provider',
-    validate: (v: string) => {
-      const providers = Object.keys(PROVIDER_PRESETS).filter((p) => p !== 'mock');
-      if (providers.includes(v)) return null;
-      return `Invalid provider. Choose from: ${providers.join(', ')}`;
-    },
+    question: 'Say hello to Mio.',
+    key: 'firstMessage',
   },
   {
     step: 2,
-    question: 'Enter your API key (or press Enter for mock/offline):',
-    key: 'apiKey',
+    question: 'What should Mio call you?',
+    key: 'name',
+    validate: (v: string) => {
+      if (v.trim().length > 0) return null;
+      return 'Please enter a name.';
+    },
   },
   {
     step: 3,
-    question: 'Choose personality: male or female:',
+    question: 'Choose Mio gender/persona.',
     key: 'gender',
     validate: (v: string) => {
       const g = v.toLowerCase().trim();
-      if (g === 'male' || g === 'female') return null;
-      return 'Please enter "male" or "female".';
+      if (g === 'male' || g === 'female' || g === 'boyfriend' || g === 'girlfriend') return null;
+      return 'Please choose male or female.';
     },
   },
   {
     step: 4,
-    question: 'Give Mio a name (default: Mio):',
-    key: 'name',
+    question: 'Choose personality style.',
+    key: 'style',
+    validate: (v: string) => {
+      if (v.trim().length > 0) return null;
+      return 'Please choose at least one style.';
+    },
   },
   {
     step: 5,
@@ -303,5 +308,8 @@ export function validateStep(stepNumber: number, value: string): string | null {
 export function applyValue(state: Partial<OnboardingState>, step: number, value: string): Partial<OnboardingState> {
   const s = getStep(step);
   if (!s) return state;
-  return { ...state, [s.key]: value, currentStep: step + 1 };
+  const normalized = s.key === 'gender'
+    ? (value === 'boyfriend' ? 'male' : value === 'girlfriend' ? 'female' : value)
+    : value;
+  return { ...state, [s.key]: normalized, currentStep: step + 1 };
 }

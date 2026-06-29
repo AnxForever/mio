@@ -50,7 +50,7 @@ export class MockProvider implements StreamingProvider {
     return {
       text:
         `[mock reply to: ${lastContent}]\n\n` +
-        `(MockProvider — set ANTHROPIC_API_KEY to use real Claude. ` +
+        `(MockProvider — configure MIO_PROVIDER plus a real provider API key to call a model. ` +
         `System prompt length: ${systemPrompt.length} chars.)`,
     };
   }

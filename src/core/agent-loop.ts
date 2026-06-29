@@ -1018,6 +1018,7 @@ export async function runTurn(
     userText: turnInput.text,
     sessionId,
     promptCtx: prepared.promptCtx,
+    memoryCandidates: inference.memoryUsefulnessCandidates,
     provider,
     enableLlmJudge: config.features.llmJudge,
   });
@@ -1050,6 +1051,30 @@ export async function runTurn(
     crisisFlagged: crisisResult.shouldIntervene,
     ghosted: false,
   };
+  if (opts.includeQualityTrace) {
+    const simplifyRoute = (route: typeof quality.route) => ({
+      risk: route.risk,
+      tags: route.tags,
+      reasons: route.reasons,
+      shouldUseLlmJudge: route.shouldUseLlmJudge,
+    });
+    result.qualityTrace = {
+      rawText: inference.text,
+      finalText: text,
+      route: simplifyRoute(quality.route),
+      interventions: quality.interventions.map((intervention) => ({
+        type: intervention.type,
+        source: intervention.source,
+        severity: intervention.severity,
+        reason: intervention.reason,
+        before: intervention.before,
+        after: intervention.after,
+        durationMs: intervention.durationMs,
+        turnRoute: intervention.turnRoute ? simplifyRoute(intervention.turnRoute) : undefined,
+      })),
+      llmJudge: quality.llmJudge,
+    };
+  }
   if (!sessionCtx.isolatedMemory) {
     await pluginRegistry().invokeHook('onAfterTurn', sessionCtx, result);
   }

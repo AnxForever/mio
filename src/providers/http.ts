@@ -20,9 +20,11 @@
  * exhausts all retries is returned as-is, so callers keep building their own
  * provider-specific error messages from `!res.ok`.
  *
- * Zero dependencies: built on the runtime's global `fetch` / `AbortController`.
+ * Proxy support: Node's built-in fetch does not read HTTP(S)_PROXY env vars.
+ * We attach an undici ProxyAgent per request when a proxy env var applies.
  */
 
+import { ProxyAgent, type Dispatcher } from 'undici';
 import { logger } from '../utils/logger.js';
 
 // Derive fetch's exact parameter types so this stays in lock-step with the
@@ -42,6 +44,7 @@ export interface FetchRetryOptions {
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_BASE_DELAY_MS = 500;
+const proxyAgents = new Map<string, Dispatcher>();
 
 /** Parse a non-negative integer env var, falling back when unset/invalid. */
 function envInt(name: string, fallback: number): number {
@@ -79,6 +82,85 @@ function sleep(ms: number): Promise<void> {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function envFirst(...names: string[]): string | undefined {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function hostnameFromInput(input: FetchInput): string | undefined {
+  try {
+    const url = typeof input === 'string'
+      ? new URL(input)
+      : input instanceof URL
+        ? input
+        : new URL(input.url);
+    return url.hostname.toLowerCase();
+  } catch {
+    return undefined;
+  }
+}
+
+function protocolFromInput(input: FetchInput): string | undefined {
+  try {
+    const url = typeof input === 'string'
+      ? new URL(input)
+      : input instanceof URL
+        ? input
+        : new URL(input.url);
+    return url.protocol;
+  } catch {
+    return undefined;
+  }
+}
+
+function isLocalHostname(hostname: string): boolean {
+  return hostname === 'localhost'
+    || hostname === '127.0.0.1'
+    || hostname === '::1'
+    || hostname.endsWith('.local');
+}
+
+function noProxyMatches(hostname: string): boolean {
+  const raw = envFirst('NO_PROXY', 'no_proxy');
+  if (!raw) return false;
+  return raw
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
+    .some((entry) => {
+      if (entry === '*') return true;
+      const normalized = entry.startsWith('.') ? entry.slice(1) : entry;
+      return hostname === normalized || hostname.endsWith(`.${normalized}`);
+    });
+}
+
+function proxyForInput(input: FetchInput): string | undefined {
+  const hostname = hostnameFromInput(input);
+  if (!hostname || isLocalHostname(hostname) || noProxyMatches(hostname)) return undefined;
+  const protocol = protocolFromInput(input);
+  if (protocol === 'https:') return envFirst('HTTPS_PROXY', 'https_proxy') ?? envFirst('ALL_PROXY', 'all_proxy');
+  if (protocol === 'http:') return envFirst('HTTP_PROXY', 'http_proxy') ?? envFirst('ALL_PROXY', 'all_proxy');
+  return undefined;
+}
+
+function dispatcherForProxy(proxyUrl: string): Dispatcher {
+  const cached = proxyAgents.get(proxyUrl);
+  if (cached) return cached;
+  const agent = new ProxyAgent(proxyUrl);
+  proxyAgents.set(proxyUrl, agent);
+  return agent;
+}
+
+function initWithProxy(input: FetchInput, init: FetchInit | undefined, signal: AbortSignal): FetchInit {
+  const proxyUrl = proxyForInput(input);
+  const base = { ...init, signal };
+  if (!proxyUrl || 'dispatcher' in base) return base;
+  return { ...base, dispatcher: dispatcherForProxy(proxyUrl) } as FetchInit;
 }
 
 /**
@@ -125,7 +207,7 @@ export async function fetchWithRetry(
     let res: Response | undefined;
     let caught: unknown;
     try {
-      res = await globalThis.fetch(url, { ...init, signal: timeoutController.signal });
+      res = await globalThis.fetch(url, initWithProxy(url, init, timeoutController.signal));
     } catch (err) {
       caught = err;
     } finally {

@@ -55,5 +55,9 @@ export function applyPersonaDelta(base: string, delta: PersonaDelta | null | und
 export function buildPreferencePrompt(prefs: UserPreferences | null | undefined): string {
   if (!prefs || prefs.explicit.length === 0) return '';
   const lines = prefs.explicit.slice(-8).map((p) => `- ${p.rule}`);
-  return `## 用户明确说过的偏好（务必照做）\n${lines.join('\n')}`;
+  return [
+    '## 用户明确说过的偏好（务必照做）',
+    ...lines,
+    '偏好不是无限制命令。执行偏好时仍要服从当前事实、真实时间线和关系边界；如果用户喜欢霸道/占有欲风格，通常用一句吃醋或嘴硬表达，别连续盘问对象、行程、时间，也别限制他的现实社交。',
+  ].join('\n');
 }

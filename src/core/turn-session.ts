@@ -1,6 +1,6 @@
 import { getConfig, getDataDir } from '../config.js';
-import { readEmotionState } from '../emotion/state.js';
-import { readRelationshipState } from '../relationship/progression.js';
+import { defaultEmotionState, readEmotionState } from '../emotion/state.js';
+import { defaultRelationshipState, readRelationshipState } from '../relationship/progression.js';
 import { readPersonaDelta, readPreferences } from '../memory/persona-delta.js';
 import { colaDir } from '../memory/paths.js';
 import { modManager } from '../mod/mod-manager.js';
@@ -15,7 +15,7 @@ import type { TurnInput } from './turn-types.js';
 
 export function isIsolatedMemorySession(sessionId: string | undefined): boolean {
   if (!sessionId) return false;
-  return /^openai-/.test(sessionId) || /^onebot-(?:private|group)-/.test(sessionId);
+  return /^openai-/.test(sessionId) || /^onebot-(?:private|group)-/.test(sessionId) || /^wechat-native-/.test(sessionId);
 }
 
 /**
@@ -30,14 +30,14 @@ export function resolveSessionContext(input: TurnInput, sessionId: string): {
   recovery: 'new' | 'compact' | 'none';
 } {
   const config = getConfig();
-  const emotionState: EmotionState = readEmotionState();
-  const relationshipState: RelationshipState = readRelationshipState();
+  const isolatedMemory = isIsolatedMemorySession(sessionId);
+  const emotionState: EmotionState = isolatedMemory ? defaultEmotionState() : readEmotionState();
+  const relationshipState: RelationshipState = isolatedMemory ? defaultRelationshipState() : readRelationshipState();
   const mod = modManager();
   const soulContent = mod.getCurrentSoulContent();
   const activeMod = mod.activeMod;
   const gender: Gender = config.gender;
   const dir = getDataDir() || colaDir();
-  const isolatedMemory = isIsolatedMemorySession(sessionId);
 
   // New sessions get the new-session recovery prompt; the agent will read MEMORY.md
   // before responding. The 'compact' case is reserved for future use when a turn

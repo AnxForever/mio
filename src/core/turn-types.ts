@@ -12,6 +12,8 @@ import type { ToolRegistryLike } from './tool-runtime.js';
 import type { getConfig } from '../config.js';
 import type { classifyIntent } from '../emotion/tracker.js';
 import type { screenForCrisis } from '../safety/crisis.js';
+import type { ReplyQualityIntervention, PersonaLlmJudgeResult } from './reply-quality-gate.js';
+import type { TurnRoute } from './turn-router.js';
 
 /**
  * Input to a single agent-loop turn.
@@ -47,12 +49,30 @@ export interface TurnOutput {
   ghosted?: boolean;
   /** Optional machine-readable reason for silent turns. */
   silentReason?: string;
+  /** Optional debug trace for eval/debug tooling. Omitted in normal runtime calls. */
+  qualityTrace?: TurnQualityTrace;
 }
 
 export interface RunTurnOptions {
   onToken?: (chunk: string) => void;
   provider?: AIProvider;
   registry?: ToolRegistryLike;
+  includeQualityTrace?: boolean;
+}
+
+export interface TurnQualityTrace {
+  /** Raw model reply before output quality gate repairs. */
+  rawText: string;
+  /** Final reply after deterministic/LLM quality gate repairs. */
+  finalText: string;
+  route: Pick<TurnRoute, 'risk' | 'tags' | 'reasons' | 'shouldUseLlmJudge'>;
+  interventions: Array<Pick<
+    ReplyQualityIntervention,
+    'type' | 'source' | 'severity' | 'reason' | 'before' | 'after' | 'durationMs'
+  > & {
+    turnRoute?: Pick<TurnRoute, 'risk' | 'tags' | 'reasons' | 'shouldUseLlmJudge'>;
+  }>;
+  llmJudge?: PersonaLlmJudgeResult;
 }
 
 export interface PreparedTurnContext {

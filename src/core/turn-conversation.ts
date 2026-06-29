@@ -63,6 +63,7 @@ export async function buildConversationMessages({
         }
       }
 
+      systemPrompt = appendIsolatedIMTimeline(systemPrompt, promptCtx, history, userMessage);
       messages.push(...compressed.fullMessages);
     } else {
       const history = loadTranscriptWindow(input.sessionId, 30);
@@ -87,6 +88,7 @@ export async function buildConversationMessages({
         }
       }
 
+      systemPrompt = appendIsolatedIMTimeline(systemPrompt, promptCtx, history, userMessage);
       messages.push(...compression.messages);
     }
   } else {
@@ -116,4 +118,49 @@ export async function buildConversationMessages({
   }
 
   return { messages, finalSystemPrompt };
+}
+
+function appendIsolatedIMTimeline(
+  systemPrompt: string,
+  promptCtx: PromptCtx,
+  history: Message[],
+  currentMessage: Message,
+): string {
+  if (!promptCtx.isolatedMemory) return systemPrompt;
+
+  const timeline = buildRecentIMTimeline(history, currentMessage);
+  if (!timeline) return systemPrompt;
+  return `${systemPrompt}\n\n${timeline}`;
+}
+
+function buildRecentIMTimeline(history: Message[], currentMessage: Message): string {
+  const recent = [...history.slice(-8), currentMessage]
+    .filter((message) => typeof message.content === 'string' && message.content.trim().length > 0);
+  if (recent.length === 0) return '';
+
+  const lines = recent.map((message, index) => {
+    const marker = index === recent.length - 1 ? '本轮刚收到' : formatTimelineTimestamp(message.timestamp);
+    const role = message.role === 'assistant' ? 'Mio' : message.role === 'user' ? '对方' : '系统';
+    return `- ${marker} ${role}: ${truncateTimelineText(message.content as string, 90)}`;
+  });
+
+  return [
+    '## IM 时间边界',
+    '下面是最近几条消息的真实时间线。只把最后一条当成本轮刚收到的消息。',
+    '不要把昨晚/几小时前的旧消息当成刚刚发生；不要在同一轮回复里自造“等了一会儿”“你不回我”“你不理我”的后续剧情。',
+    ...lines,
+  ].join('\n');
+}
+
+function formatTimelineTimestamp(timestamp: string | undefined): string {
+  if (!timestamp) return '较早';
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp.slice(0, 16);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function truncateTimelineText(text: string, maxChars: number): string {
+  const oneLine = text.replace(/\s+/g, ' ').trim();
+  return oneLine.length <= maxChars ? oneLine : `${oneLine.slice(0, maxChars - 1)}…`;
 }
