@@ -190,6 +190,9 @@ export async function rerankByLLM<T>(
 
   try {
     const { provider, model } = await resolveRerankProvider(opts);
+    if (provider.name === 'mock') {
+      return candidates.slice(0, limit);
+    }
 
     const n = candidates.length;
     const numbered = candidates.map((c, i) => `[${i}] ${oneLine(getText(c))}`).join('\n');

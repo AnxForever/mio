@@ -45,6 +45,7 @@ import {
 import { extractStructuredMemoryLLM, readStructuredMemoryFromDisk, writeStructuredMemoryToDisk, createEmptyMemory } from './structured-memory.js';
 import { reflectOnMemory, curateMemory, runReflectionCycle } from './reflector.js';
 import { getFeedbackState } from '../learning/feedback.js';
+import { extractUserSaidText, hasDurableUserProfileSignal, isSyntheticProfileSignal } from './profile-governance.js';
 import type { ProceduralRule } from './procedural-memory.js';
 import { logger } from '../utils/logger.js';
 
@@ -108,25 +109,16 @@ function safeGetFeedbackState() {
 /**
  * Determine target bank file for a bookmark entry.
  */
-function decideTargetFile(
+export function decideTargetFile(
   entry: { what: string; evidence: string },
 ): 'user-profile' | 'relationship' | 'soul' | 'notes' | 'none' {
   const what = entry.what.toLowerCase();
   const evidence = entry.evidence.toLowerCase();
+  const userText = extractUserSaidText(entry.what);
 
   // Crisis entries usually don't produce durable facts
   if (what.includes('[crisis]') || what.includes('[ghost]')) return 'none';
-
-  // Facts about the user
-  const userProfileKeywords = [
-    '用户说', '他说', '她', '他喜欢', '他讨厌', '他的',
-    'user said', 'he likes', 'she likes', 'he is', 'she is',
-    '年龄', '工作', '职业', '公司', '城市', '学校', '专业',
-    '喜欢', '讨厌', '爱吃', '不爱', '爱好', '习惯',
-  ];
-  if (userProfileKeywords.some((kw) => what.includes(kw) || evidence.includes(kw))) {
-    return 'user-profile';
-  }
+  if (isSyntheticProfileSignal({ text: userText, what: entry.what, evidence: entry.evidence })) return 'none';
 
   // Relationship / communication style
   const relationshipKeywords = [
@@ -146,6 +138,21 @@ function decideTargetFile(
     return 'soul';
   }
 
+  // Facts about the user. Keep this narrow: raw "user said" exchanges are not
+  // durable profile facts unless the quoted text contains a stable signal.
+  const userProfileKeywords = [
+    '他喜欢', '她喜欢', '用户喜欢', '他讨厌', '她讨厌', '用户讨厌',
+    '他的工作', '她的工作', '用户的工作', '他的职业', '她的职业',
+    '年龄', '职业', '公司', '城市', '学校', '专业', '爱好', '习惯',
+    'he likes', 'she likes', 'he dislikes', 'she dislikes', 'he works', 'she works',
+  ];
+  if (userProfileKeywords.some((kw) => what.includes(kw) || evidence.includes(kw))) {
+    return 'user-profile';
+  }
+  if (userText && hasDurableUserProfileSignal(userText)) {
+    return 'user-profile';
+  }
+
   // Working notes (topics, domain insights, multi-day threads)
   const notesKeywords = [
     '关于', '话题', '笔记', '记下', 'thread', 'work',
@@ -153,11 +160,6 @@ function decideTargetFile(
   ];
   if (notesKeywords.some((kw) => what.includes(kw) || evidence.includes(kw))) {
     return 'notes';
-  }
-
-  // Default: user-profile for exchange entries with substantive evidence
-  if (what.includes('exchange') && evidence.length > 20) {
-    return 'user-profile';
   }
 
   return 'none';

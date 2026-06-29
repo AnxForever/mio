@@ -158,6 +158,71 @@ export function smartProactiveConfigPath(): string {
   return join(colaDir(), 'smart-proactive-config.json');
 }
 
+/** Admin console editable workspace configuration. */
+export function workspaceConfigPath(): string {
+  return join(colaDir(), 'workspace-config.json');
+}
+
+/** Web console user accounts. */
+export function authUsersPath(): string {
+  return join(colaDir(), 'auth', 'users.json');
+}
+
+/** Web console bearer sessions. */
+export function authSessionsPath(): string {
+  return join(colaDir(), 'auth', 'sessions.json');
+}
+
+/** Native WeChat/iLink channel runtime state. */
+export function wechatNativeDir(): string {
+  return join(colaDir(), 'wechat-native');
+}
+
+/** Native WeChat account root. */
+export function wechatNativeAccountsDir(): string {
+  return join(wechatNativeDir(), 'accounts');
+}
+
+/** Native WeChat account directory. */
+export function wechatNativeAccountDir(accountId: string): string {
+  return join(wechatNativeAccountsDir(), safeUserId(accountId));
+}
+
+/** Native WeChat account credential file. */
+export function wechatNativeAccountPath(accountId: string): string {
+  return join(wechatNativeAccountDir(accountId), 'account.json');
+}
+
+/** Native WeChat trial/access settings. */
+export function wechatNativeSettingsPath(): string {
+  return join(wechatNativeDir(), 'settings.json');
+}
+
+/** Native WeChat operational audit events. */
+export function wechatNativeEventsPath(): string {
+  return join(wechatNativeDir(), 'events.jsonl');
+}
+
+/** Native WeChat getUpdates cursor file. */
+export function wechatNativeSyncPath(accountId: string): string {
+  return join(wechatNativeAccountDir(accountId), 'sync.json');
+}
+
+/** Native WeChat cross-process runtime lock file. */
+export function wechatNativeRuntimeLockPath(accountId: string): string {
+  return join(wechatNativeAccountDir(accountId), 'runtime.lock');
+}
+
+/** Native WeChat per-account daily contact usage. */
+export function wechatNativeUsagePath(accountId: string): string {
+  return join(wechatNativeAccountDir(accountId), 'usage.json');
+}
+
+/** Native WeChat per-peer context token file. */
+export function wechatNativeContextPath(accountId: string): string {
+  return join(wechatNativeAccountDir(accountId), 'context-tokens.json');
+}
+
 /** Sanitize external session/contact ids before using them in paths. */
 export function userDir(userId = 'default'): string {
   return join(usersDir(), safeUserId(userId));
@@ -240,6 +305,36 @@ export function replyQualityInterventionsPath(): string {
 /** Memory retrieval/injection usefulness trace log. */
 export function memoryUsefulnessTracePath(): string {
   return join(colaDir(), 'quality', 'memory-usefulness.jsonl');
+}
+
+/** Proactive outreach decision trace log. */
+export function proactiveDecisionTracePath(): string {
+  return join(colaDir(), 'quality', 'proactive-decisions.jsonl');
+}
+
+/** Reviewable candidates exported from local debug traces. */
+export function debugTraceCandidatesDir(): string {
+  return join(colaDir(), 'runtime', 'debug-trace-candidates');
+}
+
+/** Runtime files for the local WeChat bridge. */
+export function wechatBridgeRuntimeDir(): string {
+  return join(colaDir(), 'runtime', 'wechat-bridge');
+}
+
+/** Last companion quality gate record written before verified WeChat restarts. */
+export function companionGateRecordPath(): string {
+  return join(wechatBridgeRuntimeDir(), 'last-companion-gate.json');
+}
+
+/** A single debug-trace candidate export run. */
+export function debugTraceCandidateRunDir(runId: string): string {
+  return join(debugTraceCandidatesDir(), safeUserId(runId));
+}
+
+/** Default reviewed companion regression store used by eval/companion-loop. */
+export function companionRegressionStorePath(): string {
+  return join(process.cwd(), 'eval', 'scenarios', 'companion-regression-cases.json');
 }
 
 function safeUserId(raw: string): string {

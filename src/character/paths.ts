@@ -5,13 +5,13 @@
  */
 
 import { join } from 'node:path';
-import { getDataDir } from '../config.js';
+import { getDataDir, getModsDir } from '../config.js';
 
 // ─── Character files ───
 
 /** Directory containing all character mods */
 export function modsDir(): string {
-  return join(getDataDir(), '..', 'mods');
+  return getModsDir();
 }
 
 /** Structured character config JSON for a specific character */

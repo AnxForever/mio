@@ -21,7 +21,13 @@ import {
   midTermTopicPath,
 } from './paths.js';
 import type { AIProvider, Message } from '../types.js';
-import { resolveContradictions, makeLLMContradicts } from './temporal-resolve.js';
+import {
+  combineContradicts,
+  makeLLMContradicts,
+  makeRuleBasedContradicts,
+  resolveContradictions,
+  resolveContradictionsSync,
+} from './temporal-resolve.js';
 
 // ─── Types ───
 
@@ -37,7 +43,7 @@ export interface MemoryEntity {
   enabled?: boolean;
   /** Structured source metadata for audit/review UI. Legacy `source` remains as display fallback. */
   provenance?: MemoryProvenance;
-  reviewStatus?: 'inferred' | 'confirmed' | 'ignored';
+  reviewStatus?: 'inferred' | 'confirmed' | 'ignored' | 'wrong';
   reviewedAt?: string;
   /** User-pinned memories are prompt-facing priority anchors. */
   pinned?: boolean;
@@ -122,6 +128,12 @@ function classifyTopic(text: string): string {
 // ─── Pattern matching for entity extraction ───
 
 const FACT_PATTERNS: RegExp[] = [
+  /(?:用户|他|她|你)?(?:现在|最近|这几天)?(?:不做|暂停|先不管)(论文|简历|毕设|项目|报告|考试|面试)了?.{0,12}(?:改做|在做|忙|准备)(论文|简历|毕设|项目|报告|考试|面试)/,
+  /(?:用户|他|她|你)?(?:现在|最近|这几天|今天)(?:在做|忙|准备|主要弄|主要做)(论文|简历|毕设|项目|报告|考试|面试)/,
+  // "用户住在上海" / "用户搬到上海"
+  /(?:用户|他|她|你)(?:现在|目前)?(?:住在|在)(\S{2,20})(?:住|居住)?/,
+  /(?:用户|他|她|你)(?:搬到|搬去|搬进)(\S{2,20})/,
+  /(?:用户|他|她|你)(?:现在|目前)?在(\S{2,30})(?:工作|上班|上学|读书|学习)/,
   // "用户今年25岁" / "他是程序员"
   /(?:用户|他|她|你)(?:今年|现在|是|有)?(\S*(?:岁|年|岁数|生日|工作|职业|专业|学校|公司|城市))/,
   // "在XX上班"
@@ -129,7 +141,15 @@ const FACT_PATTERNS: RegExp[] = [
 ];
 
 const PREFERENCE_PATTERNS: RegExp[] = [
+  /(?:现在|以后|最近)?(?:不喝|别给我|不要给我|不用给我|不喜欢喝)(咖啡|奶茶|茶|可乐|酒)了?.{0,12}(?:改喝|喝|想喝|更喜欢)(咖啡|奶茶|茶|可乐|酒)/,
+  /(?:现在|以后|最近)?(?:喜欢喝|想喝|改喝|只喝|更喜欢)(咖啡|奶茶|茶|可乐|酒)/,
+  /(?:现在|以后|今天|难受的时候)?.{0,8}(?:别|不要|不用|先别)(?:给我)?(?:建议|讲道理|分析|解决方案).{0,12}(?:陪我|听我说|抱抱)?/,
+  /(?:现在|以后|今天)?.{0,8}(?:只想|就想|需要|想要).{0,8}(?:陪我|抱抱|听我说|安静陪着)/,
+  /(?:现在|以后|今天)?.{0,8}(?:可以|需要|想要|给我).{0,8}(?:建议|分析|解决方案|办法)/,
+  /(?:刚认识|慢慢来|先别太亲密|别太黏|不要太黏|别叫宝贝|不要叫宝贝|别说爱我|不要说爱我)/,
+  /(?:可以|喜欢|想要).{0,8}(?:黏一点|亲密一点|叫我宝贝|叫宝贝|说爱我)/,
   // "喜欢/爱/讨厌/不喜欢/喜欢"
+  /(?:以后)?(?:别|不要|别再)(?:叫|称呼)(\S{1,12})/,
   /(?:喜欢|爱|讨厌|不喜欢|最爱|很喜欢|超喜欢|真的好喜欢)(\S{2,20})/,
   /(?:最爱的|最喜欢的)(\S{2,20})/,
 ];
@@ -287,7 +307,12 @@ function entitiesSimilar(a: string, b: string): boolean {
 
 function activeEntities(entities: MemoryEntity[]): MemoryEntity[] {
   // B-1：排除被取代的矛盾旧事实（invalidatedAt 已设）。无人 set 之前行为不变。
-  return entities.filter((entity) => entity.enabled !== false && entity.reviewStatus !== 'ignored' && !entity.invalidatedAt);
+  return entities.filter((entity) =>
+    entity.enabled !== false
+    && entity.reviewStatus !== 'ignored'
+    && entity.reviewStatus !== 'wrong'
+    && !entity.invalidatedAt,
+  );
 }
 
 // ─── Main API ───
@@ -392,6 +417,7 @@ function assembleMemory(
 
   // Decay confidence for old unconfirmed entities
   merged = decayOldEntities(merged, now);
+  merged = resolveRuleBasedMemoryContradictions(merged, now);
 
   return deriveStructuredState(merged, now, extractionState);
 }
@@ -668,7 +694,7 @@ async function resolveMemoryContradictions(
     const { provider, model } = await resolveSummarizeProvider(opts);
     const { entities, supersededCount } = await resolveContradictions(
       memory.entities,
-      makeLLMContradicts(provider, model),
+      combineContradicts(makeRuleBasedContradicts(), makeLLMContradicts(provider, model)),
       now,
     );
     if (supersededCount === 0) return memory;
@@ -678,6 +704,21 @@ async function resolveMemoryContradictions(
     logger.warn('[structured-memory] 矛盾消解失败，保留原记忆', { error: String(err) });
     return memory;
   }
+}
+
+function resolveRuleBasedMemoryContradictions(
+  entities: MemoryEntity[],
+  now: string,
+): MemoryEntity[] {
+  const { entities: resolved, supersededCount } = resolveContradictionsSync(
+    entities,
+    (older, newer) => makeRuleBasedContradicts()(older, newer) === true,
+    now,
+  );
+  if (supersededCount > 0) {
+    logger.info('[structured-memory] rule-based current-fact resolution', { supersededCount });
+  }
+  return resolved;
 }
 
 /**
@@ -731,7 +772,7 @@ function decayOldEntities(entities: MemoryEntity[], now: string): MemoryEntity[]
   const thirtyDays = 30 * 86400000;
 
   return entities.filter((e) => {
-    if (e.reviewStatus === 'confirmed' || e.reviewStatus === 'ignored') {
+    if (e.reviewStatus === 'confirmed' || e.reviewStatus === 'ignored' || e.reviewStatus === 'wrong') {
       return true;
     }
 
@@ -796,7 +837,10 @@ export function deriveStructuredStateView(
     ...activeEntities(structured.durableFacts)
       .filter((entity) => entity.type === 'fact' || entity.type === 'preference'),
     ...active
-      .filter((entity) => (entity.type === 'fact' || entity.type === 'preference') && entity.reviewStatus === 'confirmed'),
+      .filter((entity) => (
+        (entity.type === 'fact' || entity.type === 'preference')
+        && (entity.reviewStatus === 'confirmed' || isCurrentFactSignal(entity))
+      )),
   ])
     .filter((entity) => !pinnedKeys.has(entityKey(entity)))
     .sort(compareMemoryPriority)
@@ -837,12 +881,21 @@ export function deriveStructuredStateView(
 
 export function renderStructuredStateView(view: StructuredStateView): string | null {
   const parts: string[] = [];
+  const anchors = structuredResponseAnchors(view);
 
   if (view.pinned.length > 0) {
     const lines = view.pinned.map((entity) => (
       `- ${entity.content}（固定记忆，优先保留；按类型和时间判断，不自动当作当前状态；${formatDateOnly(entity.lastSeen)}更新）`
     ));
     parts.push(`## 固定记忆（用户指定优先）\n${lines.join('\n')}`);
+  }
+
+  if (anchors.length > 0) {
+    parts.push([
+      '## 当前相关线索（回复时优先落地）',
+      ...anchors.map((anchor) => `- ${anchor}`),
+      '使用规则：当用户提到“今天/又/最近/这件事/汇报/项目”或问你“还记得吗”，先点名最相关的具体线索，再接情绪和偏好；不要只问“什么内容”。这些是近期背景，不自动当作用户此刻正在做。',
+    ].join('\n'));
   }
 
   if (view.currentFacts.length > 0) {
@@ -872,6 +925,18 @@ export function renderStructuredStateView(view: StructuredStateView): string | n
   }
 
   return parts.length > 0 ? parts.join('\n\n') : null;
+}
+
+function structuredResponseAnchors(view: StructuredStateView): string[] {
+  const out: string[] = [];
+  for (const topic of view.multiDayArcs) {
+    const summary = topic.summary.length > 80 ? `${topic.summary.slice(0, 80)}…` : topic.summary;
+    out.push(`${topic.topic}: ${summary}`);
+  }
+  for (const entity of view.recentEvents) {
+    out.push(entity.content);
+  }
+  return Array.from(new Set(out)).slice(0, 5);
 }
 
 /**
@@ -918,6 +983,17 @@ function isMultiDayTopic(topic: TopicSegment): boolean {
   if (arcEntities.some((entity) => entity.occurrences >= 2)) return true;
   const differentCalendarDay = start.toISOString().slice(0, 10) !== end.toISOString().slice(0, 10);
   return arcEntities.length >= 2 && (differentCalendarDay || endMs - startMs >= 20 * 3_600_000);
+}
+
+function isCurrentFactSignal(entity: MemoryEntity): boolean {
+  const text = entity.content.replace(/\s+/g, '');
+  if (entity.type === 'fact') {
+    return /(?:现在|目前|当前|住在|搬到|搬去|搬进|在\S{2,30}(?:工作|上班|上学|读书|学习))/.test(text);
+  }
+  if (entity.type === 'preference') {
+    return /(?:以后|别|不要|别再|现在|目前|当前)/.test(text);
+  }
+  return false;
 }
 
 function isWithinWindow(iso: string, nowMs: number, windowMs: number): boolean {

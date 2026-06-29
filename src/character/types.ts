@@ -7,6 +7,30 @@
 
 // ─── Character Definition ───
 
+export interface CharacterSource {
+  /** Content origin. Built-in samples are not production-quality cards. */
+  type: 'sample' | 'custom' | 'imported';
+  /** Human-readable source label */
+  label: string;
+  /** Review state for product trust */
+  quality: 'draft' | 'reviewed' | 'unknown';
+  /** Optional note shown in management UI */
+  note?: string;
+  /** Optional source URL for imported/public cards */
+  url?: string;
+}
+
+export interface LifeTrajectoryEvent {
+  /** Life period label, e.g. "childhood", "university", "now" */
+  period: string;
+  /** Optional age range for the period */
+  ageRange?: string;
+  /** What happened during this period */
+  event: string;
+  /** How this period shaped the character */
+  impact: string;
+}
+
 export interface CharacterConfig {
   /** Character display name */
   name: string;
@@ -32,6 +56,26 @@ export interface CharacterConfig {
   speakingStyle: string;
   /** User-written backstory (1-3 paragraphs) */
   backstory: string;
+  /** Stage-by-stage life trajectory */
+  lifeTrajectory?: LifeTrajectoryEvent[];
+  /** Current daily life, unresolved pressure, routines */
+  currentLife?: string;
+  /** How this person approaches intimacy, trust, conflict, and boundaries */
+  relationshipProfile?: string;
+  /** Starting situation for a new chat */
+  scenario?: string;
+  /** First message shown in a fresh chat; style anchor */
+  firstMessage?: string;
+  /** Alternative first messages for different entry points */
+  alternateGreetings?: string[];
+  /** Example dialogues that demonstrate voice and behavior */
+  exampleDialogues?: string[];
+  /** Human-facing creator notes, not prompt-critical */
+  creatorNotes?: string;
+  /** Version string for content review */
+  characterVersion?: string;
+  /** Frontend tags for filtering */
+  tags?: string[];
   /** Life goals / aspirations */
   lifeGoals: string[];
   /** Interests and hobbies */
@@ -42,6 +86,8 @@ export interface CharacterConfig {
   quirks: string[];
   /** ISO timestamp of creation */
   createdAt: string;
+  /** Origin and quality metadata */
+  source?: CharacterSource;
 }
 
 export interface CharacterDef {

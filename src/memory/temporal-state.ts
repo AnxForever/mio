@@ -10,6 +10,7 @@ export type TemporalStateKind =
   | 'busy'
   | 'away'
   | 'ongoing_task'
+  | 'multi_day_arc'
   | 'user_requested_space'
   | 'mio_promised_space'
   | 'hungry'
@@ -29,9 +30,11 @@ export interface TemporalStateEntry {
   expiresAt: string;
   evidence: string;
   confidence: number;
+  sourceSessionId?: string;
   resolvedAt?: string;
   resolutionReason?: TemporalResolutionReason;
   resolutionEvidence?: string;
+  resolutionEventId?: string;
 }
 
 export type TemporalStateEventType = 'detected' | 'resolved' | 'assistant_commitment';
@@ -131,6 +134,18 @@ const RULES: DetectionRule[] = [
     suppress: /做完|写完|弄完|处理完|改完|测完/,
   },
   {
+    kind: 'multi_day_arc',
+    label: '多日事件/持续任务',
+    ttlMs: 7 * DAY,
+    confidence: 0.76,
+    patterns: [
+      /这(?:几天|两天|周|星期).*(?:一直|都|在)?.*(?:忙|赶|准备|处理|写|做|改|调|测).*(?:项目|论文|稿|代码|需求|发布|汇报|考试|面试)/,
+      /最近(?:一直|都|在)?.*(?:忙|赶|准备|处理|写|做|改|调|测).*(?:项目|论文|稿|代码|需求|发布|汇报|考试|面试)/,
+      /接下来(?:几天|一周|这周).*(?:忙|赶|准备|处理|写|做|改|调|测).*(?:项目|论文|稿|代码|需求|发布|汇报|考试|面试)/,
+    ],
+    suppress: /结束|做完|写完|弄完|处理完|改完|测完|交了|发完|汇报完|考完|面完/,
+  },
+  {
     kind: 'away',
     label: '暂时离开/稍后再聊',
     ttlMs: 2 * HOUR,
@@ -175,8 +190,12 @@ const RESOLUTION_RULES: ResolutionRule[] = [
     patterns: [/不困[了啦]?/, /没那么困/, /睡醒[了啦]?/, /醒[了啦]/, /起床[了啦]?/],
   },
   {
-    kinds: ['busy', 'away', 'ongoing_task'],
+    kinds: ['busy', 'away', 'ongoing_task', 'multi_day_arc'],
     patterns: [/不忙[了啦]?/, /忙完[了啦]?/, /(弄|做|搞|处理|优化)完[了啦]?/, /回来了/, /我回来了/, /回到/],
+  },
+  {
+    kinds: ['multi_day_arc'],
+    patterns: [/项目结束[了啦]?/, /论文(?:写完|交了)[了啦]?/, /需求(?:做完|交付)[了啦]?/, /发布(?:结束|发完)[了啦]?/, /汇报完[了啦]?/, /考试结束[了啦]?/, /面试结束[了啦]?/],
   },
   {
     kinds: ['hungry', 'eating'],
@@ -212,7 +231,7 @@ export function updateTemporalStateForTurn(
 ): TemporalTurnContext {
   const state = readTemporalState(sessionId);
   const transcriptEntries = deriveTemporalEntriesFromTranscript(sessionId, now);
-  const detections = detectTemporalStates(userText ?? '', now);
+  const detections = attachTemporalSource(detectTemporalStates(userText ?? '', now), sessionId);
   const nowMs = now.getTime();
   const oldEntries = mergeTemporalEntries([...state.entries, ...transcriptEntries])
     .filter((entry) => new Date(entry.expiresAt).getTime() > nowMs - 7 * DAY);
@@ -223,13 +242,17 @@ export function updateTemporalStateForTurn(
     now,
     detections.some((entry) => entry.kind === 'user_requested_space'),
   );
-  const entries = upsertDetections(resolvedEntries, detections).slice(-MAX_ENTRIES);
+  const entriesBeforeEventIds = upsertDetections(resolvedEntries, detections).slice(-MAX_ENTRIES);
+  const { entries, resolutionEvents } = attachResolutionEventIds(sessionId, oldEntries, entriesBeforeEventIds, now);
   const next: TemporalStateFile = {
     version: 1,
     sessionId,
     updatedAt: now.toISOString(),
     entries,
-    events: appendTemporalEvents(state.events, buildTurnEvents(sessionId, oldEntries, entries, detections, now)),
+    events: appendTemporalEvents(state.events, [
+      ...buildDetectionEvents(sessionId, oldEntries, entries, detections, now),
+      ...resolutionEvents,
+    ]),
   };
   writeTemporalState(sessionId, next);
   return buildTemporalTurnContext(sessionId, next, now);
@@ -240,7 +263,7 @@ export function observeAssistantTemporalCommitments(
   assistantText: string,
   now = new Date(),
 ): TemporalStateEntry[] {
-  const detections = detectAssistantTemporalCommitments(assistantText, now);
+  const detections = attachTemporalSource(detectAssistantTemporalCommitments(assistantText, now), sessionId);
   if (detections.length === 0) return [];
   const state = readTemporalState(sessionId);
   const entries = upsertDetections(state.entries, detections).slice(-MAX_ENTRIES);
@@ -501,11 +524,14 @@ function deriveTemporalEntriesFromTranscript(sessionId: string, now: Date): Temp
     if (observedAtMs < nowMs - 7 * DAY) continue;
 
     if (message.role === 'assistant') {
-      entries = upsertDetections(entries, detectAssistantTemporalCommitments(String(message.content), observedAt));
+      entries = upsertDetections(
+        entries,
+        attachTemporalSource(detectAssistantTemporalCommitments(String(message.content), observedAt), sessionId),
+      );
       continue;
     }
 
-    const detections = detectTemporalStates(String(message.content), observedAt);
+    const detections = attachTemporalSource(detectTemporalStates(String(message.content), observedAt), sessionId);
     entries = applyTemporalResolutions(entries, String(message.content), observedAt);
     entries = applyReopenedChatResolution(
       entries,
@@ -544,7 +570,7 @@ function appendTemporalEvents(existing: TemporalStateEvent[], additions: Tempora
     .slice(-200);
 }
 
-function buildTurnEvents(
+function buildDetectionEvents(
   sessionId: string,
   before: TemporalStateEntry[],
   after: TemporalStateEntry[],
@@ -559,12 +585,32 @@ function buildTurnEvents(
       events.push(temporalEvent(sessionId, 'detected', detection, detection.evidence, undefined, now));
     }
   }
-  for (const [id, entry] of afterById) {
-    const previous = beforeById.get(id);
-    if (!previous || previous.resolvedAt || !entry.resolvedAt) continue;
-    events.push(temporalEvent(sessionId, 'resolved', entry, entry.resolutionEvidence ?? entry.evidence, entry.resolutionReason, now));
-  }
   return events;
+}
+
+function attachResolutionEventIds(
+  sessionId: string,
+  before: TemporalStateEntry[],
+  after: TemporalStateEntry[],
+  now: Date,
+): { entries: TemporalStateEntry[]; resolutionEvents: TemporalStateEvent[] } {
+  const beforeById = new Map(before.map((entry) => [entry.id, entry]));
+  const resolutionEvents: TemporalStateEvent[] = [];
+  const entries = after.map((entry) => {
+    const previous = beforeById.get(entry.id);
+    if (!previous || previous.resolvedAt || !entry.resolvedAt || entry.resolutionEventId) return entry;
+    const event = temporalEvent(
+      sessionId,
+      'resolved',
+      entry,
+      entry.resolutionEvidence ?? entry.evidence,
+      entry.resolutionReason,
+      now,
+    );
+    resolutionEvents.push(event);
+    return { ...entry, resolutionEventId: event.id };
+  });
+  return { entries, resolutionEvents };
 }
 
 function temporalEvent(
@@ -601,6 +647,10 @@ function resolveEntry(
     resolutionReason: reason,
     resolutionEvidence: evidence,
   };
+}
+
+function attachTemporalSource(entries: TemporalStateEntry[], sessionId: string): TemporalStateEntry[] {
+  return entries.map((entry) => ({ ...entry, sourceSessionId: entry.sourceSessionId ?? sessionId }));
 }
 
 function isActiveEntry(entry: TemporalStateEntry, nowMs: number): boolean {

@@ -117,7 +117,10 @@ function semanticCandidate(memory: SemanticMemory, systemPrompt: string): Memory
 }
 
 function isPromptActiveEntity(entity: MemoryEntity): boolean {
-  return entity.enabled !== false && entity.reviewStatus !== 'ignored' && !entity.invalidatedAt;
+  return entity.enabled !== false
+    && entity.reviewStatus !== 'ignored'
+    && entity.reviewStatus !== 'wrong'
+    && !entity.invalidatedAt;
 }
 
 function entityId(entity: MemoryEntity, source: string): string {

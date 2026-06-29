@@ -23,8 +23,10 @@
 import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
 import { join } from 'node:path';
+import { existsSync, renameSync } from 'node:fs';
 import { getDataDir } from '../config.js';
 import type { SparseVector } from './embedding.js';
+import { logger } from '../utils/logger.js';
 
 // ─── Types ───
 
@@ -60,6 +62,63 @@ function dbPath(): string {
   return join(getDataDir(), 'memory-bank', 'vector.db');
 }
 
+class VectorDatabaseCorruptError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'VectorDatabaseCorruptError';
+  }
+}
+
+function isCorruptionError(err: unknown): boolean {
+  if (err instanceof VectorDatabaseCorruptError) return true;
+  const msg = err instanceof Error ? err.message : String(err);
+  return /database disk image is malformed|file is not a database|SQLITE_CORRUPT/i.test(msg);
+}
+
+function assertQuickCheck(db: Database.Database): void {
+  const rows = db.pragma('quick_check') as Array<Record<string, string>>;
+  const result = rows[0]?.quick_check;
+  if (result && result !== 'ok') {
+    const firstLine = result.split('\n')[0] ?? result;
+    throw new VectorDatabaseCorruptError(firstLine);
+  }
+}
+
+function quarantineDbFiles(path: string, reason: string): void {
+  const suffix = `.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  for (const file of [path, `${path}-wal`, `${path}-shm`]) {
+    if (!existsSync(file)) continue;
+    renameSync(file, `${file}${suffix}`);
+  }
+  logger.warn('vector db quarantined and will be rebuilt', { path, reason, suffix });
+}
+
+function openDb(path: string): Database.Database {
+  const db = new Database(path);
+  try {
+    assertQuickCheck(db);
+    db.pragma('journal_mode = WAL');
+    sqliteVec.load(db);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS entries (
+        id             TEXT PRIMARY KEY,
+        text           TEXT NOT NULL,
+        source         TEXT NOT NULL,
+        timestamp      TEXT,
+        embedding_type TEXT NOT NULL,
+        embedding      BLOB NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_entries_source ON entries(source);
+      CREATE INDEX IF NOT EXISTS idx_entries_type   ON entries(embedding_type);
+      CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+    `);
+    return db;
+  } catch (err) {
+    try { db.close(); } catch { /* ignore */ }
+    throw err;
+  }
+}
+
 /**
  * Open (or create) the database, load sqlite-vec, and ensure the schema.
  * Re-opens if the data directory changed (tests switch MIO_DIR per-case).
@@ -71,22 +130,15 @@ function getDb(): Database.Database {
     try { _db.close(); } catch { /* ignore */ }
     _db = null;
   }
-  const db = new Database(path);
-  db.pragma('journal_mode = WAL');
-  sqliteVec.load(db);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS entries (
-      id             TEXT PRIMARY KEY,
-      text           TEXT NOT NULL,
-      source         TEXT NOT NULL,
-      timestamp      TEXT,
-      embedding_type TEXT NOT NULL,
-      embedding      BLOB NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_entries_source ON entries(source);
-    CREATE INDEX IF NOT EXISTS idx_entries_type   ON entries(embedding_type);
-    CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
-  `);
+  let db: Database.Database;
+  try {
+    db = openDb(path);
+  } catch (err) {
+    if (!isCorruptionError(err)) throw err;
+    const reason = err instanceof Error ? err.message : String(err);
+    quarantineDbFiles(path, reason);
+    db = openDb(path);
+  }
   _db = db;
   _dbPath = path;
   return db;
