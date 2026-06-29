@@ -41,6 +41,7 @@ __pycache__/
 
 # Local screenshots / scratch (Playwright captures, design previews)
 /*.png
+/*.pdf
 .playwright-mcp/
 web/mio-*.png
 .superpowers/
