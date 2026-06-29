@@ -4,8 +4,9 @@
  * Replaces the single `affection: number` with a multi-dimensional model:
  *   warmth, trust, intimacy, patience, tension
  *
- * Each axis decays slowly via EMA smoothing (0.95 factor per interaction).
- * Different user intents affect different axes.
+ * Each axis decays toward baseline over WALL-CLOCK time (not per interaction):
+ * frequent chatting keeps the relationship warm; long silence lets it drift
+ * back to baseline. Decay is exponential per hour (like PAD).
  *
  * Persisted at `data/affinity-state.json`.
  */
@@ -19,8 +20,15 @@ import { writeFileSyncSafe } from '../memory/bank.js';
 
 // ─── Constants ───
 
-/** EMA decay factor per interaction (0.95 = slow decay toward baseline). */
-const DECAY_FACTOR = 0.95;
+/**
+ * Decay rate per HOUR toward baseline (e.g. 0.05 → ~5%/hour).
+ * Time-based: frequent chatting barely decays; long silence drifts back.
+ * (Previously decayed once per interaction, which penalized high-frequency
+ *  chatting — the opposite of intended.)
+ */
+const DECAY_RATE_PER_HOUR = 0.05;
+/** Cap elapsed hours so a very long gap doesn't over-decay beyond baseline. */
+const MAX_DECAY_HOURS = 168; // 7 days
 
 /** Baseline values each axis gravitates toward over time. */
 const BASELINES: Record<keyof Omit<AffinityState, 'updatedAt'>, number> = {
@@ -91,10 +99,12 @@ export function writeAffinityState(state: AffinityState): void {
 // ─── Core logic ───
 
 /**
- * Apply EMA decay toward baseline for all axes.
+ * Apply time-based exponential decay toward baseline for all axes.
+ * Factor = exp(-rate * hoursElapsed): near 0 elapsed → no decay (frequent
+ * chatting stays warm); many hours → drifts back toward baseline.
  */
-function decay(state: AffinityState): AffinityState {
-  const factor = DECAY_FACTOR;
+function decay(state: AffinityState, hoursElapsed: number): AffinityState {
+  const factor = Math.exp(-DECAY_RATE_PER_HOUR * hoursElapsed);
   return {
     warmth: clamp(BASELINES.warmth + (state.warmth - BASELINES.warmth) * factor, 0, 100),
     trust: clamp(BASELINES.trust + (state.trust - BASELINES.trust) * factor, 0, 100),
@@ -103,6 +113,14 @@ function decay(state: AffinityState): AffinityState {
     tension: clamp(BASELINES.tension + (state.tension - BASELINES.tension) * factor, 0, 100),
     updatedAt: state.updatedAt,
   };
+}
+
+/** Compute real elapsed hours since the last update (0 on parse failure / first run). */
+function elapsedHours(updatedAt: string | undefined): number {
+  if (!updatedAt) return 0;
+  const prev = Date.parse(updatedAt);
+  if (!Number.isFinite(prev)) return 0;
+  return Math.min(Math.max((Date.now() - prev) / (1000 * 60 * 60), 0), MAX_DECAY_HOURS);
 }
 
 function applyDelta(
@@ -123,7 +141,8 @@ function applyDelta(
  * Update affinity state based on the classified user intent and optional ghost flag.
  *
  * Steps:
- *  1. Apply EMA decay (all axes drift toward baseline)
+ *  1. Apply time-based decay (axes drift toward baseline by wall-clock elapsed;
+ *     frequent chatting keeps them warm, long silence lets them settle)
  *  2. Apply intent-based deltas
  *  3. Apply ghost penalty if applicable
  *  4. Persist and return the new state
@@ -134,8 +153,8 @@ export function updateAffinity(
 ): AffinityState {
   const current = readAffinityState();
 
-  // 1. Decay toward baseline
-  let next = decay(current);
+  // 1. Decay toward baseline (by real elapsed time, not per-interaction)
+  let next = decay(current, elapsedHours(current.updatedAt));
 
   // 2. Apply intent deltas
   const deltas = INTENT_DELTAS[intent];

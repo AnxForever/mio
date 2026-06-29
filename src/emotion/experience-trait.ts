@@ -232,6 +232,16 @@ export function computeTraitShifts(profile: ExperienceProfile): Partial<OCEANTra
     shifts.extraversion = 0.01;
   }
 
+  // Enforce the documented cap: each trait shifts at most ±0.03 per night.
+  // (Rules currently touch distinct traits at ±0.01 each, so this rarely binds —
+  //  but making it explicit prevents a future rule from silently breaking the
+  //  contract that personality evolves slowly.)
+  const CAP = 0.03;
+  (Object.keys(shifts) as (keyof OCEANTraits)[]).forEach((k) => {
+    const v = shifts[k] ?? 0;
+    shifts[k] = Math.max(-CAP, Math.min(CAP, v));
+  });
+
   return shifts;
 }
 

@@ -226,7 +226,7 @@ backups/
 - **ID-RAG retrieval**: soul.md → knowledge graph → context-aware retrieval (~800 tokens vs ~1500 full soul).
 - **PAD > keywords**: 3D emotional model with exponential decay replaced keyword matching.
 - **Plugin wrapping**: ghost/affinity/pad/frustration wrapped as plugins but original modules unchanged.
-- **Structured memory**: JSON entities (95% retention) replace prose summaries (70% retention).
+- **Structured memory**: JSON entities replace prose summaries (structured extraction is reported to retain more facts than prose; the ~95% vs ~70% figures are external research, not measured on this codebase).
 - **Bi-temporal memory (B-1)**: contradicting facts aren't deleted — older facts get `invalidatedAt`/`supersededBy` and drop out of prompt-facing retrieval, but stay for audit.
 - **Hybrid compression**: Keep first 3 + last 10 messages, summarize middle.
 - **Poisson proactive**: Probability-based messaging replaced fixed cron.

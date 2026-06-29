@@ -7,7 +7,10 @@
  * (durable facts) storage.
  *
  * Reference: From Hierarchical Context AI Agent and MemoryOS research:
- * - Structured JSON extraction achieves ~95% fact retention vs ~70% for prose summaries
+ * - Structured JSON extraction is REPORTED to achieve ~95% fact retention vs ~70%
+ *   for prose summaries. NOTE: these figures are from external research, NOT measured
+ *   on this codebase — Mio's own retention has no eval yet. Structured extraction is
+ *   used here because the approach is sound, not because these numbers are verified.
  * - 3-tier memory: STM (FIFO) -> MTM (topic segments) -> LTM (durable facts)
  */
 

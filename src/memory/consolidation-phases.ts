@@ -14,6 +14,11 @@
  *   Scan ALL bookmarks for cross-session patterns, generate procedural memory
  *   candidates, append to procedural-memory.json.
  *
+ * Note on naming: "LIGHT/DEEP/REM" borrow sleep-stage terms as a mnemonic for the
+ * three engineering stages (filter → persist → pattern-mine). This is NOT a
+ * neurologically faithful sleep model — the stages differ in what they do, but
+ * share no algorithm with real sleep physiology.
+ *
  * Backward compatible — works alongside existing runConsolidation() when
  * feature flag `threePhaseConsolidation` is enabled.
  */

@@ -37,6 +37,7 @@ import { autoGenerateLoreEntries } from '../memory/lorebook.js';
 import { getConfig } from '../config.js';
 import { runConsistencyCheck, getSteeringHints, clearCachedHints } from '../memory/judge.js';
 import { runExperienceTraitCycle } from '../emotion/experience-trait.js';
+import { invalidatePADCache } from '../emotion/pad.js';
 import {
   readEntityGraph,
   writeEntityGraph,
@@ -229,6 +230,11 @@ export class NightlyScheduler {
         const experienceProfile = runExperienceTraitCycle();
         if (experienceProfile) {
           logger.info(`[nightly] experience-trait: ${experienceProfile.total} exchanges classified`);
+          // Experience-trait shifts write pad-config.json via updateTraitState.
+          // writePADConfig already refreshes the in-memory cache, but invalidate
+          // defensively so the next read reloads from disk in case any other path
+          // (or an external edit) touched the file.
+          invalidatePADCache();
         }
       } catch (err) {
         logger.error('[nightly] experience-trait cycle failed', { err: String(err) });

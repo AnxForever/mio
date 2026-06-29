@@ -117,17 +117,17 @@
 
 | # | 问题 | 文件 | 改法 |
 |---|------|------|------|
-| 1 | `invalidatePADCache` 死代码致夜间微调滞后 | `pad.ts:98`, `nightly.ts` | nightly 改 config 后调用 `invalidatePADCache()` |
-| 2 | 5轴亲密度按次衰减(越聊越疏远) | `affinity.ts` 衰减逻辑 | 改时间衰减或仅久未联系时衰减 |
-| 3 | experience-trait "±0.03封顶"未实现 | `experience-trait.ts` | 按特质聚合后 clamp,或修正注释 |
+| 1 | `invalidatePADCache` 死代码致夜间微调滞后 | `pad.ts:98`, `nightly.ts` | nightly 改 config 后调用 `invalidatePADCache()` ✅ 已完成(注:`writePADConfig` 已刷新缓存,此为防御性加固) |
+| 2 | 5轴亲密度按次衰减(越聊越疏远) | `affinity.ts` 衰减逻辑 | 改时间衰减 ✅ 已完成 |
+| 3 | experience-trait "±0.03封顶"未实现 | `experience-trait.ts` | 加 ±0.03 clamp 兑现注释 ✅ 已完成 |
 
 ### P1 — 撕掉水分宣称(诚实)
 
 | # | 问题 | 改法 |
 |---|------|------|
-| 4 | "95% 保留率"无依据 | 删除营销注释,或标注"外部文献引用非本仓实测",补保留率 eval |
+| 4 | "95% 保留率"无依据 | 标注为外部文献引用非本仓实测 ✅ 已完成(补保留率 eval 仍待做) |
 | 5 | ID-RAG 名不副实 | 要么实现真向量召回,要么改名(ID-keyword)并在文档说明 |
-| 6 | "3阶段睡眠合并"夸大 | 注释说明是借睡眠术语的工程命名,非睡眠算法 |
+| 6 | "3阶段睡眠合并"夸大 | 注释说明是借睡眠术语的工程命名,非睡眠算法 ✅ 已完成 |
 
 ### P2 — 接线死代码(兑现功能)
 
