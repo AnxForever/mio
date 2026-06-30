@@ -362,6 +362,8 @@ export interface MioConfig {
     lifeEngine: boolean;
     /** IM pacing — 私聊里模拟"真人打字"：按长度延迟 + 把长回复分段成多条短消息 */
     imPacing: boolean;
+    /** Provider fallback chain — on recoverable failure (network/5xx/429), retry with another provider that has an API key set */
+    providerFallback: boolean;
   };
 }
 
@@ -404,6 +406,7 @@ const DEFAULT_CONFIG: MioConfig = {
     personalityDriver: true,
     lifeEngine: false,
     imPacing: false,
+    providerFallback: true,
   },
 };
 
@@ -436,6 +439,7 @@ function envOverrides(): Partial<MioConfig> {
   if (process.env.MIO_FEATURE_SMART_PROACTIVE) featureOverrides.smartProactive = process.env.MIO_FEATURE_SMART_PROACTIVE === 'true';
   if (process.env.MIO_FEATURE_ACE_REFLECTOR) featureOverrides.aceReflector = process.env.MIO_FEATURE_ACE_REFLECTOR === 'true';
   if (process.env.MIO_FEATURE_MODEL_ROUTER) featureOverrides.modelRouter = process.env.MIO_FEATURE_MODEL_ROUTER === 'true';
+  if (process.env.MIO_FEATURE_PROVIDER_FALLBACK) featureOverrides.providerFallback = process.env.MIO_FEATURE_PROVIDER_FALLBACK === 'true';
   if (process.env.MIO_FEATURE_TELEGRAM_NOTIFY) featureOverrides.telegramNotify = process.env.MIO_FEATURE_TELEGRAM_NOTIFY === 'true';
   if (process.env.MIO_FEATURE_XML_CONTEXT) featureOverrides.xmlContext = process.env.MIO_FEATURE_XML_CONTEXT === 'true';
   if (process.env.MIO_FEATURE_POST_HISTORY) featureOverrides.postHistoryInjection = process.env.MIO_FEATURE_POST_HISTORY === 'true';

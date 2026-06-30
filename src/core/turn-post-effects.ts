@@ -22,6 +22,7 @@ import { lifeEngine } from '../character/life-engine.js';
 import { readActiveCharacter } from '../character/factory.js';
 import { acknowledgeRecentEvents } from '../character/memory-stream.js';
 import { recordMessage, markSessionDone } from '../tools/session.js';
+import { drainFallbackEvents } from '../providers/index.js';
 import { logger } from '../utils/logger.js';
 import type { PromptBudget } from '../utils/prompt-budget.js';
 import type { screenForCrisis } from '../safety/crisis.js';
@@ -75,6 +76,27 @@ export async function applyPostTurnSideEffects({
     await updatePersonalitySideEffects(input, text, sessionCtx);
   }
   persistTurnMemorySideEffects(input, text, sessionId, crisisResult, isNewSession, isolatedMemory);
+
+  // Drain provider fallback events from this turn. Non-isolated sessions record
+  // the switch into BOOKMARKS (it's relationship context — Mio "noticed" her
+  // usual voice changed); isolated IM sessions only log, to keep contacts from
+  // polluting the global timeline.
+  try {
+    const events = drainFallbackEvents();
+    for (const event of events) {
+      if (!isolatedMemory) {
+        appendBookmark({
+          time: new Date().toISOString(),
+          what: `[provider] ${event}`,
+          evidence: 'fallback-chain',
+        });
+      } else {
+        logger.warn(`[fallback][isolated] ${event}`);
+      }
+    }
+  } catch (err) {
+    logger.error('drain fallback events failed', { error: String(err) });
+  }
 
   if (budget) budget.log();
 }

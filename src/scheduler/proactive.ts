@@ -69,7 +69,11 @@ export class ProactiveScheduler {
   constructor(provider?: StreamingProvider, ctx?: Partial<SessionContext>) {
     const config = getConfig();
     this.provider = (provider ??
-      selectProvider(ctx?.model ?? config.model, ctx?.apiKey)) as StreamingProvider;
+      selectProvider(
+        ctx?.model ?? config.model,
+        ctx?.apiKey,
+        config.features.providerFallback,
+      )) as StreamingProvider;
     this.ctx = ctx;
     this.enabled = config.proactiveEnabled;
   }

@@ -35,7 +35,12 @@ export async function prepareTurnContext(
   // Uses dirty-flag optimization to avoid per-turn network calls with MiniMax.
   maybeReindexBookmarks();
   const config = getConfig();
-  const provider = opts.provider ?? selectProvider(config.provider, config.model);
+  // Main inference path: enable the fallback chain so a recoverable provider
+  // failure (network / 5xx / 429) transparently retries with another provider
+  // that has an API key set. Gated by the providerFallback feature flag
+  // (default on); buildChain filters out providers without keys, so a single-key
+  // setup just has no fallback available — it never breaks.
+  const provider = opts.provider ?? selectProvider(config.provider, config.model, config.features.providerFallback);
   const turnInput = await prepareTurnInput(input);
   const sessionId = turnInput.sessionId ?? randomUUID().slice(0, 12);
 

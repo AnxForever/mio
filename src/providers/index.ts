@@ -79,8 +79,10 @@ function createProvider(resolution: ProviderResolution): StreamingProvider {
  *
  * @param providerName  Provider preset name (or 'auto' for auto-detection).
  * @param explicitModel Optional model override (uses preset default if empty).
- * @param enableFallback When true (default), wraps the result in a FallbackChainProvider
- *                       for automatic recovery on provider failure.
+ * @param enableFallback When true, wraps the result in a FallbackChainProvider
+ *                       for automatic recovery on provider failure. Defaults to false;
+ *                       the main turn path passes `config.features.providerFallback`
+ *                       (default on) so recoverable failures retry with another keyed provider.
  * @returns             A StreamingProvider ready for use.
  */
 export function selectProvider(

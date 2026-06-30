@@ -50,6 +50,7 @@ MINIMAX_API_KEY="sk-cp-..." MIO_PROVIDER=minimax npm run build && node dist/inde
 | `MIO_FEATURE_BUDGET_LOG` | `false` | Log prompt token budget |
 | `MIO_FEATURE_ACE_REFLECTOR` | `true` | Memory quality reflection |
 | `MIO_FEATURE_MODEL_ROUTER` | `false` | Per-task model routing |
+| `MIO_FEATURE_PROVIDER_FALLBACK` | `true` | Provider fallback chain (auto-switch on recoverable failure) |
 | `MIO_PAD_ENABLED` | `true` | PAD emotional model |
 | `MIO_SMART_PROACTIVE` | `true` | Poisson-based proactive |
 | `MIO_VOICE` | `warm` | Human-voice preset (`warm`/`bold`) |
