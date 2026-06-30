@@ -1,0 +1,25 @@
+# Normalize all text files to LF line endings.
+# Root fix for CRLF↔LF noise on WSL/Windows mounts: git now converts CRLF→LF on
+# add and checks out as LF, so editor/codex line-ending drift no longer shows
+# up as whole-file diffs.
+* text=auto eol=lf
+
+# Binaries — never touch line endings
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.pdf   binary
+*.zip   binary
+*.gz    binary
+*.tar   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+*.eot   binary
+*.mp3   binary
+*.mp4   binary
+*.wav   binary
