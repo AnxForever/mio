@@ -1,19 +1,20 @@
 /**
- * Mio — LoRA Adapter Integration Stub
+ * Mio — LoRA Adapter Provider
  *
- * Integration point for loading and using a fine-tuned local model
- * (QLoRA adapter on Qwen2.5-7B / Qwen3-4B) inside Mio's provider
- * system.
+ * StreamingProvider backed by a local fine-tuned model inference server
+ * (QLoRA adapter on Qwen2.5-7B / Qwen3-4B) that exposes an
+ * OpenAI-compatible chat completions endpoint.
  *
- * STATUS: STUB / NOT YET ACTIVE
+ * STATUS: IMPLEMENTED (chat + chatStream). Not enabled by default — select
+ * via `MIO_PROVIDER=lora` + `MIO_LORA_BASE_URL` only when a local inference
+ * server is running. The provider does NOT support tool calls; tool turns
+ * should still go through a main API provider.
  *
- * Mio currently only supports API-based providers (Anthropic, OpenAI-compatible).
- * This module documents the integration point for when a local inference
- * server is added. The expected flow:
- *
- *   1. A Python inference server (FastAPI) loads the base model + LoRA adapter
- *   2. This TypeScript module communicates with it via HTTP (OpenAI-compatible API)
- *   3. The adapter wraps a subset of the OpenAI-compatible provider interface
+ * Expected deployment:
+ *   1. A Python inference server (e.g. FastAPI + vLLM/llama.cpp) loads the
+ *      base model + LoRA adapter and serves an OpenAI-compatible API.
+ *   2. This module talks to it over HTTP.
+ *   3. `providers/index.ts` routes `preset.name === 'lora'` here.
  *
  * @module
  */
@@ -57,9 +58,9 @@ export const DEFAULT_LORA_CONFIG: LoRAAdapterConfig = {
 /**
  * Create a StreamingProvider backed by a LoRA fine-tuned model.
  *
- * This is a STUB that documents the intended implementation.
- * When the inference server is running, uncomment the OpenAI-compatible
- * provider implementation below.
+ * `chat()` and `chatStream()` are fully implemented against an
+ * OpenAI-compatible endpoint. The provider is selected when
+ * `preset.name === 'lora'` in `providers/index.ts`.
  *
  * @example
  * ```typescript
@@ -167,9 +168,8 @@ class LoRAProvider implements StreamingProvider {
   /**
    * Streaming chat completion.
    *
-   * Sends messages and streams tokens via SSE. Currently a STUB — will
-   * parse OpenAI SSE format when implemented.
-   *
+   * Sends messages and streams tokens via SSE, parsing the OpenAI
+   * streaming format (`data: {...}` chunks, `[DONE]` terminator).
    * This provider does NOT support tool calls during streaming.
    */
   async chatStream(
