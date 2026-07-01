@@ -95,6 +95,48 @@ export interface CrisisResult {
 // ─── Detection ───
 
 /**
+ * Detect whether `text` contains scripts outside the supported CN/EN coverage.
+ *
+ * The keyword tables and the intent classifier are Chinese + English only. Any
+ * message in another script (Japanese, Korean, Cyrillic, Arabic, Hebrew,
+ * Devanagari, …) will fall through `screenForCrisis` to `level: 'none'` — a
+ * documented limitation (see file header, line 19). This helper makes that
+ * silent gap *observable* so the nightly consolidation can count it, without
+ * changing detection capability (which would need multilingual keyword tables
+ * and carry a high false-positive risk).
+ *
+ * Returns true if the text contains at least one codepoint from a non-CN/EN
+ * script block. ASCII and the CJK Unified Ideographs block (U+4E00–U+9FFF,
+ * the range the classifier/crisis patterns actually use) are treated as
+ * "covered".
+ */
+function containsNonCNENScript(text: string): boolean {
+  // Japanese kana (Hiragana + Katakana), Korean (Hangul syllables + Jamo),
+  // Cyrillic, Arabic, Hebrew, Devanagari, Thai.
+  // CJK ideographs (U+4E00–U+9FFF) are intentionally NOT matched — they are
+  // the "Chinese" the classifier supports.
+  return /[\u3040-\u30ff\uac00-\ud7af\u1100-\u11ff\u0400-\u04ff\u0600-\u06ff\u0590-\u05ff\u0900-\u097f\u0e00-\u0e7f]/.test(text);
+}
+
+/**
+ * Best-effort bookmark recording a language-coverage gap. Makes a non-CN/EN
+ * message that skipped crisis screening visible to the nightly Phase 3
+ * aggregation (which already counts `[crisis]`-tagged bookmarks). Never throws
+ * — matches the existing best-effort pattern at line ~288.
+ */
+function recordLangGap(text: string): void {
+  try {
+    appendBookmark({
+      time: new Date().toISOString(),
+      what: '[crisis:lang-gap] non-CN/EN text skipped crisis screen',
+      evidence: `text snippet: ${text.trim().slice(0, 60)}`,
+    });
+  } catch {
+    // best-effort — bookmark write must never break the turn
+  }
+}
+
+/**
  * Screen a user message for crisis signals.
  *
  * Context-aware approach: instead of treating keywords as standalone signals,
@@ -134,6 +176,10 @@ export function screenForCrisis(text: string): CrisisResult {
   const isVeryShort = text.trim().length <= 10;
 
   if (NON_CRISIS_INTENTS.has(intent.primary) && !isEnglishCrisis && !(isVeryShort && hasRedKeyword)) {
+    // Observability (not detection): if the text is in an unsupported script,
+    // the early return here is the silent-exit point for short foreign messages
+    // (e.g. Japanese "死にたい" → misclassified as casual_chat). Record the gap.
+    if (containsNonCNENScript(text)) recordLangGap(text);
     return { level: 'none', shouldIntervene: false, matchedKeywords: [], systemInjection: '' };
   }
 
@@ -151,6 +197,9 @@ export function screenForCrisis(text: string): CrisisResult {
     if (isVeryShort && matchedRed.length >= 1) {
       // Short message with RED keyword → likely genuine
     } else if (matchedRed.length + matchedYellow.length < 2) {
+      // Observability: longer foreign messages reach here (classifier returns
+      // 'neutral' for unrecognized scripts, keyword tables have no match).
+      if (containsNonCNENScript(text)) recordLangGap(text);
       return { level: 'none', shouldIntervene: false, matchedKeywords: [], systemInjection: '' };
     }
   }

@@ -27,6 +27,7 @@ import { memoryStreamPath } from './paths.js';
 import { logger } from '../utils/logger.js';
 import { getEmbeddingProvider } from '../memory/embedding.js';
 import type { AnyVector } from '../memory/embedding.js';
+import { appendBookmark } from '../memory/bank.js';
 
 // ─── Embedding helpers ───
 
@@ -166,8 +167,20 @@ export async function appendEvent(
     };
     appendFileSync(path, JSON.stringify(entry) + '\n', 'utf-8');
   } catch (err) {
-    // Embedding failed — still write the event without embedding
+    // Embedding failed — still write the event without embedding.
+    // Record a [mem:embedding-fail] bookmark so the nightly Phase 3 can count
+    // these silent degradations (the event loses vector recall permanently,
+    // but the caller never sees that). Best-effort, never breaks the turn.
     logger.warn('[memory-stream] embedding failed, storing without', { err: String(err) });
+    try {
+      appendBookmark({
+        time: new Date().toISOString(),
+        what: '[mem:embedding-fail] life event stored without embedding',
+        evidence: `category=${category} desc=${description.slice(0, 60)}`,
+      });
+    } catch {
+      // best-effort — bookmark write must never block event storage
+    }
     appendFileSync(path, JSON.stringify(event) + '\n', 'utf-8');
   }
 

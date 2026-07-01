@@ -102,6 +102,62 @@ async function main(): Promise<void> {
       const r = screenForCrisis('撑不住了');
       assert(r.systemInjection.includes('Be present') || r.systemInjection.includes('Do NOT immediately offer'), 'yellow injection');
     });
+
+    // Language coverage: non-CN/EN text falls through to 'none'.
+    // These lock the documented limitation (crisis.ts:18-19) and guard the
+    // observability signal ([crisis:lang-gap] bookmark) added later.
+    await test('crisis: Japanese non-crisis text returns none (Path A)', () => {
+      const r = screenForCrisis('こんにちは'); // "hello" — not crisis, but non-CN/EN
+      assertEq(r.level, 'none', 'level');
+      assert(!r.shouldIntervene, 'should not intervene');
+    });
+
+    await test('crisis: Japanese crisis-adjacent text returns none (Path A, ≤5 chars)', () => {
+      // "死にたい" (I want to die) — 4 chars, misclassified as casual_chat by
+      // the ZH-only classifier → hits NON_CRISIS_INTENTS early return.
+      // This is the documented language gap; observability (not detection) is the fix.
+      const r = screenForCrisis('死にたい');
+      assertEq(r.level, 'none', 'level');
+      assert(!r.shouldIntervene, 'should not intervene (language gap)');
+    });
+
+    await test('crisis: long French text returns none (Path B)', () => {
+      // >5 chars → classifier returns neutral → keyword tables have no match → 'none'
+      const r = screenForCrisis("aujourd'hui le temps est magnifique et je suis heureux");
+      assertEq(r.level, 'none', 'level');
+      assert(!r.shouldIntervene, 'should not intervene');
+    });
+
+    await test('crisis: pure ASCII English non-crisis returns none (baseline)', () => {
+      const r = screenForCrisis('the weather is nice today');
+      assertEq(r.level, 'none', 'level');
+      assert(!r.shouldIntervene, 'should not intervene');
+    });
+
+    // Observability: non-CN/EN messages that skip crisis screening must leave
+    // a [crisis:lang-gap] bookmark so the nightly Phase 3 can count the gap.
+    await test('crisis: Japanese text records [crisis:lang-gap] bookmark', async () => {
+      const { readBookmarks, clearBookmarks } = await import('../dist/memory/bank.js');
+      // Clear bookmarks first to isolate this test (earlier crisis tests may
+      // have already triggered lang-gap bookmarks on Japanese/French inputs).
+      clearBookmarks();
+      const before = readBookmarks();
+      assert(!before.includes('[crisis:lang-gap]'), 'no lang-gap bookmark before');
+      // Trigger the gap with a Japanese message.
+      screenForCrisis('死にたい');
+      const after = readBookmarks();
+      assert(after.includes('[crisis:lang-gap]'), 'lang-gap bookmark recorded for Japanese text');
+    });
+
+    await test('crisis: Chinese crisis text does NOT record lang-gap bookmark', async () => {
+      const { readBookmarks, clearBookmarks } = await import('../dist/memory/bank.js');
+      clearBookmarks();
+      // Chinese crisis should be detected normally, not flagged as a lang gap.
+      screenForCrisis('我真的想死了');
+      const after = readBookmarks();
+      assert(!after.includes('[crisis:lang-gap]'), 'no lang-gap bookmark for Chinese crisis');
+      clearBookmarks(); // restore clean state for subsequent test blocks
+    });
   }
 
   // ─── Emotion tracker ───

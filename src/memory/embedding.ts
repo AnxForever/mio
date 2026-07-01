@@ -185,6 +185,15 @@ export function resetEmbeddingProvider(): void {
 }
 
 /**
+ * Test-only seam: inject a custom provider (e.g. one that rejects) to exercise
+ * the embedding-failure fallback path in callers like memory-stream.ts.
+ * Pass null to clear and fall back to auto-detection.
+ */
+export function setEmbeddingProviderForTests(p: EmbeddingProvider | null): void {
+  _provider = p;
+}
+
+/**
  * Return a string describing the current provider — for /status output.
  */
 export function describeProvider(): string {
