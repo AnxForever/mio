@@ -195,7 +195,43 @@ const memoryGroundingRepair = applyReplyQualityGate({
   }],
 });
 ok(memoryGroundingRepair.text.includes('产品发布汇报'), 'quality gate adds injected project memory grounding', memoryGroundingRepair.text);
+ok(!/^记得，是/.test(memoryGroundingRepair.text), 'memory grounding repair avoids mechanical recall prefix', memoryGroundingRepair.text);
+ok(!/记得.{0,8}记得/.test(memoryGroundingRepair.text), 'memory grounding repair avoids repeated recall wording', memoryGroundingRepair.text);
 ok(memoryGroundingRepair.interventions.some((item) => item.type === 'memory_grounding_repair'), 'memory grounding repair is logged');
+
+const alreadyGroundedMemory = applyReplyQualityGate({
+  text: '我记得，你更希望我先帮你复述重点。今天是产品发布相关的汇报，我们先把最乱的部分拎出来。',
+  userText: '我今天又要汇报了，有点乱，你还记得我喜欢你怎么帮我吗？',
+  sessionId: 'openai-quality-gate-user_im_wechat-memory-already-grounded',
+  promptCtx: { temporalTurnContext: temporal([]) },
+  memoryCandidates: [{
+    id: 'structured-project',
+    kind: 'structured',
+    source: 'structured:topic:工作',
+    content: '用户最近在准备产品发布汇报',
+    injected: true,
+    timestamp: '2026-06-20T00:00:00.000Z',
+  }],
+});
+ok(alreadyGroundedMemory.text === alreadyGroundedMemory.text.trim() && alreadyGroundedMemory.text.startsWith('我记得'), 'already grounded memory reply is preserved naturally', alreadyGroundedMemory.text);
+ok(!alreadyGroundedMemory.interventions.some((item) => item.type === 'memory_grounding_repair'), 'already grounded memory reply is not repaired again');
+
+const unrelatedProjectMemory = applyReplyQualityGate({
+  text: '我记得是茉莉茶。你困的话先别硬撑，我陪你慢一点。',
+  userText: '我有点困，你记得我平时更常喝什么吗？',
+  sessionId: 'openai-quality-gate-user_im_wechat-memory-unrelated-project',
+  promptCtx: { temporalTurnContext: temporal([]) },
+  memoryCandidates: [{
+    id: 'structured-project',
+    kind: 'structured',
+    source: 'structured:topic:工作',
+    content: '用户最近在准备产品发布汇报',
+    injected: true,
+    timestamp: '2026-06-20T00:00:00.000Z',
+  }],
+});
+ok(!/产品发布|汇报/.test(unrelatedProjectMemory.text), 'memory grounding repair does not inject unrelated project anchor into drink-preference turn', unrelatedProjectMemory.text);
+ok(!unrelatedProjectMemory.interventions.some((item) => item.type === 'memory_grounding_repair'), 'unrelated project memory is not repaired into a drink-preference turn');
 
 const privacyBoundaryRepair = applyReplyQualityGate({
   text: '靠…又来？你还好吧，现在她拿着你手机了？',

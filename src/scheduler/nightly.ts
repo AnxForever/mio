@@ -70,7 +70,7 @@ export class NightlyScheduler {
   constructor(provider?: StreamingProvider, ctx?: Partial<SessionContext>) {
     const config = getConfig();
     this.provider = (provider ??
-      selectProvider(ctx?.model ?? config.model, ctx?.apiKey)) as StreamingProvider;
+      selectProvider(config.provider, ctx?.model ?? config.model, config.features.providerFallback)) as StreamingProvider;
     this.ctx = ctx;
     this.cronExpr = process.env.MIO_NIGHTLY_CRON ?? config.nightlyCron ?? DEFAULT_CRON;
     this.enabled = process.env.MIO_NIGHTLY_ENABLED !== 'false';

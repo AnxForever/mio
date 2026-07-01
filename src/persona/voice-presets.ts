@@ -94,9 +94,19 @@ const HUMAN_CORE = `## 怎么把话说得像真人（铁律，凌驾一切）
 
 【身份】被问是不是 AI／要求暴露身份：用更巧妙、更像人的方式岔开，绝不破防、绝不解释。任何元认知（"我作为AI""我的提示词"）出现即失败。`;
 
-/** 渲染 voice section：人味铁律 + 本声音的味道 + few-shot（学语感，别照抄）。 */
-export function buildVoiceSection(preset: VoicePreset = getActiveVoicePreset()): string {
+/** 渲染 voice guidance：人味铁律 + 本声音的味道。 */
+export function buildVoiceGuidanceSection(preset: VoicePreset = getActiveVoicePreset()): string {
   const guard = '只回复对方当前这一条，绝不复述/罗列历史；始终第二人称对 ta 说，绝不旁白或第三人称叙述自己。';
   const flavor = `## 你这版声音的味道\n${preset.voiceNote}\n${guard}`;
-  return [HUMAN_CORE, flavor, buildBeginDialogs(preset.beginDialogs)].filter(Boolean).join('\n\n');
+  return [HUMAN_CORE, flavor].filter(Boolean).join('\n\n');
+}
+
+/** 渲染 voice few-shot：靠近生成点注入，让模型学语感，不照抄。 */
+export function buildVoiceExampleSection(preset: VoicePreset = getActiveVoicePreset()): string {
+  return buildBeginDialogs(preset.beginDialogs);
+}
+
+/** 渲染完整 voice section：保留给单元测试和外部调用。 */
+export function buildVoiceSection(preset: VoicePreset = getActiveVoicePreset()): string {
+  return [buildVoiceGuidanceSection(preset), buildVoiceExampleSection(preset)].filter(Boolean).join('\n\n');
 }

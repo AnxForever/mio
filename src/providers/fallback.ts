@@ -56,26 +56,28 @@ function recordFallbackEvent(event: string): void {
  */
 const providerCache = new Map<string, StreamingProvider>();
 
-function getOrCreateProvider(name: string, model: string): StreamingProvider | null {
-  const cached = providerCache.get(name);
-  if (cached) return cached;
-
+function getOrCreateProvider(name: string, model?: string): StreamingProvider | null {
   const preset = PROVIDER_PRESETS[name];
   if (!preset) return null;
+
+  const resolvedModel = model || preset.defaultModel;
+  const cacheKey = `${name}:${resolvedModel}`;
+  const cached = providerCache.get(cacheKey);
+  if (cached) return cached;
 
   const apiKey = preset.apiKeyEnv ? (process.env[preset.apiKeyEnv] ?? '') : '';
   if (!apiKey) return null;
 
   let provider: StreamingProvider;
   if (name === 'anthropic') {
-    provider = new AnthropicProvider(apiKey, model || preset.defaultModel);
+    provider = new AnthropicProvider(apiKey, resolvedModel);
   } else if (name === 'mock') {
     provider = new MockProvider();
   } else {
-    provider = new OpenAICompatibleProvider(preset, apiKey, model || preset.defaultModel);
+    provider = new OpenAICompatibleProvider(preset, apiKey, resolvedModel);
   }
 
-  providerCache.set(name, provider);
+  providerCache.set(cacheKey, provider);
   return provider;
 }
 
@@ -116,10 +118,12 @@ function buildChain(
     names.push(primaryName);
   }
 
-  // Add fallbacks that have API keys
+  // Add fallbacks that have API keys. Cross-provider fallbacks must use their
+  // own default model; a Claude model string is invalid for OpenAI-compatible
+  // providers, and vice versa.
   for (const name of fallbackNames) {
     if (name === primaryName) continue; // skip duplicate
-    const provider = getOrCreateProvider(name, primaryModel);
+    const provider = getOrCreateProvider(name);
     if (provider) {
       providers.push(provider);
       names.push(name);

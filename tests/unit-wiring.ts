@@ -53,6 +53,7 @@ async function main(): Promise<void> {
   const { chatBody } = await import('../dist/validation.js');
   const { appendTranscript } = await import('../dist/memory/transcript.js');
   const { searchHandler } = await import('../dist/server/search.js');
+  const { generatePersona } = await import('../packages/idrag/dist/generator.js');
 
   await test('model router follows config.features.modelRouter', () => {
     const config = getConfig();
@@ -121,6 +122,20 @@ async function main(): Promise<void> {
     assert(user.results.length === 1, `user results=${user.results.length}`);
     assert(user.results[0].role === 'user', `unexpected role: ${user.results[0].role}`);
     assert(user.results[0].content.includes('user'), 'user content missing');
+  });
+
+  await test('@mio/idrag generator honors male/female package gender type', () => {
+    const male = generatePersona({ name: 'Akira', gender: 'male', style: '温柔', traits: ['可靠'] });
+    const female = generatePersona({ name: 'Mika', gender: 'female', style: '温柔', traits: ['温柔'] });
+
+    assert(!male.soul.includes('undefined岁') && !male.soul.includes('undefined。'), 'male defaults should not be undefined');
+    assert(!female.soul.includes('undefined岁') && !female.soul.includes('undefined。'), 'female defaults should not be undefined');
+    assert(male.soul.includes('26岁，自由职业'), 'male defaults should use male age and occupation');
+    assert(female.soul.includes('24岁，自由插画师'), 'female defaults should use female age and occupation');
+    assert(male.soul.includes('你是她的男朋友'), 'male persona should address the user with female-side pronoun');
+    assert(female.soul.includes('你是他的女朋友'), 'female persona should address the user with male-side pronoun');
+    assert(male.soul.includes('你叫他"宝贝"'), 'male warm voice should use male branch wording');
+    assert(female.soul.includes('你叫他"亲爱的"'), 'female warm voice should use female branch wording');
   });
 
   const passed = results.filter((r) => r.passed).length;

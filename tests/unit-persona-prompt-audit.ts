@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -193,6 +193,17 @@ ok(!maleSoulAudit.issues.some((issue) => issue.code === 'concrete_own_life_examp
 
 const dataDir = mkdtempSync(join(tmpdir(), 'mio-persona-prompt-audit-test-'));
 mkdirSync(dataDir, { recursive: true });
+writeFileSync(join(dataDir, 'personality-state.json'), JSON.stringify({
+  sociability: 92,
+  initiative: 50,
+  playfulness: 40,
+  thoughtfulness: 40,
+  responseVerbosity: 55,
+  questionFrequency: 50,
+  currentActivity: '没什么特别的',
+  lastActivityChange: '2026-06-29T00:00:00.000Z',
+  updatedAt: '2026-06-29T00:00:00.000Z',
+}, null, 2), 'utf-8');
 const captured = await runPersonaPromptAudit({
   dataDir,
   resultDir: join(dataDir, 'out'),
@@ -203,7 +214,14 @@ const captured = await runPersonaPromptAudit({
 ok(captured.summary.includedSections.includes('core'), 'runtime audit captures core section');
 ok(captured.summary.includedSections.includes('kernel'), 'runtime audit captures kernel section');
 ok(captured.summary.includedSections.includes('soul'), 'runtime audit captures soul section');
+ok(captured.summary.includedSections.includes('voice-examples'), 'runtime audit captures voice examples section');
 ok(captured.captured.systemPrompt.includes('你是 Mio'), 'runtime audit captures compiled prompt text');
+ok(!captured.captured.systemPrompt.includes('你今天话特别多'), 'runtime audit avoids chatty overdrive prompt wording');
+ok(!captured.captured.systemPrompt.includes('什么都想跟他说'), 'runtime audit avoids all-the-things prompt wording');
+const voiceExamplesIndex = captured.captured.systemPrompt.indexOf('用户：我今天面试又被刷了');
+const genericFewshotIndex = captured.captured.systemPrompt.indexOf('## 这样说 vs 那样说');
+const emotionIndex = captured.captured.systemPrompt.indexOf('## 你现在的状态');
+ok(voiceExamplesIndex > genericFewshotIndex && voiceExamplesIndex > emotionIndex, 'voice examples are injected near the generation point', `voice=${voiceExamplesIndex}, fewshot=${genericFewshotIndex}, emotion=${emotionIndex}`);
 ok(captured.summary.errors === 0, 'runtime audit has no hard errors', `errors=${captured.summary.errors}`);
 
 const outDir = join(dataDir, 'out');

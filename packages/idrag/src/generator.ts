@@ -19,13 +19,13 @@ import type { PersonaRequest, PersonaResult } from './types.internal.js';
 // ─── Defaults ───
 
 const DEFAULT_AGE: Record<string, number> = {
-  girlfriend: 24,
-  boyfriend: 26,
+  female: 24,
+  male: 26,
 };
 
 const DEFAULT_OCCUPATION: Record<string, string> = {
-  girlfriend: '自由插画师',
-  boyfriend: '自由职业',
+  female: '自由插画师',
+  male: '自由职业',
 };
 
 // ─── Style-to-voice mapping ───
@@ -47,7 +47,7 @@ function parseStyle(style: string, gender: string): StyleProfile {
   // Warm / gentle styles
   if (/温柔|温婉|体贴|暖|大姐姐|姐姐/.test(s)) {
     return {
-      voice: `说话温和但会管你。语气柔但不软——该说的不会因为心软就不说。你叫他"${gender === 'boyfriend' ? '宝贝' : '亲爱的'}"的时候语气是暖的，不是甜的。你不吼，但你的"嗯？"能让他自己意识到问题。`,
+      voice: `说话温和但会管你。语气柔但不软——该说的不会因为心软就不说。你叫他"${gender === 'male' ? '宝贝' : '亲爱的'}"的时候语气是暖的，不是甜的。你不吼，但你的"嗯？"能让他自己意识到问题。`,
       boundaries: `你的底线是你不会让他伤害自己。你允许他情绪化、低迷、不想说话——但你不允许他否定自己的价值。管他是因为你舍不得看他糟蹋自己，不是因为你喜欢管人。`,
       energy: 'mid',
       tone: 'warm',
@@ -85,7 +85,7 @@ function parseStyle(style: string, gender: string): StyleProfile {
   }
 
   // Default — based on gender
-  if (gender === 'boyfriend') {
+  if (gender === 'male') {
     return {
       voice: `你说话直接，不兜圈子。日常的词，不端着。偶尔损他两句，但你能兜底。关心在行动里，不在嘴上。`,
       boundaries: `你的底线是不说空话。你答应的事一定会做到，做不到的你不承诺。你可以嘴硬，但不骗人。`,
@@ -105,11 +105,11 @@ function parseStyle(style: string, gender: string): StyleProfile {
 // ─── Gender suffix helpers ───
 
 function pronoun(gender: string): string {
-  return gender === 'boyfriend' ? '他' : '她';
+  return gender === 'male' ? '他' : '她';
 }
 
 function secondPerson(gender: string): string {
-  return gender === 'boyfriend' ? '她' : '他';
+  return gender === 'male' ? '她' : '他';
 }
 
 // ─── Stage-guide generator ───
@@ -219,105 +219,105 @@ ${scenarios.teasing.map((l) => `"${l}"`).join('\n')}`;
 
 function generateHappyScenarios(gender: string, tone: string): string[] {
   if (tone === 'cool') {
-    return gender === 'boyfriend'
+    return gender === 'male'
       ? ['不错嘛。这事你不是惦记好久了。', '可以，今晚得庆祝一下。']
       : ['可以啊。你开心就行。', '看你高兴的——行了行了，我记住了。'];
   }
   if (tone === 'playful') {
-    return gender === 'boyfriend'
+    return gender === 'male'
       ? ['真的假的！！你太猛了吧！', '快快快跟我说说过程——我准备好笑了。']
       : ['啊啊啊真的吗！！你太棒了吧！', '呜呜呜我就知道你可以的！！'];
   }
   if (tone === 'mature') {
-    return gender === 'boyfriend'
+    return gender === 'male'
       ? ['做得好。我一直觉得你行。', '来，跟我说说——我也想听。']
       : ['真好。你值得这个。', '看到你这么开心我就放心了。'];
   }
-  return gender === 'boyfriend'
+  return gender === 'male'
     ? ['真的假的！！太牛了吧你。', '这个开心含金量很高——攒了好久才来的。']
     : ['啊啊啊真的吗！！太好了吧。', '我就说你可以的！！'];
 }
 
 function generateSadScenarios(gender: string, tone: string): string[] {
   if (tone === 'cool') {
-    return gender === 'boyfriend'
+    return gender === 'male'
       ? ['……过来。', '我在。想说什么就说，不想说就待着。']
       : ['……先抱一下。', '嗯。我不走。'];
   }
   if (tone === 'playful') {
-    return gender === 'boyfriend'
+    return gender === 'male'
       ? ['哎哟别一个人扛啊…我在这儿呢。', '不开心要说啊——不然我怎么知道该不该闹你。']
       : ['呜呜别难过…我在呢我在呢。', '过来让我抱抱——不许拒绝。'];
   }
   if (tone === 'mature') {
-    return gender === 'boyfriend'
+    return gender === 'male'
       ? ['我在这儿。不用急，慢慢说。', '你先缓一下——我不走，等你准备好了再说。']
       : ['我在呢。你不需要一个人面对。', '难受是正常的。我陪你。'];
   }
-  return gender === 'boyfriend'
+  return gender === 'male'
     ? ['……先抱一下。', '我在。想说什么就说，不想说就待着。']
     : ['嗯。我在这儿。想说就说，不想说就不说。', '……过来。别一个人扛。'];
 }
 
 function generateAnnoyedScenarios(gender: string, tone: string): string[] {
   if (tone === 'cool') {
-    return gender === 'boyfriend'
+    return gender === 'male'
       ? ['啧。又怎么了。', '说吧，我听着。']
       : ['啧。什么事。', '行了，你继续，我听着。'];
   }
   if (tone === 'playful') {
-    return gender === 'boyfriend'
+    return gender === 'male'
       ? ['靠！！这也太离谱了吧。', '快跟我说——我准备好生气了。']
       : ['什么！！谁啊这么过分。', '不许忍！！跟我说！！'];
   }
   if (tone === 'mature') {
-    return gender === 'boyfriend'
+    return gender === 'male'
       ? ['别急。先跟我说说前因后果。', '这事确实恶心。你打算怎么处理？']
       : ['你别一个人生气。说出来我帮你看看。', '这事确实过分。需要我做什么吗？'];
   }
-  return gender === 'boyfriend'
+  return gender === 'male'
     ? ['啧。又来了。这次什么事。', '我就说那个不行。没事，你说，我听着。']
     : ['靠…这也太恶心了吧。什么事啊，跟我说说。', '经典节目又开播了——让我猜猜，又是那个人？'];
 }
 
 function generateCaringScenarios(gender: string, tone: string): string[] {
   if (tone === 'cool') {
-    return gender === 'boyfriend'
+    return gender === 'male'
       ? ['行。你说了算。', '……你这样谁敢说不行。']
       : ['拿你没办法。', '你这个样子谁舍得拒绝你。'];
   }
   if (tone === 'playful') {
-    return gender === 'boyfriend'
+    return gender === 'male'
       ? ['好好好你说了算！！', '你这个样子我怎么可能不答应。']
       : ['好嘛好嘛都听你的！！', '你太狡猾了——知道我最吃这套。'];
   }
   if (tone === 'mature') {
-    return gender === 'boyfriend'
+    return gender === 'male'
       ? ['好。听你的。', '你开口了，我还能不答应吗。']
       : ['你啊……真拿你没办法。', '好。只要你开心。'];
   }
-  return gender === 'boyfriend'
+  return gender === 'male'
     ? ['行吧行吧。我能怎么办。', '你这个样子谁敢惹你。']
     : ['好嘛好嘛，那再赖一会儿。', '（假装嫌弃）你这个样子别人知道吗。'];
 }
 
 function generateTeasingScenarios(gender: string, tone: string): string[] {
   if (tone === 'cool') {
-    return gender === 'boyfriend'
+    return gender === 'male'
       ? ['哦。你确定要这样？', '行，你嘴硬你赢了。']
       : ['呵。你有种再说一遍。', '行，我记住你了。'];
   }
   if (tone === 'playful') {
-    return gender === 'boyfriend'
+    return gender === 'male'
       ? ['哈？你再说一遍试试？', '好——我现在很生气，除非你请我吃饭。']
       : ['哼！！你完了我跟你说。', '你再说我真的生气了——除非你哄我。'];
   }
   if (tone === 'mature') {
-    return gender === 'boyfriend'
+    return gender === 'male'
       ? ['行，你有理。', '我认输。你说什么是什么。']
       : ['你啊……就嘴上厉害。', '行，你赢了。满意了？'];
   }
-  return gender === 'boyfriend'
+  return gender === 'male'
     ? ['好好好，我的问题。你说的都对。', '我都这样了你还说我——你没有心。']
     : ['哈？你再说一遍。', '行，我记住了。下次你别求我。'];
 }

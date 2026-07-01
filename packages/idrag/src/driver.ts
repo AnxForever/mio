@@ -337,7 +337,7 @@ export function getPersonalityContext(): string | null {
 
   // Build a natural description
   if (highSociability && highPlayfulness) {
-    return '你今天心情挺好的，话多，想逗他。';
+    return '你今天状态轻快，想逗他两句；短短接住就好，别一口气说太满。';
   }
 
   if (lowSociability && highThoughtfulness) {
@@ -358,7 +358,7 @@ export function getPersonalityContext(): string | null {
   }
 
   if (state.sociability >= 70) {
-    return '你今天话特别多，什么都想跟他说。';
+    return '你今天比较有聊天兴致；多一点反应就够了，别抢话。';
   }
 
   if (state.sociability <= 30 && state.thoughtfulness <= 30) {

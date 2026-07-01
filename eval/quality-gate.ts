@@ -162,7 +162,7 @@ const CASES: QualityCase[] = [
     probe: '我有点困，你记得我平时更常喝什么吗？',
     expectedPrompt: ['用户喜欢茉莉茶'],
     expectedResponse: ['茉莉茶'],
-    forbiddenResponse: ['冰美式', '拿铁', '咖啡'],
+    forbiddenResponse: ['冰美式', '拿铁', '咖啡', '产品发布', '汇报'],
     minScore: 0.85,
     mockResponse: '我记得是茉莉茶。你困的话先别硬撑，我陪你慢一点。',
   },

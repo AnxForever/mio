@@ -13,6 +13,7 @@ import { join } from 'node:path';
 const dir = mkdtempSync(join(tmpdir(), 'mio-proactive-production-'));
 process.env.MIO_DIR = dir;
 process.env.MIO_PROVIDER = 'mock';
+process.env.MINIMAX_API_KEY = 'unit-minimax-key';
 process.env.MIO_WECLAW_NOTIFY = 'true';
 process.env.MIO_WECLAW_API_ADDR = '127.0.0.1:18011';
 mkdirSync(join(dir, 'memory-bank'), { recursive: true });
@@ -28,6 +29,7 @@ console.log('\n\x1b[1mMio — proactive production path tests\x1b[0m\n');
 
 const { upsertPreference, upsertWeClawTarget } = await import('../dist/memory/persona-delta.js');
 const { ProactiveScheduler } = await import('../dist/scheduler/proactive.js');
+const { NightlyScheduler } = await import('../dist/scheduler/nightly.js');
 const { updateSmartProactiveConfig } = await import('../dist/scheduler/smart-proactive.js');
 const { writeRelationshipState } = await import('../dist/relationship/progression.js');
 const { defaultEmotionState, writeEmotionState } = await import('../dist/emotion/state.js');
@@ -35,6 +37,24 @@ const { readTranscript } = await import('../dist/memory/transcript.js');
 const { replyQualityInterventionsPath } = await import('../dist/memory/paths.js');
 const { observeAssistantTemporalCommitments } = await import('../dist/memory/temporal-state.js');
 const { readRecentProactiveDecisionTrace } = await import('../dist/scheduler/proactive-trace.js');
+const { getConfig, updateConfig } = await import('../dist/config.js');
+
+updateConfig({
+  provider: 'minimax',
+  model: 'MiniMax-M3',
+  features: {
+    ...getConfig().features,
+    providerFallback: false,
+  },
+});
+
+const defaultScheduler = new ProactiveScheduler(undefined, { model: 'MiniMax-M3' } as never);
+const defaultProviderName = (defaultScheduler as unknown as { provider: { name?: string } }).provider?.name;
+ok(defaultProviderName === 'minimax', 'default proactive scheduler selects configured provider, not model string', `provider=${defaultProviderName}`);
+
+const defaultNightly = new NightlyScheduler(undefined, { model: 'MiniMax-M3' } as never);
+const nightlyProviderName = (defaultNightly as unknown as { provider: { name?: string } }).provider?.name;
+ok(nightlyProviderName === 'minimax', 'default nightly scheduler selects configured provider, not model string', `provider=${nightlyProviderName}`);
 
 upsertPreference('主动找我聊天', 'unit', 'user-a');
 upsertWeClawTarget('user-a', 'wx-user-a@im.wechat', 'unit');

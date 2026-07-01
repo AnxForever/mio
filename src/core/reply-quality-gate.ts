@@ -112,7 +112,7 @@ export function applyReplyQualityGate(input: ReplyQualityGateInput): ReplyQualit
       sessionId: input.sessionId,
       type: 'memory_grounding_repair',
       severity: 'rewrite',
-      reason: 'Added a specific injected memory anchor to a compound memory-sensitive reply.',
+      reason: 'Added a natural same-topic memory anchor to a memory-sensitive reply.',
       before: text,
       after: memoryGroundedText,
     }));
@@ -312,10 +312,14 @@ function repairMissingMemoryGrounding(
   const anchor = candidates
     .filter((candidate) => candidate.injected && candidate.kind === 'structured')
     .map((candidate) => memoryReplyAnchor(candidate.content))
-    .find((candidate) => candidate && /(汇报|项目|发布|工作|路演|考试|复查|会议|上线)/.test(candidate) && !text.includes(candidate));
+    .find((candidate) => (
+      candidate
+      && /(汇报|项目|发布|工作|路演|考试|复查|会议|上线)/.test(candidate)
+      && userTextMatchesMemoryAnchor(userText, candidate)
+      && !replyAlreadyGroundsMemory(text, candidate)
+    ));
   if (!anchor) return text;
-  if (/(汇报|项目|工作|最近|这件事)/.test(text) && text.includes(anchor)) return text;
-  return `记得，是${anchor}这件事。${text}`;
+  return addMemoryAnchorNaturally(text, anchor);
 }
 
 function memoryReplyAnchor(content: string): string {
@@ -327,6 +331,46 @@ function memoryReplyAnchor(content: string): string {
     .trim();
   if (/产品发布/.test(normalized)) return normalized.match(/产品发布[^，。,、\s]{0,8}/)?.[0] ?? '产品发布';
   return normalized.length > 28 ? normalized.slice(0, 28) : normalized;
+}
+
+function userTextMatchesMemoryAnchor(userText: string, anchor: string): boolean {
+  const normalizedUser = userText.replace(/\s+/g, '');
+  const groups = [
+    {
+      anchor: /(汇报|项目|发布|工作|会议|上线|路演)/,
+      user: /(汇报|项目|发布|工作|会议|上线|路演|最近最卡|卡的是|这件事|这事)/,
+    },
+    {
+      anchor: /(考试|复查)/,
+      user: /(考试|复查|备考|检查|医院|结果)/,
+    },
+  ];
+  return groups.some((group) => group.anchor.test(anchor) && group.user.test(normalizedUser));
+}
+
+function replyAlreadyGroundsMemory(text: string, anchor: string): boolean {
+  if (text.includes(anchor)) return true;
+  if (/产品发布/.test(anchor) && /产品发布/.test(text) && /汇报|发布/.test(text)) return true;
+  const keywords = ['汇报', '项目', '发布', '工作', '路演', '考试', '复查', '会议', '上线']
+    .filter((keyword) => anchor.includes(keyword));
+  return keywords.length > 0 && keywords.every((keyword) => text.includes(keyword));
+}
+
+function addMemoryAnchorNaturally(text: string, anchor: string): string {
+  const sentence = `${anchor}${memoryAnchorNoun(anchor)}我记着。`;
+  const leadingWhitespace = text.match(/^\s*/)?.[0] ?? '';
+  const trimmed = text.slice(leadingWhitespace.length);
+  const withoutGenericRecall = trimmed.replace(/^(?:我)?记得(?:啊|呀|哦)?[，,。！？!\s]*/u, '');
+  if (withoutGenericRecall !== trimmed) {
+    return `${leadingWhitespace}${sentence}${withoutGenericRecall}`;
+  }
+  return `${sentence}${text}`;
+}
+
+function memoryAnchorNoun(anchor: string): string {
+  if (/(?:汇报|项目|工作|路演|会议|上线)$/.test(anchor)) return '那块';
+  if (/(?:考试|复查)$/.test(anchor)) return '这个';
+  return '这事';
 }
 
 function repairServiceToneComplaintSupport(text: string, userText?: string): string {

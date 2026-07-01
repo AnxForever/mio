@@ -97,6 +97,16 @@ await test('multi-key chain: primary first, keyed fallbacks follow', () => {
   assert(chain.providerChain.includes('deepseek'), 'deepseek fallback missing');
 });
 
+await test('cross-provider fallbacks use their own default model', () => {
+  resetFallbackCache();
+  setKeys('ANTHROPIC_API_KEY', 'OPENAI_API_KEY');
+  const chain = selectProviderWithFallback('anthropic', 'claude-sonnet-4-20250514');
+  const providers = (chain as unknown as { providers: Array<{ name: string; defaultModel?: string }> }).providers;
+  const openai = providers.find((provider) => provider.name === 'openai');
+  assert(openai !== undefined, 'openai fallback provider missing');
+  assert(openai.defaultModel === 'gpt-4o', `openai fallback model should be gpt-4o, got ${openai.defaultModel}`);
+});
+
 await test('keyless primary is dropped; a keyed fallback leads instead', () => {
   resetFallbackCache();
   // anthropic has no key here, but openai does — chain must not crash.

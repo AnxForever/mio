@@ -67,7 +67,7 @@ interface CliArgs {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const DEFAULT_RESULT_DIR = join(__dirname, 'results', 'persona-prompt-audit');
-const STABLE_SECTIONS = new Set(['core', 'kernel', 'soul', 'voice', 'fewshot', 'dynamic-fewshot']);
+const STABLE_SECTIONS = new Set(['core', 'kernel', 'soul', 'voice', 'voice-examples', 'fewshot', 'dynamic-fewshot']);
 const DYNAMIC_SECTIONS = new Set([
   'relationship',
   'user',
@@ -352,7 +352,7 @@ function auditSectionContent(sections: PromptAuditSection[]): PromptAuditIssue[]
 
     if (section.type !== 'core' && SERVICE_TONE_PATTERN.test(section.content)) {
       issues.push({
-        severity: section.type === 'soul' || section.type === 'voice' || section.type === 'fewshot' ? 'info' : 'warn',
+        severity: section.type === 'soul' || section.type === 'voice' || section.type === 'voice-examples' || section.type === 'fewshot' ? 'info' : 'warn',
         code: 'service_tone_marker',
         section: section.type,
         detail: 'Section contains service-tone marker. It is acceptable only when used as a negative example.',

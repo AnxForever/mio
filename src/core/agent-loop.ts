@@ -42,7 +42,7 @@ import type { ContextSections } from '../prompt/xml-context.js';
 import { ContextEngine, getContextEngine } from '../prompt/context-engine.js';
 import { getEvaluationGraph, getBuilderChain, type EvaluationResult } from '../prompt/builder-chain.js';
 import { buildKernel, applyPersonaDelta, buildPreferencePrompt } from '../persona/layered.js';
-import { buildVoiceSection } from '../persona/voice-presets.js';
+import { buildVoiceExampleSection, buildVoiceGuidanceSection } from '../persona/voice-presets.js';
 import { buildOwnLifeSection } from '../persona/own-life.js';
 import { getRouterConfig, routeTask } from '../providers/router.js';
 import { scopedToolRegistry } from './tool-runtime.js';
@@ -234,10 +234,10 @@ function registerPromptSections(
     },
   });
 
-  // 可选「人味」声音预设（warm/bold，经 MIO_VOICE 选）——few-shot 是装人味最猛的杠杆
+  // 可选「人味」声音预设（warm/bold，经 MIO_VOICE 选）——准则靠前，示例靠近生成点
   engine.register('voice', {
     type: 'voice',
-    content: () => buildVoiceSection(),
+    content: () => buildVoiceGuidanceSection(),
     priority: 'high',
     condition: () => sectionEnabled('voice'),
   });
@@ -491,6 +491,16 @@ function registerPromptSections(
       if (!getConfig().features.dynamicFewShot) return false;
       return getDynamicFewShot() !== null;
     },
+  });
+
+  // Voice examples are deliberately registered at the end of low-priority
+  // examples. External persona/chat projects put examples close to generation,
+  // so they teach cadence after dynamic state has been injected.
+  engine.register('voice-examples', {
+    type: 'voice-examples',
+    content: () => buildVoiceExampleSection(),
+    priority: 'low',
+    condition: () => sectionEnabled('voice-examples') && buildVoiceExampleSection().length > 0,
   });
 
   // Recovery hint — varies by recovery type

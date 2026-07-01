@@ -70,8 +70,8 @@ export class ProactiveScheduler {
     const config = getConfig();
     this.provider = (provider ??
       selectProvider(
+        config.provider,
         ctx?.model ?? config.model,
-        ctx?.apiKey,
         config.features.providerFallback,
       )) as StreamingProvider;
     this.ctx = ctx;
