@@ -44,9 +44,9 @@
 | P0 | 修复机械记忆补丁：不再盲目前缀“记得，是...” | Open WebUI 的相关记忆过滤；用户投诉“像机器” | `unit-reply-quality-gate` 和 `quality-gate` 通过 |
 | P0 | voice few-shot 后置到生成点附近 | SillyTavern/ElizaOS 都把示例靠近生成；few-shot 比抽象规则更能定语气 | `unit-persona-prompt-audit` 断言 `voice-examples` 在情绪/通用 few-shot 后 |
 | P1 | 继续压缩高频负向规则，转成少量正向模式和示例 | 外部项目核心 system 更短，规则过多会变“执行规章” | prompt audit 不退化，reply rubric/quality gate 通过 |
-| P1 | 修 proactive provider 参数顺序 | `selectProvider(provider, model, fallback)` 与调用点不一致 | 新增 focused unit test |
-| P1 | 修 `@mio/idrag` gender drift | ADR 0005 已记录 package drift；types 是 `male/female`，generator 可能查 `boyfriend/girlfriend` | 新增 package parity/generator test |
-| P1 | 修 fallback 跨 provider model 复用 | fallback provider 应使用自身默认 model，不应沿用 primary model 字符串 | 新增 fallback unit test |
+| P1 | 修 proactive provider 参数顺序 | `selectProvider(provider, model, fallback)` 与调用点不一致 | 新增 focused unit test ✅ 2026-07-02 复核：调用点已与签名一致（`nightly.ts:73`、`proactive.ts:72` 均为 provider/model/fallback 顺序），无需修复 |
+| P1 | 修 `@mio/idrag` gender drift | ADR 0005 已记录 package drift；types 是 `male/female`，generator 可能查 `boyfriend/girlfriend` | 新增 package parity/generator test ✅ 2026-07-02 复核：全链已统一 `male/female`（`validation.ts` zod enum、`types.ts` PersonaRequest、src/package generator 判断、package `types.internal.ts`），原 drift 已不存在；parity test 仍可作为后续加固 |
+| P1 | 修 fallback 跨 provider model 复用 | fallback provider 应使用自身默认 model，不应沿用 primary model 字符串 | 新增 fallback unit test ✅ 已完成：`buildChain` 让 fallback 用自身 defaultModel（`fallback.ts`），`tests/unit-fallback.ts` 有对应断言 |
 | P2 | 扩展真实 provider 试聊集 | OpenAI/Anthropic 都建议从真实失败样例挖 eval | 记录 provider、模型、输入、输出和失败分类 |
 
 ## 执行规则

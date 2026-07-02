@@ -104,6 +104,7 @@
 - 🐛 **Bug:5轴亲密度按次衰减**(`affinity.ts`):所有轴共用 EMA 0.95 且"每次交互"衰减,而非按时间——**用户聊越频繁,信任/亲密度衰减越快,逻辑反了**。应改时间衰减或只对久未联系衰减。
 - 🐛 **Bug:experience-trait "±0.03/夜封顶"未实现**:`computeTraitShifts` 各规则独立返回 ±0.01,代码不保证总封顶(目前因规则分散到不同特质而"碰巧"没超)。
 - ⚠️ **COLD_INTENTS 过窄**(`frustration.ts:62`):只含 `['angry']`,"算了""你不懂"这种 dismissive 冷暴力不触发挫折累积。
+  > **已修复(P3-12)**:`updateFrustration` 增加 `userText` 通道,dismissive 措辞(算了/你不懂/不说了…)在非 warm intent 时计入挫折累积;正则复用 multi-axis 的 `DISMISSAL_PATTERNS`(单一来源,不新增第 5 套表),src 与 `@mio/emotion` 包副本同步修改,补 3 项单测。
 - ⚠️ **多处状态不持久化**:ghost 标志、frustration 状态、trait-state 滚动窗口——重启即丢。对长期陪伴服务是结构性风险。
 - ⚠️ **Cardboard 抓不到话术型塑料感**:只能识别"嗯/哦/哈哈"的表面短应答,抓不到"宝贝你要好好照顾自己哦"这种话术正确但内容空洞的塑料安慰——而那恰是 LLM 陪伴最该防的。
 - ⚠️ **演化幅度无感**:experience-trait 月度位移 <0.1,融合后用户基本感知不到性格演化(更像 demo)。
@@ -144,7 +145,7 @@
 |---|------|------|
 | 10 | 两套亲密度模型并存 | 明确 multi-axis 为权威,affinity 降级为兼容层 |
 | 11 | agent-loop 1108 行 | prompt 装配 360 行外移到 `core/prompt-assembly.ts` |
-| 12 | COLD_INTENTS 过窄 | 补 dismissive 类(算了/你不懂/不说了) |
+| 12 | COLD_INTENTS 过窄 | 补 dismissive 类(算了/你不懂/不说了) ✅ 已完成(复用 multi-axis `DISMISSAL_PATTERNS`,经 `userText` 参数接入) |
 | 13 | 全局可变状态并发隐患 | turnCounter 等 per-session 化 |
 
 ---
