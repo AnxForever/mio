@@ -16,11 +16,18 @@ function ok(cond: boolean, msg: string, detail?: string): void {
   console.log(`  ${cond ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m'} ${msg}${detail ? ` — ${detail}` : ''}`);
 }
 
+// Window-sensitive fixtures: prod filters emotions to 72h / events to 14d against
+// the real clock, so dates must be relative offsets — absolute dates rot and re-fail.
+const NOW = Date.now();
+const HOUR = 3_600_000;
+const DAY = 86_400_000;
+const iso = (msAgo: number): string => new Date(NOW - msAgo).toISOString();
+
 function entity(input: Partial<MemoryEntity> & Pick<MemoryEntity, 'type' | 'content'>): MemoryEntity {
   return {
     confidence: 0.8,
-    firstSeen: '2026-06-01T00:00:00.000Z',
-    lastSeen: '2026-06-28T08:00:00.000Z',
+    firstSeen: iso(27 * DAY),
+    lastSeen: iso(1 * HOUR),
     occurrences: 1,
     source: 'unit',
     ...input,
@@ -39,15 +46,15 @@ const currentFact = entity({
 const arcEvent = entity({
   type: 'event',
   content: '用户这周在赶项目上线',
-  firstSeen: '2026-06-25T00:00:00.000Z',
-  lastSeen: '2026-06-27T00:00:00.000Z',
+  firstSeen: iso(3 * DAY),
+  lastSeen: iso(1 * DAY),
   occurrences: 2,
 });
 const recentDecision = entity({
   type: 'decision',
   content: '用户明天准备去医院复查',
-  firstSeen: '2026-06-27T10:00:00.000Z',
-  lastSeen: '2026-06-27T10:00:00.000Z',
+  firstSeen: iso(1 * DAY),
+  lastSeen: iso(1 * DAY),
 });
 const recentEmotion = entity({
   type: 'emotion',
@@ -68,10 +75,10 @@ const structured: StructuredMemory = {
       topic: '工作',
       entities: [arcEvent],
       summary: '事件: 用户这周在赶项目上线',
-      dateRange: { start: '2026-06-25T00:00:00.000Z', end: '2026-06-27T00:00:00.000Z' },
+      dateRange: { start: iso(3 * DAY), end: iso(1 * DAY) },
     },
   ],
-  updatedAt: '2026-06-28T09:00:00.000Z',
+  updatedAt: new Date(NOW).toISOString(),
 };
 
 const context = buildStructuredMemoryContext(structured) ?? '';
@@ -87,7 +94,7 @@ ok(context.includes('近期事件'), 'prompt context labels recent events');
 ok(context.includes('近期情绪'), 'prompt context labels recent emotions');
 ok(context.includes('不自动当作现在'), 'prompt context warns emotions are time-sensitive');
 
-const emptyContext = buildStructuredMemoryContext({ entities: [], durableFacts: [], topics: [], updatedAt: '2026-06-28T09:00:00.000Z' });
+const emptyContext = buildStructuredMemoryContext({ entities: [], durableFacts: [], topics: [], updatedAt: new Date(NOW).toISOString() });
 ok(emptyContext === null, 'empty structured memory returns null');
 
 const passed = results.filter((result) => result.ok).length;
