@@ -17,6 +17,7 @@ import {
   getMultiAxis,
   isMultiAxisRelationshipEnabled,
   deriveAttachmentFromMultiAxis,
+  hasDismissal,
 } from './multi-axis.js';
 
 // ─── In-memory state ───
@@ -71,14 +72,18 @@ const NEUTRAL_INTENTS: IntentLabel[] = ['casual_chat', 'neutral'];
  * @param intent       Classified user intent
  * @param wasGhosted   Whether Mio ghosted this turn
  * @param userIgnored  Whether the user ignored Mio's last message (>2h gap, approximated)
+ * @param userText     Raw user message — dismissive phrasing (算了/你不懂) counts as
+ *                     cold even when the classifier reads it as casual/neutral
  */
 export function updateFrustration(
   intent: IntentLabel,
   wasGhosted: boolean,
   userIgnored: boolean = false,
+  userText: string = '',
 ): void {
   // Warm intents → reset frustration, update lastWarmAt
-  if (WARM_INTENTS.includes(intent) || intent === 'seeking_comfort') {
+  const isWarm = WARM_INTENTS.includes(intent) || intent === 'seeking_comfort';
+  if (isWarm) {
     state.frustrationStreak = 0;
     state.lastWarmAt = new Date().toISOString();
 
@@ -93,8 +98,10 @@ export function updateFrustration(
     }
   }
 
-  // Cold intents → increment frustration streak
-  if (COLD_INTENTS.includes(intent)) {
+  // Cold intents or dismissive phrasing → increment frustration streak.
+  // Dismissals ("算了", "你不懂") usually classify as casual/neutral, so the
+  // text check is what keeps cold-shoulder visible to the streak.
+  if (COLD_INTENTS.includes(intent) || (!isWarm && userText.length > 0 && hasDismissal(userText))) {
     state.frustrationStreak++;
   }
 

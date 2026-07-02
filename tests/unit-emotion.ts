@@ -302,6 +302,33 @@ async function main(): Promise<void> {
       assertEq(state.frustrationStreak, 0, 'streak should reset to 0 after warm exchange');
     });
 
+    await test('frustration: dismissive text counts as cold even when intent is neutral', () => {
+      resetFrustrationState();
+      updateFrustration('neutral', false, false, '算了，你不懂');
+      let state = getFrustrationState();
+      assertEq(state.frustrationStreak, 1, 'dismissal should increment streak');
+      updateFrustration('casual_chat', false, false, '不说了，你忙吧');
+      state = getFrustrationState();
+      assertEq(state.frustrationStreak, 2, 'second dismissal should increment streak');
+    });
+
+    await test('frustration: plain neutral text does not touch the streak', () => {
+      resetFrustrationState();
+      updateFrustration('neutral', false, false, '今天天气不错');
+      const state = getFrustrationState();
+      assertEq(state.frustrationStreak, 0, 'plain neutral message should not increment streak');
+    });
+
+    await test('frustration: warm intent wins over dismissive wording', () => {
+      resetFrustrationState();
+      updateFrustration('neutral', false, false, '算了');
+      let state = getFrustrationState();
+      assertEq(state.frustrationStreak, 1, 'dismissal streak 1');
+      updateFrustration('joking', false, false, '算了啦哈哈');
+      state = getFrustrationState();
+      assertEq(state.frustrationStreak, 0, 'playful 算了 should reset, not increment');
+    });
+
     await test('frustration: mini-crisis triggers when streak >= 3 and tension > 50', () => {
       resetFrustrationState();
       writeAffinityState({ ...defaultAffinityState(), tension: 60 });

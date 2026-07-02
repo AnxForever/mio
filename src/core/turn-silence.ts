@@ -78,7 +78,7 @@ function handleGhostTurn({
   }
   if (config.features.frustrationTracking) {
     const intent = classifyIntent(input.text ?? '');
-    updateFrustration(intent.primary, true);
+    updateFrustration(intent.primary, true, false, input.text ?? '');
   }
 
   const ghostMsg: Message = {

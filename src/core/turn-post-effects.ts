@@ -153,7 +153,7 @@ function updateRelationalSideEffects(
   }
 
   if (config.features.frustrationTracking) {
-    updateFrustration(intent.primary, false);
+    updateFrustration(intent.primary, false, false, input.text ?? '');
   }
 
   recordDualModeTurn(intent, crisisResult.shouldIntervene);

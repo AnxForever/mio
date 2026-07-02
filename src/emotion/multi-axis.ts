@@ -109,7 +109,12 @@ const TRUST_DELTAS: Partial<Record<IntentLabel, number>> = {
 
 const DISMISSAL_PATTERNS = [/算了/, /你不懂/, /跟你说没用/, /你不明白/, /不说了/, /没什么/, /你忙吧/];
 
-function hasDismissal(text: string): boolean {
+/**
+ * Whether the message reads as a dismissal (算了/你不懂/不说了…).
+ * Single source for dismissal wording — frustration.ts reuses this instead of
+ * keeping a parallel regex table.
+ */
+export function hasDismissal(text: string): boolean {
   return DISMISSAL_PATTERNS.some((re) => re.test(text));
 }
 
