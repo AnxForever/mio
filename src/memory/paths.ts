@@ -287,6 +287,11 @@ export function frustrationStatePath(): string {
   return join(colaDir(), 'frustration-state.json');
 }
 
+/** Ghost 沉默双标志状态文件 */
+export function ghostStatePath(): string {
+  return join(colaDir(), 'ghost-state.json');
+}
+
 /** PAD 情感模型状态文件 */
 export function padStatePath(): string {
   return join(colaDir(), 'pad-state.json');

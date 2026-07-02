@@ -106,7 +106,7 @@
 - ⚠️ **COLD_INTENTS 过窄**(`frustration.ts:62`):只含 `['angry']`,"算了""你不懂"这种 dismissive 冷暴力不触发挫折累积。
   > **已修复(P3-12)**:`updateFrustration` 增加 `userText` 通道,dismissive 措辞(算了/你不懂/不说了…)在非 warm intent 时计入挫折累积;正则复用 multi-axis 的 `DISMISSAL_PATTERNS`(单一来源,不新增第 5 套表),src 与 `@mio/emotion` 包副本同步修改,补 3 项单测。
 - ⚠️ **多处状态不持久化**:ghost 标志、frustration 状态、trait-state 滚动窗口——重启即丢。对长期陪伴服务是结构性风险。
-  > **部分已修复(2026-07-02)**:frustration 状态已落盘 `frustration-state.json`(懒加载 + 原子写,重启不丢挫折累积/危机标志);ghost 标志与 trait-state 滚动窗口仍是内存态。
+  > **已收口(2026-07-02)**:frustration 状态落盘 `frustration-state.json`,ghost 双标志落盘 `ghost-state.json`(懒加载 + 原子写;重启不丢挫折累积/危机标志/双沉默保护/晚安两段式)。trait-state 滚动窗口经复核为**有意不持久化**(`trait-state.ts:50` 设计注释;空窗口兜底读带时间衰减的持久化 PAD,强行持久化快照会对抗衰减模型)——按设计结案,不动代码。
 - ⚠️ **Cardboard 抓不到话术型塑料感**:只能识别"嗯/哦/哈哈"的表面短应答,抓不到"宝贝你要好好照顾自己哦"这种话术正确但内容空洞的塑料安慰——而那恰是 LLM 陪伴最该防的。
 - ⚠️ **演化幅度无感**:experience-trait 月度位移 <0.1,融合后用户基本感知不到性格演化(更像 demo)。
 - **架构冗余**:两套亲密度模型(5轴 affinity + 3轴 multi-axis)并存,谁是权威不清;4 套并行中文正则表(PAD分类/intent/experience/dismissal)易漂移。

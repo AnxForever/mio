@@ -57,7 +57,7 @@ async function main(): Promise<void> {
 
   // ─── ghost.ts ───
   {
-    const { shouldGhost, resetGhostState, markReplied, isEndingConversation } = await import('../dist/emotion/ghost.js');
+    const { shouldGhost, resetGhostState, markReplied, isEndingConversation, reloadGhostStateFromDisk } = await import('../dist/emotion/ghost.js');
     const { readRelationshipState, writeRelationshipState } = await import('../dist/relationship/progression.js');
     const { writeEmotionState } = await import('../dist/emotion/state.js');
     const { writeAffinityState, defaultAffinityState } = await import('../dist/emotion/affinity.js');
@@ -159,6 +159,42 @@ async function main(): Promise<void> {
 
     await test('ghost: isEndingConversation returns false for normal message', () => {
       assert(!isEndingConversation('今天天气真好'), 'normal');
+    });
+
+    await test('ghost: double-ghost guard survives a simulated restart', () => {
+      resetGhostState();
+      markReplied();
+      writeRelationshipState({ interactionCount: 15 });
+      writeAffinityState({ ...defaultAffinityState(), warmth: 40, patience: 80, tension: 10 });
+      const ctx: any = {
+        emotionState: { lastInteraction: new Date(Date.now() - 60_000).toISOString(), myMood: '开心', userMood: '未知', affection: 50, energy: 'mid', unresolvedThread: null, recentTopics: [] },
+        relationship: { stage: 'familiar' as const, interactionCount: 15 },
+      };
+      const first = shouldGhost('嗯', ctx);
+      assert(first === true, 'short reply in active conversation should ghost');
+      reloadGhostStateFromDisk();
+      const second = shouldGhost('嗯', ctx);
+      assert(second === false, 'double-ghost guard should survive a restart');
+      resetGhostState();
+      markReplied();
+    });
+
+    await test('ghost: goodnight follow-up silence survives a simulated restart', () => {
+      resetGhostState();
+      markReplied();
+      writeRelationshipState({ interactionCount: 15 });
+      writeAffinityState({ ...defaultAffinityState(), warmth: 40, patience: 80, tension: 10 });
+      const ctx: any = {
+        emotionState: { lastInteraction: new Date(Date.now() - 60_000).toISOString(), myMood: '开心', userMood: '未知', affection: 50, energy: 'mid', unresolvedThread: null, recentTopics: [] },
+        relationship: { stage: 'familiar' as const, interactionCount: 15 },
+      };
+      const atGoodnight = shouldGhost('我先睡了', ctx);
+      assert(atGoodnight === false, 'goodnight turn itself still gets a brief reply');
+      reloadGhostStateFromDisk();
+      const followUp = shouldGhost('还在吗还在吗', ctx);
+      assert(followUp === true, 'follow-up after goodnight should stay silent across restart');
+      resetGhostState();
+      markReplied();
     });
 
     // Restore clean state for subsequent tests

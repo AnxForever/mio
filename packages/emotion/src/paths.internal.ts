@@ -15,3 +15,5 @@ export const ritualStatePath = (dataDir?: string) => getPaths().ritualState;
 export const cardboardStatePath = (dataDir?: string) => getPaths().cardboardState;
 export const frustrationStatePath = (dataDir?: string) =>
   getPaths().frustrationState ?? join(getEmotionConfig().dataDir, 'frustration-state.json');
+export const ghostStatePath = (dataDir?: string) =>
+  getPaths().ghostState ?? join(getEmotionConfig().dataDir, 'ghost-state.json');

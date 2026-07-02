@@ -16,6 +16,8 @@ export interface EmotionPaths {
   cardboardState: string;
   /** Optional — older hosts omit it; falls back to <dataDir>/frustration-state.json. */
   frustrationState?: string;
+  /** Optional — older hosts omit it; falls back to <dataDir>/ghost-state.json. */
+  ghostState?: string;
 }
 
 // ─── I/O callbacks (to be provided by the host app) ───

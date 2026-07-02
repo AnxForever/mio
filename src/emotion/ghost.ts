@@ -12,22 +12,65 @@
  * When ghosting: append a bookmark "[ghost] chose silence" but don't generate a response.
  */
 
+import { existsSync, readFileSync } from 'node:fs';
 import type { SessionContext } from '../types.js';
 import { readEmotionState } from './state.js';
 import { getAffinity } from './affinity.js';
-import { appendBookmark } from '../memory/bank.js';
+import { appendBookmark, writeFileSyncSafe } from '../memory/bank.js';
+import { ghostStatePath } from '../memory/paths.js';
 import { readRelationshipState } from '../relationship/progression.js';
 import { logger } from '../utils/logger.js';
 
-// ─── In-memory ghost state (tracks across turns within a process) ───
+// ─── Ghost state (in-memory, mirrored to ghost-state.json) ───
+// Both flags shape the NEXT turn (double-ghost guard, goodnight follow-up
+// silence) — a server restart mid-sequence would otherwise break them.
 
 let lastTurnGhosted = false;
+let loaded = false;
+
+function ensureLoaded(): void {
+  if (loaded) return;
+  loaded = true;
+  try {
+    const path = ghostStatePath();
+    if (!existsSync(path)) return;
+    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as {
+      lastTurnGhosted?: boolean;
+      willGhostNextTurn?: boolean;
+    };
+    lastTurnGhosted = parsed.lastTurnGhosted ?? false;
+    willGhostNextTurn = parsed.willGhostNextTurn ?? false;
+  } catch {
+    // Corrupted state file → defaults; never break the turn.
+  }
+}
+
+function persist(): void {
+  try {
+    writeFileSyncSafe(ghostStatePath(), JSON.stringify({ lastTurnGhosted, willGhostNextTurn }, null, 2));
+  } catch {
+    // Best-effort — persistence must never break the turn.
+  }
+}
+
+/**
+ * Drop the in-memory cache and re-read from disk.
+ * Equivalent to what a process restart does (used by tests).
+ */
+export function reloadGhostStateFromDisk(): void {
+  loaded = false;
+  ensureLoaded();
+}
 
 /**
  * Reset the ghost state (called between sessions / for testing).
+ * Clears both flags, including a pending goodnight follow-up silence.
  */
 export function resetGhostState(): void {
   lastTurnGhosted = false;
+  willGhostNextTurn = false;
+  loaded = true;
+  persist();
 }
 
 /**
@@ -35,13 +78,16 @@ export function resetGhostState(): void {
  */
 function markGhosted(): void {
   lastTurnGhosted = true;
+  persist();
 }
 
 /**
  * Mark the current turn as NOT ghosted (resets for next check).
  */
 export function markReplied(): void {
+  ensureLoaded();
   lastTurnGhosted = false;
+  persist();
 }
 
 // ─── Pattern definitions ───
@@ -101,6 +147,8 @@ export function shouldGhost(
   userMessage: string,
   ctx: SessionContext,
 ): boolean {
+  ensureLoaded();
+
   // IM bridges feel broken when the bot sends an empty reply. Keep ghosting
   // available for first-party/web sessions, but never silently drop WeChat/QQ
   // bridge turns where the user expects contact-like messaging.
@@ -197,6 +245,7 @@ let willGhostNextTurn = false;
 
 function markWillGhostNext(): void {
   willGhostNextTurn = true;
+  persist();
 }
 
 /**

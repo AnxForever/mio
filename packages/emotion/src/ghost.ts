@@ -12,22 +12,68 @@
  * When ghosting: append a bookmark "[ghost] chose silence" but don't generate a response.
  */
 
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import type { SessionContext } from './types.internal.js';
 import { readEmotionState } from './state.js';
 import { getAffinity } from './affinity.js';
 import { appendBookmark } from './bank.internal.js';
+import { ghostStatePath } from './paths.internal.js';
 import { readRelationshipState } from './progression.internal.js';
 import { logger } from './logger.js';
 
-// ─── In-memory ghost state (tracks across turns within a process) ───
+// ─── Ghost state (in-memory, mirrored to ghost-state.json) ───
+// Both flags shape the NEXT turn (double-ghost guard, goodnight follow-up
+// silence) — a server restart mid-sequence would otherwise break them.
 
 let lastTurnGhosted = false;
+let loaded = false;
+
+function ensureLoaded(): void {
+  if (loaded) return;
+  loaded = true;
+  try {
+    const path = ghostStatePath();
+    if (!existsSync(path)) return;
+    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as {
+      lastTurnGhosted?: boolean;
+      willGhostNextTurn?: boolean;
+    };
+    lastTurnGhosted = parsed.lastTurnGhosted ?? false;
+    willGhostNextTurn = parsed.willGhostNextTurn ?? false;
+  } catch {
+    // Corrupted state file → defaults; never break the turn.
+  }
+}
+
+function persist(): void {
+  try {
+    const path = ghostStatePath();
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify({ lastTurnGhosted, willGhostNextTurn }, null, 2), 'utf-8');
+  } catch {
+    // Best-effort — persistence must never break the turn.
+  }
+}
+
+/**
+ * Drop the in-memory cache and re-read from disk.
+ * Equivalent to what a process restart does (used by tests).
+ */
+export function reloadGhostStateFromDisk(): void {
+  loaded = false;
+  ensureLoaded();
+}
 
 /**
  * Reset the ghost state (called between sessions / for testing).
+ * Clears both flags, including a pending goodnight follow-up silence.
  */
 export function resetGhostState(): void {
   lastTurnGhosted = false;
+  willGhostNextTurn = false;
+  loaded = true;
+  persist();
 }
 
 /**
@@ -35,13 +81,16 @@ export function resetGhostState(): void {
  */
 function markGhosted(): void {
   lastTurnGhosted = true;
+  persist();
 }
 
 /**
  * Mark the current turn as NOT ghosted (resets for next check).
  */
 export function markReplied(): void {
+  ensureLoaded();
   lastTurnGhosted = false;
+  persist();
 }
 
 // ─── Pattern definitions ───
@@ -101,6 +150,8 @@ export function shouldGhost(
   userMessage: string,
   ctx: SessionContext,
 ): boolean {
+  ensureLoaded();
+
   // ─── Guard: never ghost twice in a row ───
   if (lastTurnGhosted) {
     return false;
@@ -183,6 +234,7 @@ let willGhostNextTurn = false;
 
 function markWillGhostNext(): void {
   willGhostNextTurn = true;
+  persist();
 }
 
 /**
