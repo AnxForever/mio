@@ -282,6 +282,11 @@ export function multiAxisPath(): string {
   return join(colaDir(), 'multi-axis-state.json');
 }
 
+/** 挫折/依恋追踪状态文件 */
+export function frustrationStatePath(): string {
+  return join(colaDir(), 'frustration-state.json');
+}
+
 /** PAD 情感模型状态文件 */
 export function padStatePath(): string {
   return join(colaDir(), 'pad-state.json');

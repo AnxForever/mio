@@ -8,10 +8,13 @@
  *   - Mini-crisis: when frustrationStreak >= 3 AND tension > 50
  */
 
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import type { AttachmentStyle, AffinityState, MultiAxisState } from './types.internal.js';
 import type { IntentLabel } from './classifier.js';
 import { getAffinity, readAffinityState, writeAffinityState } from './affinity.js';
 import { appendBookmark } from './bank.internal.js';
+import { frustrationStatePath } from './paths.internal.js';
 import { logger } from './logger.js';
 import {
   getMultiAxis,
@@ -20,15 +23,18 @@ import {
   hasDismissal,
 } from './multi-axis.js';
 
-// ─── In-memory state ───
+// ─── State (in-memory, mirrored to frustration-state.json) ───
 
-let state: LocalFrustrationState = {
+const DEFAULT_STATE: LocalFrustrationState = {
   frustrationStreak: 0,
   rejectionCount: 0,
   attachmentLevel: 'secure',
   lastWarmAt: null,
   crisisActive: false,
 };
+
+let state: LocalFrustrationState = { ...DEFAULT_STATE };
+let loaded = false;
 
 interface LocalFrustrationState {
   frustrationStreak: number;
@@ -38,23 +44,54 @@ interface LocalFrustrationState {
   crisisActive: boolean;
 }
 
+// Streaks/crisis build over days — losing them on a server restart would
+// silently reset relationship tension, so load lazily and persist best-effort.
+function ensureLoaded(): void {
+  if (loaded) return;
+  loaded = true;
+  try {
+    const path = frustrationStatePath();
+    if (!existsSync(path)) return;
+    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as Partial<LocalFrustrationState>;
+    state = { ...DEFAULT_STATE, ...parsed };
+  } catch {
+    // Corrupted state file → start from defaults; never break the turn.
+  }
+}
+
+function persist(): void {
+  try {
+    const path = frustrationStatePath();
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify(state, null, 2), 'utf-8');
+  } catch {
+    // Best-effort — persistence must never break the turn.
+  }
+}
+
+/**
+ * Drop the in-memory cache and re-read from disk.
+ * Equivalent to what a process restart does (used by tests).
+ */
+export function reloadFrustrationStateFromDisk(): void {
+  loaded = false;
+  ensureLoaded();
+}
+
 /**
  * Reset frustration state (for testing / session boundaries).
  */
 export function resetFrustrationState(): void {
-  state = {
-    frustrationStreak: 0,
-    rejectionCount: 0,
-    attachmentLevel: 'secure',
-    lastWarmAt: null,
-    crisisActive: false,
-  };
+  state = { ...DEFAULT_STATE };
+  loaded = true;
+  persist();
 }
 
 /**
  * Get current frustration state.
  */
 export function getFrustrationState(): LocalFrustrationState {
+  ensureLoaded();
   return { ...state };
 }
 
@@ -81,6 +118,8 @@ export function updateFrustration(
   userIgnored: boolean = false,
   userText: string = '',
 ): void {
+  ensureLoaded();
+
   // Warm intents → reset frustration, update lastWarmAt
   const isWarm = WARM_INTENTS.includes(intent) || intent === 'seeking_comfort';
   if (isWarm) {
@@ -128,6 +167,8 @@ export function updateFrustration(
 
   // Check mini-crisis condition
   checkMiniCrisis(intent);
+
+  persist();
 }
 
 /**

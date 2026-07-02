@@ -277,7 +277,7 @@ async function main(): Promise<void> {
 
   // ─── frustration.ts ───
   {
-    const { resetFrustrationState, getFrustrationState, updateFrustration, deriveAttachmentLevel, getAttachmentContext } = await import('../dist/emotion/frustration.js');
+    const { resetFrustrationState, getFrustrationState, updateFrustration, deriveAttachmentLevel, getAttachmentContext, reloadFrustrationStateFromDisk } = await import('../dist/emotion/frustration.js');
     const { writeAffinityState, defaultAffinityState } = await import('../dist/emotion/affinity.js');
 
     resetFrustrationState();
@@ -327,6 +327,15 @@ async function main(): Promise<void> {
       updateFrustration('joking', false, false, '算了啦哈哈');
       state = getFrustrationState();
       assertEq(state.frustrationStreak, 0, 'playful 算了 should reset, not increment');
+    });
+
+    await test('frustration: streak survives a simulated restart', () => {
+      resetFrustrationState();
+      updateFrustration('neutral', false, false, '算了');
+      updateFrustration('angry', false);
+      reloadFrustrationStateFromDisk();
+      const state = getFrustrationState();
+      assertEq(state.frustrationStreak, 2, 'streak should be reloaded from disk after restart');
     });
 
     await test('frustration: mini-crisis triggers when streak >= 3 and tension > 50', () => {

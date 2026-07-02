@@ -197,7 +197,7 @@ POST /onboarding/start, /onboarding/next
 
 ```
 emotion-state.json, relationship-state.json, emotion-history.jsonl
-affinity-state.json, pad-state.json, ritual-state.json, cardboard-state.json
+affinity-state.json, pad-state.json, ritual-state.json, cardboard-state.json, frustration-state.json
 user-activity.json, smart-proactive-config.json
 memory-bank/
   MEMORY.md, BOOKMARKS.md
