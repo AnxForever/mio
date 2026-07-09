@@ -27,6 +27,7 @@ export type ProviderPreset =
   | 'siliconflow'
   | 'hybgzs'
   | 'grok'
+  | 'x666'
   | 'lora'
   | 'mock';
 
