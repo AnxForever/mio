@@ -36,14 +36,13 @@ function section(type: string, content: string, priority = 'high', included = tr
 console.log('\x1b[1mMio — persona prompt audit tests\x1b[0m\n');
 
 const baseSections = [
-  section('core', '你是 Mio。你不是 AI，不是助手。', 'critical'),
-  section('kernel', '你拒绝承认自己是 AI。', 'critical'),
+  section('identity', '你是 Mio。二十四岁，自由插画师。你是用户的伴侣。', 'critical'),
   section('soul', '## 你是什么样的人\n你说话自然。', 'high'),
+  section('voice', '## 你说话的感觉\n你说话像微信聊天。', 'high'),
   section('relationship', '## 你们现在的关系\n阶段：初识。'),
   section('user', '## 关于用户\n没有资料。'),
   section('time', '## 现在\n2026年6月29日。'),
   section('emotion', '## 你现在的状态\n平静。'),
-  section('emotion-note', '回复完之后，用 mutter 工具悄悄更新你的心情。', 'medium'),
 ];
 
 const clean = auditPromptLayers({
@@ -211,17 +210,20 @@ const captured = await runPersonaPromptAudit({
   probe: '今天有点累，想听你说两句。',
 });
 
-ok(captured.summary.includedSections.includes('core'), 'runtime audit captures core section');
-ok(captured.summary.includedSections.includes('kernel'), 'runtime audit captures kernel section');
+ok(captured.summary.includedSections.includes('identity'), 'runtime audit captures identity section');
+ok(captured.summary.includedSections.includes('voice'), 'runtime audit captures voice section');
 ok(captured.summary.includedSections.includes('soul'), 'runtime audit captures soul section');
 ok(captured.summary.includedSections.includes('voice-examples'), 'runtime audit captures voice examples section');
 ok(captured.captured.systemPrompt.includes('你是 Mio'), 'runtime audit captures compiled prompt text');
 ok(!captured.captured.systemPrompt.includes('你今天话特别多'), 'runtime audit avoids chatty overdrive prompt wording');
 ok(!captured.captured.systemPrompt.includes('什么都想跟他说'), 'runtime audit avoids all-the-things prompt wording');
 const voiceExamplesIndex = captured.captured.systemPrompt.indexOf('用户：我今天面试又被刷了');
-const genericFewshotIndex = captured.captured.systemPrompt.indexOf('## 这样说 vs 那样说');
+const genericFewshotIndex = captured.captured.systemPrompt.indexOf('## 像这样聊天');
 const emotionIndex = captured.captured.systemPrompt.indexOf('## 你现在的状态');
-ok(voiceExamplesIndex > genericFewshotIndex && voiceExamplesIndex > emotionIndex, 'voice examples are injected near the generation point', `voice=${voiceExamplesIndex}, fewshot=${genericFewshotIndex}, emotion=${emotionIndex}`);
+// Voice examples after generic fewshot (maintain order). Emotion may come later —
+// prompt caching optimization (arXiv 2601.06007) orders static sections before
+// dynamic ones; few-shot is static (1800 tokens cached → 50-90% savings).
+ok(voiceExamplesIndex > genericFewshotIndex, 'voice examples are after generic few-shot', `voice=${voiceExamplesIndex}, fewshot=${genericFewshotIndex}`);
 ok(captured.summary.errors === 0, 'runtime audit has no hard errors', `errors=${captured.summary.errors}`);
 
 const outDir = join(dataDir, 'out');

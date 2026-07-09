@@ -240,7 +240,34 @@ function registerPromptSections(
     condition: () => sectionEnabled('voice'),
   });
 
-  // L5: Relationship context — stage, nicknames, shared memories.
+  // L5: Static few-shot — 24 natural conversation examples.
+  // Must come BEFORE dynamic sections (time, emotion) for prompt caching
+  // (arXiv 2601.06007: "order most-to-least stable"). Few-shot text is
+  // completely static across turns — cache hit saves ~1300 tokens.
+  engine.register('fewshot', {
+    type: 'fewshot',
+    content: FEWSHOT,
+    priority: 'high',
+    condition: () => sectionEnabled('fewshot'),
+  });
+
+  // L6: Voice examples — per-preset few-shot (12 pairs), also fully static.
+  engine.register('voice-examples', {
+    type: 'voice-examples',
+    content: () => buildVoiceExampleSection(),
+    priority: 'high',
+    condition: () => sectionEnabled('voice-examples') && buildVoiceExampleSection().length > 0,
+  });
+
+  // L7: Emotion note — quiet reminder, static across turns.
+  engine.register('emotion-note', {
+    type: 'emotion-note',
+    content: EMOTION_NOTE,
+    priority: 'low',
+    condition: () => sectionEnabled('emotion-note'),
+  });
+
+  // L8: Relationship context — stage, nicknames, shared memories.
   engine.register('relationship', {
     type: 'relationship',
     content: () => buildRelationshipContext(ctx.relationshipState),
@@ -248,7 +275,7 @@ function registerPromptSections(
     condition: () => sharedMemoryAllowed && sectionEnabled('relationship'),
   });
 
-  // L6: User context — profile, recent topics.
+  // L9: User context — profile, recent topics.
   engine.register('user', {
     type: 'user',
     content: () => buildUserContext(readUserProfile(), ctx.emotionState.recentTopics),
@@ -256,7 +283,8 @@ function registerPromptSections(
     condition: () => sharedMemoryAllowed && sectionEnabled('user'),
   });
 
-  // L7: Time context — time of day, circadian, days since last chat.
+  // L10: Time context — dynamic (contains "现在是2026年7月9日14:11").
+  // After statics → cache break only affects downstream sections.
   engine.register('time', {
     type: 'time',
     content: () => buildTimeContext(
@@ -266,7 +294,7 @@ function registerPromptSections(
     condition: () => sectionEnabled('time'),
   });
 
-  // L8: Temporal state — critical for continuity across sessions.
+  // L11: Temporal state — critical for continuity, but dynamic content.
   engine.register('temporal-state', {
     type: 'temporal-state',
     content: () => ctx.temporalContext ?? '',
@@ -274,8 +302,7 @@ function registerPromptSections(
     condition: () => sectionEnabled('temporal-state') && !!ctx.temporalContext,
   });
 
-  // L9: Emotion — merged old emotion + pad-emotion + affinity + attachment + personality.
-  // One unified "how Mio feels right now" block instead of 5 separate sections.
+  // L12: Emotion — dynamic (PAD state changes every turn).
   engine.register('emotion', {
     type: 'emotion',
     content: () => ctx.isolatedMemory
@@ -287,8 +314,7 @@ function registerPromptSections(
 
   // ─── Medium tier: memory, procedural memory, own-life ───
 
-  // L10: Memory — merged old memory + structured-memory + lorebook + entity relations.
-  // One unified "what Mio remembers" block.
+  // L13: Memory — dynamic (retrieved per-turn from structured-memory + bookmarks).
   engine.register('memory', {
     type: 'memory',
     content: () => buildMemorySection(ctx),
@@ -296,7 +322,7 @@ function registerPromptSections(
     condition: () => sharedMemoryAllowed && sectionEnabled('memory') && buildMemorySection(ctx).length > 0,
   });
 
-  // L11: Procedural memory — learned interaction patterns (feature-gated).
+  // L14: Procedural memory — semi-static (learned patterns, rarely updated).
   engine.register('procedural-memory', {
     type: 'procedural-memory',
     content: () => buildProceduralMemoryContext() ?? '',
@@ -304,40 +330,12 @@ function registerPromptSections(
     condition: () => sharedMemoryAllowed && sectionEnabled('procedural-memory') && buildProceduralMemoryContext() !== null,
   });
 
-  // L12: Own life — Mio's daily activities, natural surface (medium priority).
+  // L15: Own life — semi-static (changes by time of day).
   engine.register('own-life', {
     type: 'own-life',
     content: () => buildOwnLifeSection(),
     priority: 'medium',
     condition: () => sectionEnabled('own-life'),
-  });
-
-  // ─── Low tier: few-shot, voice examples, emotion-note ───
-
-  // L13: Emotion note — quiet reminder to track feelings.
-  engine.register('emotion-note', {
-    type: 'emotion-note',
-    content: EMOTION_NOTE,
-    priority: 'low',
-    condition: () => sectionEnabled('emotion-note'),
-  });
-
-  // L14: Static few-shot — 24 natural conversation examples.
-  // Registered as HIGH priority (was low) — few-shot is the #1 quality driver
-  // per Character.AI/SillyTavern research. Must not be trimmed.
-  engine.register('fewshot', {
-    type: 'fewshot',
-    content: FEWSHOT,
-    priority: 'high',
-    condition: () => sectionEnabled('fewshot'),
-  });
-
-  // L15: Voice examples — per-preset few-shot (12 pairs), close to generation.
-  engine.register('voice-examples', {
-    type: 'voice-examples',
-    content: () => buildVoiceExampleSection(),
-    priority: 'high',
-    condition: () => sectionEnabled('voice-examples') && buildVoiceExampleSection().length > 0,
   });
 
   // ─── Recovery hint (conditional) ───
