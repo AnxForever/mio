@@ -23,6 +23,7 @@ interface AnthropicContentBlock {
   tool_use_id?: string;
   content?: string;
   is_error?: boolean;
+  cache_control?: { type: string };
 }
 
 interface AnthropicMessage {
@@ -67,11 +68,13 @@ export class AnthropicProvider implements StreamingProvider {
   readonly name = 'anthropic';
   private readonly apiKey: string;
   private readonly defaultModel: string;
-  private readonly baseUrl = 'https://api.anthropic.com/v1/messages';
+  private readonly baseUrl: string;
 
   constructor(apiKey: string, defaultModel: string = 'claude-sonnet-4-20250514') {
     this.apiKey = apiKey;
     this.defaultModel = defaultModel;
+    // Support custom endpoints via MIO_PROVIDER_BASE_URL (e.g. third-party proxies)
+    this.baseUrl = (process.env.MIO_PROVIDER_BASE_URL || 'https://api.anthropic.com/v1/messages').replace(/\/+$/, '');
   }
 
   get isAvailable(): boolean {
@@ -187,8 +190,11 @@ export class AnthropicProvider implements StreamingProvider {
       model: (opts?.model && opts.model.length > 0) ? opts.model : this.defaultModel,
       max_tokens: opts?.maxTokens ?? 4096,
       temperature: opts?.temperature ?? 0.7,
-      system: systemPrompt,
-      messages: this.mapMessages(messages),
+      // Prompt caching (arXiv 2601.06007): cache_control on system prompt saves
+      // 50-90% on input tokens for companion workloads where personality/rules
+      // repeat across thousands of turns.
+      system: this.wrapSystemWithCache(systemPrompt),
+      messages: this.wrapMessagesWithCache(this.mapMessages(messages)),
     };
 
     if (tools && tools.length > 0) {
@@ -204,6 +210,63 @@ export class AnthropicProvider implements StreamingProvider {
     }
 
     return body;
+  }
+
+  // ─── Prompt caching (Anthropic cache_control) ───
+
+  /**
+   * Wrap the system prompt with a cache_control breakpoint.
+   *
+   * Uses content-block array format so Anthropic's prefix cache
+   * reuses KV tensors across turns. The entire system prompt
+   * (personality + voice + rules + KERNEL) is cached as one block.
+   *
+   * Cache TTL: 5 minutes (ephemeral). On cache hit, input tokens
+   * are billed at 10% of normal price (90% savings).
+   *
+   * Ref: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
+   */
+  private wrapSystemWithCache(systemPrompt: string): Array<{ type: string; text: string; cache_control?: { type: string } }> {
+    return [
+      {
+        type: 'text',
+        text: systemPrompt,
+        cache_control: { type: 'ephemeral' },
+      },
+    ];
+  }
+
+  /**
+   * Add cache_control to the last content block of the last message.
+   *
+   * This caches the conversation history prefix — the model skips
+   * recomputing attention for cached turns. Best practice: only cache
+   * the last message block (dynamic user message excluded).
+   *
+   * Up to 4 cache breakpoints per request; we use 2 (system + history).
+   */
+  private wrapMessagesWithCache(msgs: AnthropicMessage[]): AnthropicMessage[] {
+    if (msgs.length === 0) return msgs;
+
+    // Clone to avoid mutating input
+    const out = msgs.map((m) => ({ ...m }));
+
+    // Cache the last message's last content block
+    const last = out[out.length - 1];
+    if (typeof last.content === 'string') {
+      // String content → need to convert to content-block array
+      last.content = [
+        { type: 'text', text: last.content, cache_control: { type: 'ephemeral' } },
+      ];
+    } else if (Array.isArray(last.content) && last.content.length > 0) {
+      // Content-block array → add cache_control to last block
+      const lastBlock = last.content[last.content.length - 1];
+      if (lastBlock.type === 'text') {
+        lastBlock.cache_control = { type: 'ephemeral' };
+      }
+    }
+
+    return out;
   }
 
   // ─── Response parser (non-streaming) ───
