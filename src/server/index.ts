@@ -1352,6 +1352,56 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     res.json({ ok: true, id });
   });
 
+  // ─── Lorebook — user-managed world knowledge ───
+
+  app.get('/lorebook', requireAuth, (_req, res) => {
+    const { getLorebook } = require('../memory/lorebook.js');
+    const lb = getLorebook();
+    res.json({ entries: lb.entries, turnCount: lb.turnCount });
+  });
+
+  app.post('/lorebook', requireAuth, (req, res) => {
+    const { addLoreEntry } = require('../memory/lorebook.js');
+    const { triggers, content, category, priority } = req.body || {};
+    if (!content?.trim()) {
+      res.status(400).json({ error: 'content is required' });
+      return;
+    }
+    const entry = addLoreEntry({
+      triggers: Array.isArray(triggers) ? triggers : [],
+      content: content.trim(),
+      category: category || 'note',
+      priority: priority ?? 50,
+      scanDepth: 5,
+      cooldown: 3,
+      permanent: false,
+    });
+    res.status(201).json(entry);
+  });
+
+  app.patch('/lorebook/:id', requireAuth, (req, res) => {
+    const { updateLoreEntry } = require('../memory/lorebook.js');
+    const { id } = req.params as { id: string };
+    const patch = req.body || {};
+    const ok = updateLoreEntry(id, patch);
+    if (!ok) {
+      res.status(404).json({ error: 'Lore entry not found' });
+      return;
+    }
+    res.json({ ok: true, id });
+  });
+
+  app.delete('/lorebook/:id', requireAuth, (req, res) => {
+    const { removeLoreEntry } = require('../memory/lorebook.js');
+    const { id } = req.params as { id: string };
+    const ok = removeLoreEntry(id);
+    if (!ok) {
+      res.status(404).json({ error: 'Lore entry not found' });
+      return;
+    }
+    res.json({ ok: true, id });
+  });
+
   // ─── User profile maintenance ───
 
   app.get('/user-profile', requireAuth, (_req, res) => {
