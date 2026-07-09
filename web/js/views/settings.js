@@ -6,6 +6,7 @@ import { navigate } from '../router.js';
 import { toast } from '../components/toast.js';
 import { ICONS } from '../utils/icons.js';
 import { renderGenderPicker } from './gender.js';
+import { renderEmpty, renderInlineEmpty } from '../components/empty-state.js';
 
 const UI_TO_BACKEND_MOD = { girlfriend: 'female', boyfriend: 'male' };
 const BACKEND_TO_UI_MOD = { female: 'girlfriend', male: 'boyfriend', girlfriend: 'girlfriend', boyfriend: 'boyfriend' };
@@ -85,7 +86,7 @@ export class SettingsView extends BaseView {
       name: 'model',
       'aria-label': '模型',
     });
-    const status = el('span', { className: 'settings-model-status', textContent: '加载中' });
+    const status = renderInlineEmpty('加载中', 'mute');
     const save = el('button', {
       className: 'settings-apply-btn',
       type: 'button',
@@ -222,7 +223,7 @@ export class SettingsView extends BaseView {
     const current = Store.get('authUser');
     const legacy = !current && Store.get('authToken');
 
-    const usersValue = el('span', { className: 'settings-model-status', textContent: '加载中' });
+    const usersValue = renderInlineEmpty('加载中', 'mute');
     body.appendChild(this.row({
       label: '当前账号',
       desc: current ? `${current.username} · ${current.role}` : legacy ? '本地访问令牌 · owner' : '未启用账号系统',

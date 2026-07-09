@@ -6,6 +6,7 @@ import { Store } from '../store.js';
 import { ICONS } from '../utils/icons.js';
 import { relationshipVM } from '../liveness.js';
 import { toast } from '../components/toast.js';
+import { renderEmpty } from '../components/empty-state.js';
 
 function valueOrDash(value) {
   if (value === null || value === undefined || value === '') return '—';
@@ -203,11 +204,23 @@ export class ConsoleView extends BaseView {
     ]);
 
     if (!characters.length) {
+      const hasAuth = canReadProtected();
+      const empty = renderEmpty({
+        icon: hasAuth ? ICONS.unplugged : ICONS.sparkle,
+        title: hasAuth ? '还没找到角色卡' : '需要访问令牌',
+        desc: hasAuth
+          ? '后端读了但没拿到角色 — 检查 /character 接口，或在 Studio 里创建一张。'
+          : '把这个控制台当成主人的私人面板去接入；当前 token 无权读取。',
+        cta: hasAuth
+          ? { label: '进入 Studio', onClick: () => navigate('/studio') }
+          : { label: '去 Studio 配置', kind: 'secondary', onClick: () => navigate('/studio') },
+        tone: hasAuth ? 'error' : 'mute',
+        size: 'sm',
+        className: 'console-character-empty',
+      });
       return el('section', { className: 'admin-section console-character-section' }, [
         head,
-        el('div', { className: 'admin-panel console-character-empty' }, [
-          el('span', { textContent: canReadProtected() ? '角色卡读取失败' : '需要访问令牌' }),
-        ]),
+        empty,
       ]);
     }
 

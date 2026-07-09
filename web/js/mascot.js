@@ -18,5 +18,6 @@ export function padToExpression(pad, opts = {}) {
 
 /** 表情名 → 图片 URL(前端 served 路径)。 */
 export function mascotSrc(expr) {
-  return `/assets/mascot/${expr}.png`;
+  /* vite.config.js: publicDir = 'assets' → web/assets/* served at /*  */
+  return `/mascot/${expr}.png`;
 }

@@ -1,4 +1,11 @@
-/* GPT-style product shell: quiet sidebar, focused workspace. */
+/* ════════════════════════════════════════════════════════════════════
+   layout.css — App shell, sidebar, bottom nav
+
+   Warm-rice-paper sidebar with subtle elevation. The sidebar is the
+   "cover of a notebook" — quiet, confident, branded. The main canvas
+   is the same warm cream so the whole page reads as one surface.
+   ════════════════════════════════════════════════════════════════════ */
+
 .app-shell {
   position: relative;
   display: flex;
@@ -6,14 +13,12 @@
   height: var(--app-h, 100vh);
   height: var(--app-h, 100dvh);
   overflow: hidden;
-  background: #ffffff;
-  color: #0d0d0d;
+  background: var(--bg);
+  color: var(--text);
 }
 
-.app-sidebar {
-  display: none;
-}
-
+/* Sidebar hidden on mobile; main is full-width. Bottom nav shows. */
+.app-sidebar { display: none; }
 .app-main {
   flex: 1;
   display: flex;
@@ -21,20 +26,23 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: #ffffff;
+  background: var(--bg);
 }
 
 .app-bottom-nav {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   flex-shrink: 0;
-  gap: 2px;
-  min-height: calc(66px + env(safe-area-inset-bottom));
-  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
-  background: rgba(255, 255, 255, 0.96);
-  border-top: 1px solid rgba(13, 13, 13, 0.08);
+  gap: 4px;
+  min-height: calc(62px + env(safe-area-inset-bottom));
+  padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+  background: rgba(250, 247, 242, 0.92);
+  border-top: 1px solid var(--hairline);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
 }
 
+/* Nav item — column on bottom nav, with subtle accent on active. */
 .app-nav-item {
   position: relative;
   display: flex;
@@ -42,36 +50,35 @@
   justify-content: center;
   min-width: 0;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: 12px;
   background: transparent;
-  color: #6b6b6b;
+  color: var(--text-3);
   font: inherit;
   cursor: pointer;
   transition:
-    background 150ms var(--ease),
-    border-color 150ms var(--ease),
-    color 150ms var(--ease),
-    transform 150ms var(--ease);
+    background var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease),
+    transform var(--t-fast) var(--ease-out);
 }
-
-.app-nav-item:hover {
-  background: #f4f4f4;
-  color: #111111;
-}
-
-.app-nav-item:active {
-  transform: scale(0.98);
-}
+.app-nav-item:hover { background: var(--bg-hover); color: var(--text); }
+.app-nav-item:active { transform: scale(0.96); }
 
 .app-nav-item.active {
-  background: #f1f1f1;
-  color: #111111;
+  color: var(--accent);
+}
+.app-nav-item.active::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  background: var(--accent-soft);
+  border-radius: 10px;
+  z-index: -1;
 }
 
 .app-bottom-nav .app-nav-item {
   flex-direction: column;
   gap: 3px;
-  height: 54px;
+  height: 50px;
   padding: 4px 2px;
 }
 
@@ -83,7 +90,6 @@
   height: 22px;
   flex-shrink: 0;
 }
-
 .app-nav-icon svg {
   display: block;
   width: 21px;
@@ -96,152 +102,147 @@
   max-width: 100%;
   overflow: hidden;
   color: currentColor;
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 600;
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
+  letter-spacing: 0.02em;
 }
 
-.app-sidebar-footer {
-  display: none;
-}
+.app-sidebar-footer { display: none; }
 
 @media (min-width: 960px) {
   .app-shell {
     flex-direction: row;
     align-items: stretch;
-    background: #ffffff;
   }
 
   .app-sidebar {
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
-    width: 260px;
-    padding: 10px;
-    background: #f7f7f8;
-    border-right: 1px solid rgba(13, 13, 13, 0.08);
+    width: 264px;
+    padding: 14px 12px;
+    background: var(--bg);
+    border-right: 1px solid var(--hairline);
   }
 
+  /* Brand block — quiet, anchored to the top. */
   .app-sidebar-brand {
     display: grid;
-    grid-template-columns: 34px 1fr;
+    grid-template-columns: 40px 1fr;
     align-items: center;
-    gap: 10px;
-    min-height: 48px;
-    margin-bottom: 8px;
-    padding: 7px 8px;
-    color: #111111;
+    gap: 12px;
+    min-height: 52px;
+    margin-bottom: 12px;
+    padding: 6px 8px;
+    color: var(--text);
   }
 
   .app-sidebar-brand .avatar {
-    width: 34px !important;
-    height: 34px !important;
-    border: 1px solid rgba(13, 13, 13, 0.08);
-    border-radius: 9px;
-    background: #ffffff;
+    width: 40px !important;
+    height: 40px !important;
+    border: 1px solid var(--hairline);
+    border-radius: 50% !important;
+    background: var(--bg-warm);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
   }
-
   .app-sidebar-brand .avatar img {
-    width: 130%;
-    height: 130%;
+    width: 130% !important;
+    height: 130% !important;
   }
 
   .app-sidebar-brand-text {
     overflow: hidden;
-    color: #111111;
-    font-size: 14px;
-    font-weight: 700;
-    line-height: 1.2;
+    color: var(--text);
+    font-family: var(--font-serif);
+    font-size: 17px;
+    font-weight: 500;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .app-sidebar-brand-sub {
-    margin-top: 1px;
+    margin-top: 2px;
     overflow: hidden;
-    color: #8b8b8b;
-    font-size: 12px;
+    color: var(--text-3);
+    font-size: 11.5px;
     font-weight: 500;
-    line-height: 1.25;
+    line-height: 1.2;
+    letter-spacing: 0.06em;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
+  /* Sidebar nav items — pill-style, with terracotta accent on active. */
   .app-sidebar .app-nav-item {
     justify-content: flex-start;
-    gap: 10px;
+    gap: 12px;
     width: 100%;
     height: 38px;
     margin: 1px 0;
-    padding: 0 9px;
-    border-radius: 8px;
-    color: #4d4d4d;
+    padding: 0 12px;
+    border-radius: 10px;
+    color: var(--text-2);
     font-size: 14px;
     font-weight: 500;
   }
-
   .app-sidebar .app-nav-item:hover {
-    background: #ececec;
+    background: var(--bg-hover);
     border-color: transparent;
-    color: #111111;
+    color: var(--text);
   }
-
   .app-sidebar .app-nav-item.active {
-    background: #e9e9e9;
-    color: #111111;
+    background: var(--accent-soft);
+    color: var(--accent);
+    box-shadow: none;
   }
+  .app-sidebar .app-nav-item.active::before { display: none; }
+  .app-sidebar .app-nav-item.active .app-nav-icon { color: var(--accent); }
 
   .app-nav-group-label {
-    margin: 14px 8px 5px;
-    color: #9a9a9a;
-    font-size: 11px;
-    font-weight: 700;
+    margin: 16px 12px 6px;
+    color: var(--text-3);
+    font-size: 10.5px;
+    font-weight: 600;
     line-height: 1.2;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
   }
+  .app-sidebar-brand + .app-nav-group-label { margin-top: 6px; }
 
-  .app-sidebar-brand + .app-nav-group-label {
-    margin-top: 8px;
-  }
-
-  .app-sidebar .app-nav-icon {
-    width: 19px;
-    height: 19px;
-  }
-
-  .app-sidebar .app-nav-icon svg {
-    width: 19px;
-    height: 19px;
-  }
-
+  .app-sidebar .app-nav-icon { width: 18px; height: 18px; }
+  .app-sidebar .app-nav-icon svg { width: 18px; height: 18px; }
   .app-sidebar .app-nav-label {
     display: block;
     font-size: 14px;
     font-weight: 500;
     line-height: 1.2;
+    letter-spacing: 0;
   }
 
   .app-sidebar-footer {
     display: grid;
     gap: 4px;
     margin-top: auto;
-    padding: 12px 8px 8px;
-    border-top: 1px solid rgba(13, 13, 13, 0.08);
-    color: #8b8b8b;
+    padding: 14px 10px 8px;
+    border-top: 1px solid var(--hairline);
+    color: var(--text-3);
     font-size: 12px;
-    line-height: 1.45;
-    font-variant-numeric: tabular-nums;
+    line-height: 1.5;
+    font-feature-settings: "tnum" 1;
   }
-
   .app-sidebar-footer::before {
     content: "本地运行";
     display: block;
-    color: #4d4d4d;
+    color: var(--text-2);
     font-weight: 600;
+    font-size: 12px;
+    margin-bottom: 2px;
   }
-
   .app-sidebar-version,
   .app-sidebar-user {
     overflow: hidden;
@@ -251,44 +252,29 @@
 
   .app-sidebar-logout {
     justify-self: start;
-    min-height: 26px;
-    margin-top: 4px;
-    padding: 0 8px;
-    border: 1px solid rgba(13, 13, 13, 0.08);
-    border-radius: 6px;
-    background: #ffffff;
-    color: #4d4d4d;
+    min-height: 28px;
+    margin-top: 6px;
+    padding: 0 12px;
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-2);
     font-size: 12px;
     font-weight: 600;
-    transition:
-      background 150ms var(--ease),
-      color 150ms var(--ease),
-      border-color 150ms var(--ease);
+    cursor: pointer;
+    transition: all var(--t-fast) var(--ease);
   }
-
   .app-sidebar-logout:hover {
-    background: #ececec;
-    border-color: rgba(13, 13, 13, 0.14);
-    color: #111111;
+    background: var(--bg-hover);
+    color: var(--text);
+    border-color: var(--hairline-strong);
   }
 
-  .app-main {
-    flex: 1;
-    width: auto;
-    background: #ffffff;
-  }
-
-  .app-bottom-nav {
-    display: none;
-  }
+  .app-main { background: var(--bg); }
+  .app-bottom-nav { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-nav-item {
-    transition-duration: 0.01ms;
-  }
-
-  .app-nav-item:active {
-    transform: none;
-  }
+  .app-nav-item { transition-duration: 0.01ms; }
+  .app-nav-item:active { transform: none; }
 }

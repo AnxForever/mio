@@ -1,29 +1,6 @@
-/* Final polish layer: shared motion, controls, and admin-grade surfaces. */
-:root {
-  --ui-canvas: #fbfbfc;
-  --ui-ink: #0d0d0d;
-  --ui-ink-2: #5f5f5f;
-  --ui-ink-3: #8f8f8f;
-  --ui-surface: #ffffff;
-  --ui-surface-muted: #f7f7f8;
-  --ui-surface-raised: #fdfdfd;
-  --ui-surface-inset: #f1f1f2;
-  --ui-border: rgba(13, 13, 13, 0.1);
-  --ui-border-soft: rgba(13, 13, 13, 0.06);
-  --ui-focus: rgba(13, 13, 13, 0.72);
-  --ui-ring: 0 0 0 3px rgba(13, 13, 13, 0.08);
-  --ui-shadow-hairline: 0 1px 2px rgba(13, 13, 13, 0.035), inset 0 1px 0 rgba(255, 255, 255, 0.72);
-  --ui-shadow-lift: 0 4px 8px rgba(13, 13, 13, 0.055), inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  --ui-radius: 8px;
-  --ui-radius-sm: 6px;
-  --ui-ease: cubic-bezier(0.2, 0, 0, 1);
-  --ui-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ui-fast: 120ms;
-  --ui-medium: 180ms;
-  --ui-slow: 260ms;
-  --spring: var(--ui-ease-out);
-  --ease-spring: var(--ui-ease-out);
-}
+/* Polish layer — shared motion, controls, and admin-grade surfaces.
+   Palette is sourced from tokens.css (loaded earlier). This file adds
+   motion + control-level refinements only. */
 
 html,
 body,
@@ -35,7 +12,8 @@ select {
 }
 
 body {
-  background: var(--ui-canvas);
+  background: var(--bg);
+  font-feature-settings: "ss01" 1, "tnum" 1;
 }
 
 @keyframes ui-view-in {
@@ -130,7 +108,8 @@ select:focus-visible,
   font-size: 1.06rem;
 }
 
-.chat-header,
+/* Headers are now defined per-view in their own CSS files.
+   This block only retains the warm-translucent bg + bottom border. */
 .messages-header,
 .mood-header,
 .settings-header,
@@ -138,52 +117,10 @@ select:focus-visible,
 .ana-header {
   min-height: 64px;
   padding: 14px clamp(16px, 4vw, 40px);
-  background: rgba(255, 255, 255, 0.94);
+  background: rgba(250, 247, 242, 0.86);
   border-bottom: 1px solid var(--ui-border-soft);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-}
-
-.chat-header .avatar {
-  width: 38px;
-  height: 38px;
-  border: 1px solid var(--ui-border-soft);
-  background: var(--ui-surface-muted);
-}
-
-.chat-header-name {
-  color: var(--ui-ink);
-  font-size: 16px;
-  font-weight: 650;
-}
-
-.chat-header-status {
-  color: var(--ui-ink-2);
-}
-
-.chat-header .status-dot.online {
-  background: #12805c;
-  box-shadow: 0 0 0 3px rgba(18, 128, 92, 0.12);
-}
-
-.chat-header .tts-btn {
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--ui-border-soft);
-  border-radius: var(--ui-radius);
-  background: var(--ui-surface);
-  color: var(--ui-ink-2);
-}
-
-.chat-header .tts-btn.active {
-  border-color: rgba(13, 13, 13, 0.18);
-  background: var(--ui-ink);
-  color: #ffffff;
-}
-
-.chat-header .tts-btn:disabled {
-  opacity: 0.38;
-  cursor: not-allowed;
+  -webkit-backdrop-filter: saturate(140%) blur(14px);
+  backdrop-filter: saturate(140%) blur(14px);
 }
 
 .settings-view,
@@ -440,15 +377,16 @@ select:focus-visible,
 .btn-primary,
 .memory-action--primary,
 .memories-search button {
-  background: var(--ui-ink);
-  color: #ffffff;
+  background: var(--accent);
+  color: var(--bg);
+  box-shadow: 0 4px 14px -2px var(--accent-glow);
 }
 
 .btn-secondary,
 .memory-action {
-  background: var(--ui-surface-muted);
+  background: var(--bg-elev);
   border-color: var(--ui-border-soft);
-  color: var(--ui-ink);
+  color: var(--text);
 }
 
 .btn-primary:active,
@@ -456,20 +394,22 @@ select:focus-visible,
 .memory-action:active,
 .memories-search button:active {
   transform: scale(0.985);
-  opacity: 0.72;
+  opacity: 0.85;
 }
 
 @media (hover: hover) {
   .btn-primary:hover,
   .memory-action--primary:hover,
   .memories-search button:hover {
-    background: #2a2a2a;
+    background: var(--accent-hover);
     transform: translateY(-1px);
+    box-shadow: 0 8px 22px -2px var(--accent-glow);
   }
 
   .btn-secondary:hover,
   .memory-action:hover {
-    border-color: rgba(13, 13, 13, 0.18);
+    border-color: var(--hairline-strong);
+    background: var(--bg-hover);
     transform: translateY(-1px);
   }
 }
@@ -998,87 +938,10 @@ select:focus-visible,
   color: var(--ui-ink-2);
 }
 
-.bubble {
-  animation: bubble-in var(--ui-medium) var(--ui-ease-out) both;
-  max-width: min(74%, 620px);
-  white-space: pre-wrap;
-}
-
-.bubble--them {
-  background: var(--ui-surface-muted);
-}
-
-.bubble--me {
-  background: var(--ui-ink);
-}
-
-.bubble--proactive {
-  border: 1px solid var(--ui-border);
-}
-
-@keyframes ui-typing-pulse {
-  0%, 100% { opacity: 0.36; }
-  50% { opacity: 0.92; }
-}
-
-.typing-dot {
-  animation: ui-typing-pulse 1.2s var(--ui-ease) infinite;
-}
-
+/* chat input area + send button are defined in views/chat.css now;
+   this block only retains the warm-translucent chrome. */
 .chat-input-area {
   border-top: 1px solid var(--ui-border-soft);
-  gap: 8px;
-  min-height: 62px;
-  background: rgba(255, 255, 255, 0.96);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-}
-
-.chat-input-wrap {
-  min-height: 42px;
-  padding-inline: 14px;
-  border-radius: 14px;
-}
-
-.chat-input-wrap textarea {
-  padding: 10px 0;
-}
-
-.attach-btn,
-.voice-btn,
-.send-btn {
-  width: 38px;
-  height: 38px;
-  border-radius: var(--ui-radius);
-}
-
-.attach-btn,
-.voice-btn {
-  border: 1px solid transparent;
-  color: var(--ui-ink-2);
-}
-
-.send-btn {
-  background: var(--ui-ink);
-  color: #ffffff;
-}
-
-.send-btn:disabled {
-  background: #d8d8dc;
-  color: #ffffff;
-  opacity: 1;
-}
-
-@media (hover: hover) {
-  .attach-btn:hover,
-  .voice-btn:hover {
-    background: var(--ui-surface-muted);
-    color: var(--ui-ink);
-  }
-
-  .send-btn:not(:disabled):hover {
-    background: #2a2a2a;
-  }
 }
 
 .chat-input-wrap:focus-within,

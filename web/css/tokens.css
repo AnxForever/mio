@@ -1,29 +1,99 @@
+/* ─────────────────────────────────────────────────────────────────
+   tokens.css — Single source of truth for Mio's design language.
+
+   Warm editorial palette inspired by rice-paper notebooks. We lean
+   into deep ink + warm cream + terracotta accent rather than the
+   generic grey-on-white admin look.
+   ───────────────────────────────────────────────────────────────── */
+
 :root {
-  /* Warm editorial palette — inspired by Dribbble AI companion designs */
-  --bg: #FAF8F5;
-  --text: #2C2420;
-  --text-60: rgba(44, 36, 32, 0.55);
-  --text-40: rgba(44, 36, 32, 0.35);
-  --text-10: rgba(44, 36, 32, 0.08);
-  --hairline: rgba(44, 36, 32, 0.08);
-  --surface: #FFFFFF;
-  --bubble-them: #F5F2EE;
-  --bubble-me: #2C2420;
-  --accent: #E8816C;           /* warm terracotta — send button, active states */
-  --accent-soft: rgba(232, 129, 108, 0.12);
-  --glow: 0 0 40px rgba(232, 129, 108, 0.08);
+  /* ── Surfaces ── */
+  --bg:          #FAF7F2;   /* canvas: warm rice-paper */
+  --bg-elev:    #FFFFFF;    /* cards */
+  --bg-inset:   #F1ECE5;    /* field bg, hover wells */
+  --bg-hover:   #F3EFE8;
+  --bg-warm:    #F5E8DD;    /* tinted block (active card, hero accent) */
 
-  /* Typography */
+  /* ── Ink ── */
+  --text:       #2C2420;    /* primary ink (deep brown, not pure black) */
+  --text-2:     #6B5A4F;    /* secondary */
+  --text-3:     #958579;    /* tertiary / labels */
+  --text-4:     rgba(44, 36, 32, 0.35);
+  --text-10:    rgba(44, 36, 32, 0.08);
+
+  --hairline:   rgba(44, 36, 32, 0.09);
+  --hairline-strong: rgba(44, 36, 32, 0.14);
+
+  /* ── Accent ── */
+  --accent:        #C0563D;   /* deep terracotta — primary CTA, online dot, active state */
+  --accent-hover:  #A8472F;
+  --accent-soft:   rgba(192, 86, 61, 0.10);
+  --accent-softer: rgba(192, 86, 61, 0.06);
+  --accent-glow:   rgba(192, 86, 61, 0.18);
+
+  /* ── Semantic ── */
+  --success: #1F6B4F;
+  --success-soft: #E8F3EC;
+  --danger:  #B23A2E;
+  --danger-soft: #FBEDEA;
+
+  /* ── Bubbles ── */
+  --bubble-them: #F1ECE5;
+  --bubble-me:   #2C2420;
+
+  /* ── Typography ── */
   --font-serif: "Noto Serif SC", "Georgia", serif;
-  --font: "Manrope", -apple-system, system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font:       "Manrope", -apple-system, system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
 
-  /* Spacing 8pt */
-  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s8:32px; --s12:48px; --s16:64px;
+  /* ── Spacing (8pt grid) ── */
+  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
+  --s5: 20px; --s6: 24px; --s8: 32px; --s12: 48px; --s16: 64px;
 
-  /* Editorial: no rounded corners, thin borders */
-  --r-bubble: 0px; --r-card: 0px; --r-input: 0px;
+  /* ── Radii — rounded, not zero. Editorial ≠ razor-sharp. ── */
+  --r-bubble: 14px;
+  --r-card:   12px;
+  --r-input:  10px;
+  --r-pill:   999px;
 
-  /* Motion */
-  --ease: cubic-bezier(0.4,0,0.2,1);
-  --t-fast:150ms; --t:250ms;
+  /* ── Motion ── */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --t-fast: 150ms;
+  --t:      250ms;
+  --t-slow: 400ms;
+
+  /* ── Elevation ── */
+  --shadow-hairline: 0 1px 2px rgba(44, 36, 32, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --shadow-lift:     0 4px 14px rgba(44, 36, 32, 0.06), 0 1px 2px rgba(44, 36, 32, 0.04);
+  --shadow-pop:      0 8px 28px rgba(44, 36, 32, 0.12), 0 2px 6px rgba(44, 36, 32, 0.06);
+  --shadow-glow:     0 0 0 4px rgba(192, 86, 61, 0.16);
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Legacy aliases — older CSS (admin.css, polish.css) references
+   --ui-* tokens. We map them to the warm palette so the whole app
+   flows from one source of truth.
+   ───────────────────────────────────────────────────────────────── */
+:root {
+  --ui-canvas:        var(--bg);
+  --ui-ink:           var(--text);
+  --ui-ink-2:         var(--text-2);
+  --ui-ink-3:         var(--text-3);
+  --ui-surface:       var(--bg-elev);
+  --ui-surface-muted: var(--bg-inset);
+  --ui-surface-raised:#FFFFFF;
+  --ui-surface-inset: #EFEAE3;
+  --ui-border:        var(--hairline);
+  --ui-border-soft:   rgba(44, 36, 32, 0.06);
+  --ui-radius:        10px;
+  --ui-radius-sm:     8px;
+  --ui-shadow-hairline: var(--shadow-hairline);
+  --ui-shadow-lift:     var(--shadow-lift);
+  --ui-ease:            var(--ease);
+  --ui-ease-out:        var(--ease-out);
+  --ui-fast:            130ms;
+  --ui-medium:          200ms;
+  --ui-slow:            320ms;
+  --spring:             var(--ease-out);
+  --ease-spring:        var(--ease-out);
 }

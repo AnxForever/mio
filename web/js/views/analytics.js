@@ -17,6 +17,7 @@ import { navigate } from '../router.js';
 import { ICONS } from '../utils/icons.js';
 import { getMoodInfo, STAGE_LABELS } from '../utils/constants.js';
 import { relationshipVM } from '../liveness.js';
+import { renderEmpty } from '../components/empty-state.js';
 
 /** 心情 → 设计系统心情色 token(零新配色;未命中按序轮转,保证每条都有色) */
 const MOOD_TOKENS = ['var(--mood-joy)', 'var(--mood-tender)', 'var(--mood-calm)', 'var(--mood-miss)'];
@@ -384,10 +385,15 @@ export class AnalyticsView extends BaseView {
   }
 
   buildEmptyState() {
-    return el('div', { className: 'ana-blank' }, [
-      el('div', { className: 'ana-blank-title', textContent: '还没有可读取的数据' }),
-      el('div', { className: 'ana-blank-sub', textContent: '接口恢复后,这里会显示关系、情绪、话题和会话统计' }),
-    ]);
+    return renderEmpty({
+      icon: ICONS.emptyBook,
+      title: '还没有可读取的数据',
+      desc: '接口恢复后，这里会显示关系、情绪、话题和会话统计。',
+      cta: { label: '刷新', onClick: () => this.load?.() },
+      tone: 'mute',
+      size: 'lg',
+      className: 'ana-blank',
+    });
   }
 
   buildSkeleton() {

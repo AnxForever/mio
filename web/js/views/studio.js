@@ -7,6 +7,7 @@ import { navigate } from '../router.js';
 import { mascotSrc } from '../mascot.js';
 import { toast } from '../components/toast.js';
 import { ICONS } from '../utils/icons.js';
+import { renderEmpty } from '../components/empty-state.js';
 
 const GENDER_LABELS = {
   female: '女',
@@ -187,9 +188,15 @@ export class StudioView extends BaseView {
       container.appendChild(this.renderCharacterLibrary(statusData, characterData?.data || []));
     } catch {
       container.innerHTML = '';
-      container.appendChild(el('div', { className: 'studio-state' }, [
-        el('p', { className: 'studio-state-text', textContent: '加载失败，请检查连接' }),
-      ]));
+      container.appendChild(renderEmpty({
+        icon: ICONS.unplugged,
+        title: '角色库加载失败',
+        desc: '后端没有响应，可能是 token 过期或服务断开。检查状态后再试。',
+        cta: { label: '重试', onClick: () => this.load?.() },
+        tone: 'error',
+        size: 'md',
+        className: 'studio-state',
+      }));
     }
   }
 

@@ -170,8 +170,33 @@ export class ChatView extends BaseView {
     img.addEventListener('error', () => { img.style.visibility = 'hidden'; });
     avatar.appendChild(img);
     wrap.appendChild(avatar);
-    wrap.appendChild(el('div', { className: 'chat-empty-title', textContent: '和 Mio 开始对话' }));
-    wrap.appendChild(el('div', { className: 'chat-empty-sub', textContent: '说点什么吧，今天过得怎么样？' }));
+
+    wrap.appendChild(el('h2', { className: 'chat-empty-title', textContent: '和 Mio 开始对话' }));
+    wrap.appendChild(el('p', { className: 'chat-empty-sub', textContent: '说点什么吧，今天过得怎么样？' }));
+
+    /* Quick-pick chips: tap to send, break the cold-start. */
+    const prompts = [
+      '今天有点累',
+      '讲个睡前故事',
+      '给我推荐一本书',
+      '我们在练口语',
+    ];
+    const chips = el('div', { className: 'chat-empty-suggestions' });
+    for (const text of prompts) {
+      const chip = el('button', {
+        className: 'chat-empty-chip tap',
+        type: 'button',
+        textContent: text,
+      });
+      chip.addEventListener('click', () => {
+        this.msgInput.value = text;
+        this.handleInput();
+        this.handleSend();
+      });
+      chips.appendChild(chip);
+    }
+    wrap.appendChild(chips);
+
     return wrap;
   }
 

@@ -121,4 +121,36 @@ export const ICONS = {
     'M10 11v6',
     'M14 11v6',
   ], size),
+
+  /* ─── Empty state icons ───────────────────────────────────── */
+
+  /** Open book / journal — for memories, archives. */
+  emptyBook: (size = 24) => svgIcon([
+    'M3 5a2 2 0 0 1 2-2h6v18H5a2 2 0 0 1-2-2V5z',
+    'M21 5a2 2 0 0 0-2-2h-6v18h6a2 2 0 0 0 2-2V5z',
+    'M7 7h2',
+    'M15 7h2',
+  ], size),
+
+  /** Unplugged connection — for network/protected-resource errors. */
+  unplugged: (size = 24) => svgIcon([
+    'M9 2v6',
+    'M15 2v6',
+    'M5 8h14',
+    'M12 8v6',
+    'M9 17l-3 5',
+    'M15 17l3 5',
+    'M12 14v8',
+  ], size),
+
+  /** Soft sleeping moon — for "nothing here yet". */
+  moon: (size = 24) => svgIcon([
+    'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z',
+  ], size),
+
+  /** Sparkle / brand-flavored accent. */
+  sparkle: (size = 24) => svgIcon([
+    'M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3z',
+    'M19 14l.7 2 2 .7-2 .7L19 19l-.7-1.6-2-.7 2-.7L19 14z',
+  ], size),
 };

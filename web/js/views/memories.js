@@ -5,6 +5,7 @@ import { api } from '../api.js';
 import { navigate } from '../router.js';
 import { toast } from '../components/toast.js';
 import { ICONS } from '../utils/icons.js';
+import { renderEmpty } from '../components/empty-state.js';
 
 const TYPE_LABELS = {
   fact: '事实',
@@ -351,13 +352,28 @@ export class MemoriesView extends BaseView {
   renderLoading() {
     this.searchResultsEl.innerHTML = '';
     this.listEl.innerHTML = '';
-    this.listEl.appendChild(el('div', { className: 'memories-state', textContent: '正在读取记忆…' }));
+    this.listEl.appendChild(renderEmpty({
+      icon: ICONS.emptyBook,
+      title: '正在读取记忆…',
+      desc: '正在把 Mio 已沉淀的内容拉出来。',
+      tone: 'mute',
+      size: 'sm',
+      className: 'memories-state',
+    }));
   }
 
   renderError() {
     this.searchResultsEl.innerHTML = '';
     this.listEl.innerHTML = '';
-    this.listEl.appendChild(el('div', { className: 'memories-state', textContent: '记忆读取失败。' }));
+    this.listEl.appendChild(renderEmpty({
+      icon: ICONS.unplugged,
+      title: '记忆读取失败',
+      desc: '后端没有响应或鉴权失败。检查 token 与服务器日志后重试。',
+      cta: { label: '重试', kind: 'primary', onClick: () => this.load?.() },
+      tone: 'error',
+      size: 'sm',
+      className: 'memories-state',
+    }));
   }
 
   renderSearchResults(query) {
@@ -368,7 +384,14 @@ export class MemoriesView extends BaseView {
     this.searchResultsEl.appendChild(title);
 
     if (!this.searchResults.length) {
-      this.searchResultsEl.appendChild(el('div', { className: 'memories-state memories-state--compact', textContent: '没有匹配的旧内容。' }));
+      this.searchResultsEl.appendChild(renderEmpty({
+        icon: ICONS.emptyBook,
+        title: `没有匹配 "${query}" 的记忆`,
+        desc: '换个关键词，或者直接去聊天 — Mio 会把值得记住的事沉到这。',
+        tone: 'mute',
+        size: 'sm',
+        className: 'memories-state memories-state--compact',
+      }));
       return;
     }
 

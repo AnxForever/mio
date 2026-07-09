@@ -5,6 +5,7 @@ import { Store } from '../store.js';
 import { ICONS } from '../utils/icons.js';
 import { navigate } from '../router.js';
 import { toast } from '../components/toast.js';
+import { renderEmpty } from '../components/empty-state.js';
 
 function canReadProtected() {
   return !!Store.get('authToken') || Store.get('authBypassed') === true;
@@ -236,9 +237,14 @@ export class ChannelsView extends BaseView {
           src: qrcodeUrl,
           alt: '微信连接二维码',
           onError: (event) => {
-            event.currentTarget.replaceWith(el('div', {
+            event.currentTarget.replaceWith(renderEmpty({
+              icon: ICONS.unplugged,
+              title: '二维码加载失败',
+              desc: '请重新生成二维码再试。',
+              cta: { label: '重新生成', kind: 'primary', onClick: () => this.generateQr?.() },
+              tone: 'error',
+              size: 'sm',
               className: 'channels-qr-placeholder',
-              textContent: '二维码加载失败，请重新生成',
             }));
           },
         }),
@@ -386,10 +392,14 @@ export class ChannelsView extends BaseView {
       ]),
       accounts.length
         ? el('div', { className: 'channels-account-list admin-panel' }, accounts.map((account) => this.accountRow(account)))
-        : el('div', { className: 'channels-empty admin-panel' }, [
-          el('strong', { textContent: '还没有微信账号连接' }),
-          el('span', { textContent: '生成二维码并扫码确认后，这里会出现 bot 身份和运行状态。' }),
-        ]),
+        : renderEmpty({
+            icon: ICONS.sparkle,
+            title: '还没有微信账号连接',
+            desc: '生成二维码并扫码确认后，这里会出现 bot 身份和运行状态。',
+            tone: 'mute',
+            size: 'sm',
+            className: 'channels-empty admin-panel',
+          }),
     ]);
   }
 
@@ -526,10 +536,14 @@ export class ChannelsView extends BaseView {
       ]),
       events.length
         ? el('div', { className: 'channels-event-list admin-panel' }, events.map((event) => this.eventRow(event, allowed)))
-        : el('div', { className: 'channels-empty admin-panel' }, [
-          el('strong', { textContent: '还没有微信事件' }),
-          el('span', { textContent: '生成二维码、扫码、收发消息或调整策略后，这里会出现审计记录。' }),
-        ]),
+        : renderEmpty({
+            icon: ICONS.emptyBook,
+            title: '还没有微信事件',
+            desc: '生成二维码、扫码、收发消息或调整策略后，这里会出现审计记录。',
+            tone: 'mute',
+            size: 'sm',
+            className: 'channels-empty admin-panel',
+          }),
     ]);
   }
 
