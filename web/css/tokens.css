@@ -1,24 +1,27 @@
 :root {
-  /* 配色 — 精确灰阶,克制 */
-  --bg: #FFFFFF;
-  --text: #000000;
-  --text-2: #8E8E93;
-  --text-3: #C7C7CC;
-  --hairline: #F2F2F7;
-  --surface: #FAFAFA;
-  --bubble-them: #F2F2F7;
-  --bubble-me: #000000;
-  --accent: #FF9F5A;
-  /* 心情点缀(低饱和) */
-  --mood-joy: #FFD9A0; --mood-tender: #F5C6D0; --mood-calm: #C5D2C9; --mood-miss: #B8C5CE;
-  /* 字体 */
+  /* Editorial monochrome palette */
+  --bg: #F9F8F6;
+  --text: #1C1C1C;
+  --text-60: rgba(28, 28, 28, 0.60);
+  --text-40: rgba(28, 28, 28, 0.40);
+  --text-10: rgba(28, 28, 28, 0.10);
+  --hairline: rgba(28, 28, 28, 0.10);
+  --surface: #FFFFFF;
+  --bubble-them: #F2F0ED;
+  --bubble-me: #1C1C1C;
+  --accent: #1C1C1C;
+
+  /* Typography */
+  --font-serif: "Noto Serif SC", "Georgia", serif;
   --font: "Manrope", -apple-system, system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
-  /* 间距 8pt */
-  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s8:32px;
-  /* 圆角 */
-  --r-bubble:18px; --r-card:14px; --r-input:20px;
-  /* 动效 */
+
+  /* Spacing 8pt */
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s8:32px; --s12:48px; --s16:64px;
+
+  /* Editorial: no rounded corners, thin borders */
+  --r-bubble: 0px; --r-card: 0px; --r-input: 0px;
+
+  /* Motion */
   --ease: cubic-bezier(0.4,0,0.2,1);
-  --spring: cubic-bezier(0.34,1.4,0.64,1);
-  --t-fast:150ms; --t:250ms; --t-enter:400ms;
+  --t-fast:150ms; --t:250ms;
 }

@@ -20,39 +20,31 @@ import { ICONS } from '../utils/icons.js';
 // ─── 数据 ───
 
 const CHARACTERS = [
-  { id: 'female',   name: 'Mio',  tag: '温柔姐姐', desc: '24岁·有主见·慢热',        hue: 12 },
-  { id: 'male',     name: 'Mio',  tag: '沉稳男友', desc: '26岁·嘴硬心软·行动派',     hue: 140 },
-  { id: 'a-yao',    name: '阿曜', tag: '年下直球', desc: '23岁·独立音乐人',           hue: 35 },
-  { id: 'si-nian',  name: '司念', tag: '傲娇毒舌', desc: '25岁·插画师·嘴硬心软',     hue: 330 },
-  { id: 'lu-shen',  name: '陆深', tag: '爹系霸总', desc: '30岁·CEO·掌控温柔',        hue: 260 },
-  { id: 'linxia',   name: '林夏', tag: '成熟温柔', desc: '27岁·稳定可靠·照顾者',     hue: 160 },
-  { id: 'shenlan',  name: '沈岚', tag: '冷淡可靠', desc: '26岁·话少但关键时在',      hue: 200 },
-  { id: 'nanyue',   name: '南月', tag: '活泼敏感', desc: '22岁·情绪丰富·需要被懂',   hue: 45 },
-  { id: 'zhouhe',   name: '周和', tag: '稳重克制', desc: '29岁·医疗从业者·分寸感',   hue: 190 },
+  { id: 'female',   name: 'Mio',  tag: '温柔姐姐', desc: '24岁·有主见·慢热' },
+  { id: 'male',     name: 'Mio',  tag: '沉稳男友', desc: '26岁·嘴硬心软·行动派' },
+  { id: 'a-yao',    name: '阿曜', tag: '年下直球', desc: '23岁·独立音乐人' },
+  { id: 'si-nian',  name: '司念', tag: '傲娇毒舌', desc: '25岁·插画师·嘴硬心软' },
+  { id: 'lu-shen',  name: '陆深', tag: '爹系霸总', desc: '30岁·CEO·掌控温柔' },
+  { id: 'linxia',   name: '林夏', tag: '成熟温柔', desc: '27岁·稳定可靠·照顾者' },
+  { id: 'shenlan',  name: '沈岚', tag: '冷淡可靠', desc: '26岁·话少但关键时在' },
+  { id: 'nanyue',   name: '南月', tag: '活泼敏感', desc: '22岁·情绪丰富·需要被懂' },
+  { id: 'zhouhe',   name: '周和', tag: '稳重克制', desc: '29岁·医疗从业者·分寸感' },
 ];
 
 const VOICES = [
-  { id: 'sunshine', label: '温暖阳光', desc: '主动·撒娇·热烈',    hue: 30 },
-  { id: 'warm',     label: '温柔质感', desc: '内敛·慢热·克制',    hue: 10 },
-  { id: 'bold',     label: '大胆主张', desc: '直接·有脾气·刀子嘴', hue: 350 },
+  { id: 'sunshine', label: '温暖阳光', desc: '主动·撒娇·热烈' },
+  { id: 'warm',     label: '温柔质感', desc: '内敛·慢热·克制' },
+  { id: 'bold',     label: '大胆主张', desc: '直接·有脾气·刀子嘴' },
 ];
 
 const INTIMACIES = [
-  { id: 'slow',     label: '慢热陪伴', desc: '从朋友开始，自然生长',            hue: 120 },
-  { id: 'moderate', label: '适龄恋爱', desc: '像正常恋爱一样的节奏',            hue: 20 },
-  { id: 'fast',     label: '快速亲密', desc: '高甜·直接·不克制',               hue: 350 },
-  { id: 'open',     label: '完全开放', desc: '无保留·什么都可以聊',             hue: 280 },
-  { id: 'roleplay', label: '角色扮演', desc: '沉浸式场景体验',                   hue: 200 },
+  { id: 'slow',     label: '慢热陪伴', desc: '从朋友开始，自然生长' },
+  { id: 'moderate', label: '适龄恋爱', desc: '像正常恋爱一样的节奏' },
+  { id: 'fast',     label: '快速亲密', desc: '高甜·直接·不克制' },
+  { id: 'open',     label: '完全开放', desc: '无保留·什么都可以聊' },
+  { id: 'roleplay', label: '角色扮演', desc: '沉浸式场景体验' },
 ];
 
-// ─── 辅助：HSL 生成卡片色调 ───
-
-function cardGradient(hue) {
-  return `linear-gradient(135deg, hsl(${hue}, 30%, 94%) 0%, hsl(${hue + 15}, 25%, 97%) 100%)`;
-}
-function accentColor(hue) {
-  return `hsl(${hue}, 45%, 55%)`;
-}
 
 // ─── CompanionView ───
 
@@ -99,10 +91,9 @@ export class CompanionView extends BaseView {
       const isActive = char.id === active;
       const card = el('div', {
         className: `companion-char-card ${isActive ? 'active' : ''}`,
-        style: `background: ${cardGradient(char.hue)}`,
         onClick: () => this.selectCharacter(char.id),
       }, [
-        el('div', { className: 'companion-char-avatar', style: `color: ${accentColor(char.hue)}`, textContent: char.name.charAt(0) }),
+        el('div', { className: 'companion-char-avatar', textContent: char.name.charAt(0) }),
         el('div', { className: 'companion-char-meta' }, [
           el('div', { className: 'companion-char-name', textContent: char.name }),
           el('div', { className: 'companion-char-tag', textContent: char.tag }),
@@ -154,10 +145,9 @@ export class CompanionView extends BaseView {
       const isActive = item.id === activeId;
       const pill = el('div', {
         className: `companion-pill ${isActive ? 'active' : ''}`,
-        style: isActive ? `border-color: ${accentColor(item.hue)}; background: ${cardGradient(item.hue)}` : '',
         onClick: () => this.selectPill(key, item.id),
       }, [
-        el('div', { className: 'companion-pill-dot', style: `background: ${accentColor(item.hue)}` }),
+        el('div', { className: 'companion-pill-dot' }),
         el('div', { className: 'companion-pill-text' }, [
           el('div', { className: 'companion-pill-label', textContent: item.label }),
           el('div', { className: 'companion-pill-desc', textContent: item.desc }),

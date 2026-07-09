@@ -27,11 +27,11 @@ ul, ol { list-style: none; }
   padding-right: env(safe-area-inset-right);
 }
 
-/* 排版 */
-.title    { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; color: var(--text); }
-.subtitle { font-size: 14px; color: var(--text-2); }
-.label    { font-size: 12px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; }
-.time     { font-size: 13px; color: var(--text-3); }
+/* Editorial typography */
+.title    { font-family: var(--font-serif); font-size: 22px; font-weight: 400; letter-spacing: -0.02em; color: var(--text); }
+.subtitle { font-size: 14px; color: var(--text-60); }
+.label    { font-size: 11px; color: var(--text-40); text-transform: uppercase; letter-spacing: 0.15em; font-weight: 500; }
+.time     { font-size: 12px; color: var(--text-40); }
 
 /* 无障碍:尊重减少动效 */
 @media (prefers-reduced-motion: reduce) {

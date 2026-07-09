@@ -1,81 +1,86 @@
-/* ─── Companion — Japandi 温暖极简 ─── */
+/* ─── Companion — Editorial monochrome ─── */
 
 .companion-view {
-  padding: 32px 24px 48px;
-  max-width: 600px;
+  padding: var(--s16) var(--s6) var(--s16);
+  max-width: 640px;
   margin: 0 auto;
 }
 
-.companion-header { margin-bottom: 36px; }
-.companion-back { margin-bottom: 16px; }
+.companion-header { margin-bottom: var(--s12); }
+.companion-back { margin-bottom: var(--s4); }
 .companion-title {
-  font-family: 'Noto Serif SC', serif;
-  font-size: 26px; font-weight: 600; letter-spacing: 0.5px;
-  color: #3C2F29; margin: 0 0 6px;
+  font-family: var(--font-serif); font-size: 32px; font-weight: 400;
+  letter-spacing: -0.03em; color: var(--text); margin: 0 0 var(--s2);
+  line-height: 1.15;
 }
 .companion-subtitle {
-  font-size: 14px; color: #8A7A72; margin: 0;
+  font-size: 14px; color: var(--text-60); margin: 0;
 }
 
 /* ─── Sections ─── */
 
-.companion-section { margin-bottom: 36px; }
+.companion-section { margin-bottom: var(--s12); }
 .companion-section-title {
-  font-size: 13px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase;
-  color: #A89890; margin: 0 0 16px;
+  font-size: 12px; font-weight: 500; letter-spacing: 0.15em; text-transform: uppercase;
+  color: var(--text-40); margin: 0 0 var(--s4);
 }
 
 /* ─── Character grid ─── */
 
-.companion-char-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+.companion-char-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1px; background: var(--text-10); }
 .companion-char-card {
-  position: relative; padding: 16px 14px; border-radius: 16px; cursor: pointer;
-  border: 2px solid transparent; transition: all .2s;
-  box-shadow: 0 2px 8px rgba(60, 47, 41, 0.04);
+  position: relative; padding: var(--s5) var(--s4); cursor: pointer;
+  border: none; background: var(--bg); transition: background .2s;
 }
-.companion-char-card:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(60, 47, 41, 0.08); }
-.companion-char-card.active {
-  border-color: #E89F95;
-  box-shadow: 0 2px 12px rgba(232, 159, 149, 0.15);
-}
+.companion-char-card:hover { background: var(--text-10); }
+.companion-char-card.active { background: var(--text); }
+.companion-char-card.active .companion-char-name,
+.companion-char-card.active .companion-char-tag,
+.companion-char-card.active .companion-char-desc { color: var(--bg); }
+.companion-char-card.active .companion-char-avatar { background: rgba(255,255,255,.15); color: var(--bg); }
+
 .companion-char-avatar {
-  width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-  font-family: 'Noto Serif SC', serif; font-size: 18px; font-weight: 700;
-  background: rgba(255,255,255,.7); margin-bottom: 10px;
+  width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-serif); font-size: 16px;
+  background: var(--hairline); color: var(--text); margin-bottom: var(--s3);
 }
-.companion-char-name { font-size: 16px; font-weight: 600; color: #3C2F29; }
-.companion-char-tag { font-size: 11px; color: #8A7A72; margin-top: 1px; }
-.companion-char-desc { font-size: 12px; color: #6B5A52; margin-top: 6px; line-height: 1.5; }
+.companion-char-name { font-family: var(--font-serif); font-size: 18px; letter-spacing: -0.02em; color: var(--text); }
+.companion-char-tag { font-size: 11px; color: var(--text-40); margin-top: 1px; text-transform: uppercase; letter-spacing: 0.1em; }
+.companion-char-desc { font-size: 12px; color: var(--text-60); margin-top: var(--s1); line-height: 1.5; }
 .companion-char-check {
-  position: absolute; top: 10px; right: 12px;
-  font-size: 11px; color: #E89F95; font-weight: 600; letter-spacing: 1px;
+  position: absolute; top: var(--s3); right: var(--s3);
+  font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--text-40);
 }
+.companion-char-card.active .companion-char-check { color: var(--text-40); }
 
 /* ─── Pills ─── */
 
-.companion-pills { display: flex; flex-direction: column; gap: 8px; }
+.companion-pills { display: flex; flex-direction: column; gap: 1px; background: var(--text-10); }
 .companion-pill {
-  display: flex; align-items: center; gap: 14px; padding: 14px 18px;
-  border-radius: 14px; cursor: pointer; border: 1.5px solid transparent;
-  background: #F9F5F0; transition: all .15s;
+  display: flex; align-items: center; gap: var(--s4); padding: var(--s4) var(--s5);
+  cursor: pointer; border: none; background: var(--bg); transition: background .15s;
 }
-.companion-pill:hover { background: #F2EBE1; }
-.companion-pill.active {
-  border-color: #E89F95;
-  box-shadow: 0 1px 8px rgba(232, 159, 149, 0.12);
-}
+.companion-pill:hover { background: var(--text-10); }
+.companion-pill.active { background: var(--text); }
+.companion-pill.active .companion-pill-label,
+.companion-pill.active .companion-pill-desc { color: var(--bg); }
+.companion-pill.active .companion-pill-dot { background: var(--bg); }
+
 .companion-pill-dot {
-  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  width: 6px; height: 6px; flex-shrink: 0;
+  background: var(--text-40);
 }
-.companion-pill-label { font-size: 15px; font-weight: 600; color: #3C2F29; }
-.companion-pill-desc { font-size: 13px; color: #8A7A72; }
+.companion-pill-label { font-size: 14px; font-weight: 500; color: var(--text); }
+.companion-pill-desc { font-size: 12px; color: var(--text-60); }
 
 /* ─── Engine link ─── */
 
 .companion-engine-btn {
-  display: block; width: 100%; padding: 14px; border-radius: 14px;
-  background: #F9F5F0; border: 1px solid #E8E0D8;
-  font-size: 14px; color: #8A7A72; cursor: pointer; text-align: center;
-  font-family: inherit; transition: background .15s;
+  display: block; width: 100%; padding: var(--s4) var(--s5);
+  border: 1px solid var(--text-10); background: var(--bg);
+  font-size: 13px; color: var(--text-40); cursor: pointer;
+  font-family: inherit; transition: color .15s;
+  text-align: center;
 }
-.companion-engine-btn:hover { background: #F2EBE1; }
+.companion-engine-btn:hover { color: var(--text); border-color: var(--text-60); }
