@@ -18,6 +18,7 @@ import { logger } from '../utils/logger.js';
 import { resolveProvider, PROVIDER_PRESETS } from '../config.js';
 import { AnthropicProvider } from './anthropic.js';
 import { OpenAICompatibleProvider } from './openai-compatible.js';
+import { RoundRobinProvider } from './round-robin.js';
 import { MockProvider } from './mock.js';
 import { FallbackChainProvider, drainFallbackEvents, resetFallbackCache } from './fallback.js';
 import { createLoRAProvider } from './lora-adapter.js';
@@ -48,8 +49,8 @@ function createProvider(resolution: ProviderResolution): StreamingProvider {
     });
   }
 
-  // No API key — fall back to Mock with a clear log message
-  if (!apiKey) {
+  // Grok round-robin: GROK_API_KEYS provides keys, skip single-key check
+  if (!apiKey && !(preset.name === 'grok' && process.env.GROK_API_KEYS)) {
     logger.error(
       `[provider] ${preset.label}: no API key set. Set ${preset.apiKeyEnv} env var. Falling back to MockProvider.`,
     );
@@ -59,6 +60,18 @@ function createProvider(resolution: ProviderResolution): StreamingProvider {
   // Anthropic uses its own native API (not OpenAI-compatible)
   if (preset.name === 'anthropic') {
     return new AnthropicProvider(apiKey, model);
+  }
+
+  // Grok round-robin: when GROK_API_KEYS=url1@key1,url2@key2 is set,
+  // create a RoundRobinProvider that rotates across multiple endpoints
+  if (preset.name === 'grok' && process.env.GROK_API_KEYS) {
+    const endpoints = process.env.GROK_API_KEYS.split(',').map((entry) => {
+      const parts = entry.trim().split('@');
+      return { url: parts[0]?.trim() || '', key: parts[1]?.trim() || '' };
+    }).filter((e) => e.url && e.key);
+    if (endpoints.length >= 1) {
+      return new RoundRobinProvider(endpoints, model || preset.defaultModel);
+    }
   }
 
   // All other providers use OpenAI-compatible chat completions API

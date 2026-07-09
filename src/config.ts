@@ -201,6 +201,22 @@ export const PROVIDER_PRESETS: Record<string, ProviderPresetConfig> = {
       { id: 'grok-4.3-high', label: 'Grok 4.3 High — 深度/情绪时刻备选' },
     ],
   },
+  jiuiij: {
+    name: 'jiuiij',
+    label: 'jiuiij 公益站（Grok 4.3/4.20）',
+    baseUrl: 'https://jiuuij.de5.net/v1',
+    apiKeyEnv: 'JIUIIJ_API_KEY',
+    defaultModel: 'grok-4.3-fast',
+    authHeader: 'Bearer ${apiKey}',
+    supportsVision: false,
+    supportsToolCalling: true,
+    models: [
+      { id: 'grok-4.3-fast', label: 'Grok 4.3 Fast — 快聊' },
+      { id: 'grok-4.20-0309-reasoning-console', label: 'Grok 4.20 Reasoning' },
+      { id: 'grok-4.20-multi-agent-high', label: 'Grok 4.20 Multi-Agent High' },
+      { id: 'grok-4.20-multi-agent-xhigh', label: 'Grok 4.20 Multi-Agent xHigh' },
+    ],
+  },
   x666: {
     name: 'x666',
     label: 'x666 公益站（DeepSeek/Grok/Gemini）',
