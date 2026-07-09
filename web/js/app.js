@@ -11,6 +11,7 @@ import { wsManager } from './ws.js';
 import { el } from './utils/dom.js';
 import { ICONS } from './utils/icons.js';
 import { mascotSrc } from './mascot.js';
+import { renderCompanion, mountCompanion, unmountCompanion } from './views/companion.js';
 import { renderConsole,    mountConsole,    unmountConsole    } from './views/console.js';
 import { renderChat,       mountChat,       unmountChat       } from './views/chat.js';
 import { renderMessages,   mountMessages,   unmountMessages   } from './views/messages.js';
@@ -45,6 +46,7 @@ const NAV_GROUPS = [
   {
     label: '运行',
     items: [
+      { route: '/companion', iconFn: ICONS.companion, label: '陪伴', mobile: true },
       { route: '/console',  iconFn: ICONS.console,  label: '总览', mobile: true },
       { route: '/chat',     iconFn: ICONS.chat,     label: '聊天', mobile: true },
     ],
@@ -166,6 +168,7 @@ function updateNavHighlight(routeKey) {
 
 let currentView = null;
 const viewMap = {
+  '/companion':  { render: renderCompanion, mount: mountCompanion, unmount: unmountCompanion },
   '/console':    { render: renderConsole,    mount: mountConsole,    unmount: unmountConsole },
   '/chat':       { render: renderChat,       mount: mountChat,       unmount: unmountChat },
   '/messages':   { render: renderMessages,   mount: mountMessages,   unmount: unmountMessages },
@@ -196,6 +199,7 @@ function switchView(viewName, params) {
 }
 
 /* ─── 路由注册 ─── */
+route('/companion',  () => switchView('/companion'));
 route('/console',    () => switchView('/console'));
 route('/chat',       () => switchView('/chat'));
 route('/messages',   () => switchView('/messages'));

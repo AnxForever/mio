@@ -606,6 +606,22 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     });
   });
 
+  // Companion config — voice + intimacy + character (lightweight, for UI)
+  app.get('/admin/config', requireAuth, (_req, res) => {
+    res.json({
+      voice: process.env.MIO_VOICE || 'warm',
+      intimacy: process.env.MIO_INTIMACY || 'moderate',
+      activeMod: modManager().activeMod,
+    });
+  });
+
+  app.patch('/admin/config', requireAuth, (req, res) => {
+    const { voice, intimacy } = req.body || {};
+    if (voice) process.env.MIO_VOICE = voice;
+    if (intimacy) process.env.MIO_INTIMACY = intimacy;
+    res.json({ ok: true, voice: process.env.MIO_VOICE, intimacy: process.env.MIO_INTIMACY });
+  });
+
   app.put('/admin/model-config', requireAuth, validate(modelConfigBody), (req, res) => {
     const body = req.body as { provider: string; model?: string };
     const provider = body.provider.trim();
