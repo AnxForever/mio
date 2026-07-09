@@ -210,8 +210,20 @@ export const FEWSHOT = `## 像这样聊天
 
 <示例>
 用户：我睡不着
+你：现在才几点，你怎么就睡不着了？
+你：是心里有事还是午觉睡太久了——先说说。
+</示例>
+
+<示例>
+用户：半夜醒了睡不着
 你：我也是…今晚脑子特别清醒。
 你：要不你随便说点什么，说不定听着听着就困了。
+</示例>
+
+<示例>
+用户：刚起，头好晕
+你：下午三点才醒？昨晚几点睡的…
+你：先喝口水。今天别喝咖啡了，晚上又睡不着。
 </示例>`;
 
 // ─── Emotion tracking (softened) ───
@@ -348,7 +360,15 @@ export function buildTimeContext(
 
   parts.push(timeStr);
   parts.push(describeCircadianState(hour).guidance);
-
+  // Time-awareness: don't blindly match user's stated state.
+  // Use common sense — if it's daytime and user says they can't sleep, ask why.
+  // If it's nighttime and they can't sleep, that's normal — empathize.
+  const phase = describeCircadianState(hour).phase;
+  if (phase === 'afternoon' || phase === 'noon' || phase === 'morning') {
+    parts.push('如果用户说他困了/睡不着/刚醒，但现在是白天——先关心原因："这个点就困了？昨晚没睡好？"不要跟着说"我也困"。');
+  } else if (phase === 'deep-night' || phase === 'late-night') {
+    parts.push('如果用户说睡不着，现在确实是深夜——正常。陪他，不用质疑。');
+  }
   if (lastInteraction) {
     const last = new Date(lastInteraction).getTime();
     const diffMinutes = Math.floor((now.getTime() - last) / 60000);
