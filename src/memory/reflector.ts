@@ -12,6 +12,7 @@
  */
 
 import type { MemoryEntity, StructuredMemory } from './structured-memory.js';
+import type { AIProvider } from '../types.js';
 import { logger } from '../utils/logger.js';
 
 // ─── Types ───
@@ -375,6 +376,88 @@ export function reflectOnMemory(structured: StructuredMemory): ReflectionResult 
     qualityScore,
     performedAt: now.toISOString(),
   };
+}
+
+/**
+ * Deep reflection via LLM for ambiguous entities (confidence 0.3–0.6).
+ *
+ * The heuristic reflector handles clear cases (too vague, outdated, duplicate).
+ * Ambiguous entities — those that aren't clearly bad but aren't clearly good —
+ * benefit from semantic analysis that regex can't provide.
+ *
+ * This is an OFFLINE-ONLY path (nightly consolidation). It adds cost (1 LLM call
+ * per batch of ambiguous entities), so it's NOT called in real-time paths.
+ *
+ * Usage (in consolidation-phases.ts Phase 2):
+ *   const deepAudit = await reflectAmbiguous(memory, provider);
+ *   if (deepAudit) memory = curateMemory(memory, deepAudit);
+ *
+ * @returns null when there are no ambiguous entities to audit (cost-free skip).
+ */
+export async function reflectAmbiguous(
+  entities: MemoryEntity[],
+  provider: AIProvider,
+  model?: string,
+): Promise<ReflectionResult | null> {
+  const ambiguous = entities.filter(
+    (e) => e.confidence >= 0.3 && e.confidence <= 0.6 && !e.invalidatedAt && !e.pinned,
+  );
+  if (ambiguous.length === 0) return null;
+
+  // Batch: send up to 10 ambiguous entities per call
+  const batch = ambiguous.slice(0, 10);
+  const now = new Date();
+
+  const systemPrompt = [
+    '你审查记忆实体，判断它们是否应该保留、加强、削弱或丢弃。',
+    '对每个实体输出 JSON: {"entityIndex": N, "action": "keep|strengthen|weaken|drop", "reason": "简短理由"}',
+    '',
+    '规则：',
+    '- keep: 信息有价值、具体、可能准确',
+    '- strengthen: 信息具体且很可能正确（多次出现/详细描述）',
+    '- weaken: 信息模糊、可能过时、或来源不可靠',
+    '- drop: 信息明显错误、无意义、或与已知事实冲突',
+    '',
+    '只在确信时建议 drop。模糊但可能有用 → weaken。',
+  ].join('\n');
+
+  const userPrompt = [
+    '审查以下记忆实体（置信度 0.3-0.6 的模糊实体）：',
+    ...batch.map((e, i) => `${i}. [${e.type}] ${e.content} (confidence: ${e.confidence}, occurrences: ${e.occurrences}, last seen: ${e.lastSeen})`),
+  ].join('\n');
+
+  try {
+    const res = await provider.chat(
+      [{ role: 'user', content: userPrompt }],
+      systemPrompt,
+      [],
+      { temperature: 0, maxTokens: 300, model },
+    );
+
+    // Parse JSON array from response
+    const jsonMatch = res.text.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) return null;
+
+    const decisions: { entityIndex: number; action: string; reason: string }[] = JSON.parse(jsonMatch[0]);
+    const audits = decisions.map((d) => ({
+      entityId: `ambiguous_${d.entityIndex}`,
+      action: (d.action as 'keep' | 'strengthen' | 'weaken' | 'drop') || 'keep',
+      reason: d.reason || 'LLM deep reflection',
+    }));
+
+    const strengths = audits.filter((a) => a.action === 'strengthen').length;
+    const weakens = audits.filter((a) => a.action === 'weaken' || a.action === 'drop').length;
+
+    return {
+      audits,
+      summary: `Deep reflection: ${strengths} strengthened, ${weakens} weakened/dropped out of ${batch.length} ambiguous entities`,
+      qualityScore: batch.length > 0 ? (strengths - weakens) / batch.length * 0.3 + 0.5 : 0.5,
+      performedAt: now.toISOString(),
+    };
+  } catch {
+    // LLM unavailable — skip deep reflection, heuristic already ran
+    return null;
+  }
 }
 
 /**
