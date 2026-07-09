@@ -6,6 +6,7 @@ import { wsManager } from '../ws.js';
 import { navigate } from '../router.js';
 import { padToExpression, mascotSrc } from '../mascot.js';
 import { haptic } from '../utils/haptics.js';
+import { toast } from '../components/toast.js';
 import { getMoodInfo, STAGE_LABELS } from '../utils/constants.js';
 import { ICONS } from '../utils/icons.js';
 
@@ -407,15 +408,19 @@ export class ChatView extends BaseView {
     };
 
     const onError = (err) => {
-      const message = err || '出了点问题，请再试一次。';
       this.activeStreamRequestId = null;
-      this.streamBuffer = message;
+      /* 后端原文只进 toast,气泡里永远是人设内的话 */
+      if (err) toast(String(err), 'error');
+      if (!this.streamBuffer) {
+        this.streamBuffer = '刚才走神了……再和我说一次好不好？';
+        this._streamHadError = true;
+      }
       if (!this.streamMsgEl) {
         this.typingEl.classList.remove('show');
         this.streamMsgEl = this.createStreamBubble();
         this.chatMessages.insertBefore(this.streamMsgEl, this.typingEl);
       }
-      this.streamMsgEl.textContent = message;
+      this.streamMsgEl.textContent = this.streamBuffer;
       this.streamMsgEl.classList.add('error');
       this.finalizeStream(timestamp);
     };
@@ -432,10 +437,12 @@ export class ChatView extends BaseView {
     if (this.streamMsgEl) {
       this.streamMsgEl.classList.remove('is-streaming');
       const text = this.streamBuffer;
+      const isError = this._streamHadError;
       const msgs = Store.get('messages') || [];
-      Store.set('messages', [...msgs, { role: 'mio', text, timestamp: new Date().toISOString() }]);
-      if (text && this.ttsEnabled) this.speak(text);
+      Store.set('messages', [...msgs, { role: 'mio', text, timestamp: new Date().toISOString(), ...(isError ? { isError: true } : {}) }]);
+      if (text && this.ttsEnabled && !isError) this.speak(text);
     }
+    this._streamHadError = false;
     this.streamMsgEl = null;
     this.streamBuffer = '';
     this.streaming = false;

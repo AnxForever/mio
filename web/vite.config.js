@@ -13,6 +13,11 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // WSL2 挂载的 Windows 盘(/mnt/*)收不到 inotify 事件,必须轮询才能热更新
+    watch: {
+      usePolling: true,
+      interval: 300,
+    },
     proxy: {
       '/api': {
         target: backendUrl,

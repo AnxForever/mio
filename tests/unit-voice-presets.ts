@@ -26,7 +26,7 @@ delete process.env.MIO_VOICE;
 
 // 渲染
 const s = buildVoiceSection(VOICE_PRESETS.bold);
-check('buildVoiceSection 含 人味铁律 + few-shot', s.includes('用户：') && s.includes('你：') && s.includes('破绽') && s.includes('味道'), `len=${s.length}`);
+check('buildVoiceSection 含 voice guidance + few-shot', s.includes('用户：') && s.includes('你：') && s.includes('微信聊天') && s.includes('脾气'), `len=${s.length}`);
 
 const passed = results.filter((r) => r.passed).length;
 console.log(`\nvoice-presets: ${passed}/${results.length} passed`);

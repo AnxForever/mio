@@ -39,7 +39,7 @@ const GENDERS = [
 const VALID = new Set(GENDERS.map((g) => g.mod));
 
 /**
- * 极简线条头肩剪影占位。currentColor 继承自卡片(选中态转 --accent)。
+ * 极简线条猫脸,与 assets/mascot 同笔触。currentColor 继承自卡片(选中态转 --accent)。
  * 未来可替换为自定义角色立绘 —— 见文件头扩展位说明。
  */
 function buildArt(variant) {
@@ -54,15 +54,27 @@ function buildArt(variant) {
   svg.setAttribute('stroke-linejoin', 'round');
   svg.setAttribute('aria-hidden', 'true');
 
-  // 头 + 肩为共用;发型线条区分她 / 他(仅作占位,不强化刻板印象)
+  // 猫脸 + 耳朵 + 胡须为共用;眼睛与细节区分她 / 他(不强化刻板印象)
   const paths = [
-    'M32 31a11 11 0 1 0 0-22 11 11 0 0 0 0 22z', // 头
-    'M14 55v-1a18 18 0 0 1 36 0v1', // 肩
+    'M32 54c11 0 19-7 19-17 0-10-8-17-19-17s-19 7-19 17c0 10 8 17 19 17z', // 脸
+    'M18 26l-4-13 12 6',   // 左耳
+    'M46 26l4-13-12 6',    // 右耳
+    'M32 41v1.5',                          // 鼻梁
+    'M32 42.5c-1.5 2-3.5 2-5 .8',          // 嘴左
+    'M32 42.5c1.5 2 3.5 2 5 .8',           // 嘴右
+    'M12 37h8', 'M13 42l7-1.5',            // 左胡须
+    'M52 37h-8', 'M51 42l-7-1.5',          // 右胡须
   ];
   if (variant === 'he') {
-    paths.push('M22 13c3-4 17-4 20 0'); // 短发线
+    paths.push(
+      'M25 35h.1', 'M39 35h.1',            // 圆点眼
+      'M30 15c1-3 3-5 4-5',                // 头顶呆毛
+    );
   } else {
-    paths.push('M21 15c-2 6-2 13 0 18', 'M43 15c2 6 2 13 0 18'); // 两侧长发线
+    paths.push(
+      'M22.5 34c1.5 2 4.5 2 6 0',          // 左笑眼
+      'M35.5 34c1.5 2 4.5 2 6 0',          // 右笑眼
+    );
   }
 
   for (const d of paths) {

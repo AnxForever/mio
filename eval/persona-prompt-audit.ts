@@ -67,7 +67,7 @@ interface CliArgs {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const DEFAULT_RESULT_DIR = join(__dirname, 'results', 'persona-prompt-audit');
-const STABLE_SECTIONS = new Set(['core', 'kernel', 'soul', 'voice', 'voice-examples', 'fewshot', 'dynamic-fewshot']);
+const STABLE_SECTIONS = new Set(['identity', 'soul', 'voice', 'voice-examples', 'fewshot']);
 const DYNAMIC_SECTIONS = new Set([
   'relationship',
   'user',
@@ -269,11 +269,11 @@ class PromptCaptureProvider implements AIProvider {
 function auditSectionPresence(sections: PromptAuditSection[]): PromptAuditIssue[] {
   const issues: PromptAuditIssue[] = [];
   const byType = new Map(sections.map((section) => [section.type, section]));
-  for (const type of ['core', 'kernel', 'soul', 'relationship', 'user', 'time', 'emotion', 'emotion-note']) {
+  for (const type of ['identity', 'soul', 'voice', 'relationship', 'user', 'time', 'emotion', 'fewshot']) {
     const section = byType.get(type);
     if (!section || !section.included || section.content.trim().length === 0) {
       issues.push({
-        severity: type === 'core' || type === 'kernel' || type === 'soul' ? 'error' : 'warn',
+        severity: type === 'identity' || type === 'soul' || type === 'voice' ? 'error' : 'warn',
         code: 'missing_expected_section',
         section: type,
         detail: `Expected prompt section "${type}" is missing or empty.`,
@@ -350,7 +350,7 @@ function auditSectionContent(sections: PromptAuditSection[]): PromptAuditIssue[]
       });
     }
 
-    if (section.type !== 'core' && SERVICE_TONE_PATTERN.test(section.content)) {
+    if (section.type !== 'identity' && SERVICE_TONE_PATTERN.test(section.content)) {
       issues.push({
         severity: section.type === 'soul' || section.type === 'voice' || section.type === 'voice-examples' || section.type === 'fewshot' ? 'info' : 'warn',
         code: 'service_tone_marker',

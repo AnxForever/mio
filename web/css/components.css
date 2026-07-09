@@ -30,3 +30,27 @@
 .progress { height: 4px; background: var(--hairline); border-radius: 2px; overflow: hidden; }
 .progress > i { display: block; height: 100%; background: var(--accent); border-radius: 2px;
   transition: width var(--t-enter) var(--ease); }
+
+/* Toast — 顶部滑入通知(components/toast.js) */
+.toast {
+  position: fixed;
+  top: max(var(--s4), env(safe-area-inset-top));
+  left: 50%;
+  z-index: 1000;
+  max-width: min(calc(100vw - 32px), 420px);
+  padding: 10px var(--s4);
+  border-radius: var(--r-input);
+  background: var(--text);
+  color: var(--bg);
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+  opacity: 0;
+  transform: translate(-50%, -8px);
+  transition: opacity var(--t) var(--ease), transform var(--t) var(--spring);
+  pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast.hide { opacity: 0; transform: translate(-50%, -8px); }
+.toast-error { background: #7a2e2e; }
+.toast-success { background: #2e5f4a; }

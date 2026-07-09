@@ -90,7 +90,12 @@
 
 /* 气泡 — 复用 components.css 的 .bubble--them/.me/.proactive。
    这里只补充流式光标与轻微的连续消息收紧。 */
-.bubble.error { color: var(--text-2); }
+/* 出错兜底气泡:人设内文案,轻微弱化但不冒充正常回复 */
+.bubble.error {
+  background: #fff;
+  border: 1px dashed var(--text-3);
+  color: var(--text-2);
+}
 
 .bubble + .bubble { margin-top: 0; }
 

@@ -16,7 +16,8 @@
  *   - The highest-confidence intent drives the primary emotional response
  */
 
-// ─── Types ───
+import type { Message } from '../types.js';
+import type { AIProvider } from '../types.js';
 
 export type IntentLabel =
   | 'venting'
@@ -249,6 +250,44 @@ export function classifyIntent(text: string): IntentResult {
   }
 
   return { primary, all: results, tone, energy, topics };
+}
+
+// ─── LLM-based classifier (language-agnostic, semantic) ───
+
+const CLASSIFY_SYSTEM = [
+  '你是意图分类器。分析用户消息，输出JSON。',
+  '意图标签(12种): venting(发泄), seeking_comfort(寻求安慰), casual_chat(闲聊), joking(开玩笑), sad(难过), excited(兴奋), angry(生气), anxious(焦虑), affectionate(亲密), playful(调皮), tired(疲惫), neutral(中性)',
+  '情绪基调: positive/negative/neutral',
+  '能量水平: high/mid/low',
+  '话题词: 提取1-3个关键话题词',
+  '输出格式: {"primary":"标签","tone":"positive|negative|neutral","energy":"high|mid|low","topics":["话题"]}',
+].join('\n');
+
+export async function classifyIntentLLM(
+  text: string,
+  provider: any, // eslint-disable-line @typescript-eslint/no-explicit-any — cross-module provider
+): Promise<IntentResult> {
+  if (!text?.trim()) return classifyIntent(text);
+  try {
+    const res = await provider.chat(
+      [{ role: 'user', content: text }],
+      CLASSIFY_SYSTEM,
+      [],
+      { temperature: 0, maxTokens: 100 },
+    );
+    const m = res.text.match(/\{[\s\S]*\}/);
+    if (!m) return classifyIntent(text);
+    const parsed = JSON.parse(m[0]);
+    return {
+      primary: (parsed.primary || 'neutral') as IntentLabel,
+      all: [{ label: (parsed.primary || 'neutral') as IntentLabel, confidence: 0.8 }],
+      tone: (parsed.tone || 'neutral') as IntentResult['tone'],
+      energy: (parsed.energy || 'mid') as IntentResult['energy'],
+      topics: Array.isArray(parsed.topics) ? parsed.topics.slice(0, 3) : [],
+    };
+  } catch {
+    return classifyIntent(text);
+  }
 }
 
 /**

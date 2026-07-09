@@ -53,7 +53,7 @@ import { isIdentityProbe, detectL0Break, buildL0ReassertInstruction } from '../s
 import { readGlobalMemory } from '../memory/global.js';
 import { getConfig } from '../config.js';
 import { recordMessage } from '../tools/session.js';
-import { classifyIntent } from '../emotion/tracker.js';
+import { classifyIntent, classifyIntentLLM } from '../emotion/tracker.js';
 import { defaultEmotionState } from '../emotion/state.js';
 import { defaultRelationshipState } from '../relationship/progression.js';
 import { appendBookmark, readUserProfile, readRecentBookmarks, readStructuredMemoryFile } from '../memory/bank.js';
@@ -800,7 +800,14 @@ async function runInferenceStage(
     budget,
   );
 
-  const intent = classifyIntent(turnInput.text ?? '');
+  // LLM-based intent classification for semantic accuracy (language-agnostic).
+  // Only when using real providers (grok/anthropic/openai — gated by config).
+  // Skip for mock/test/capture providers to avoid golden test side effects.
+  const REAL_PROVIDERS = new Set(['grok', 'anthropic', 'openai', 'deepseek', 'moonshot', 'zhipu', 'minimax', 'qwen', 'doubao', 'siliconflow', 'hybgzs']);
+  const useLLMClassifier = REAL_PROVIDERS.has(config.provider) && typeof prepared.provider?.chat === 'function';
+  const intent = useLLMClassifier
+    ? await classifyIntentLLM(turnInput.text ?? '', prepared.provider).catch(() => classifyIntent(turnInput.text ?? ''))
+    : classifyIntent(turnInput.text ?? '');
   systemPrompt = applyPromptAugmentations(systemPrompt, turnInput, intent, crisisResult, config, sessionCtx.isolatedMemory === true);
 
   const { messages, finalSystemPrompt } = await buildConversationMessages({

@@ -342,8 +342,20 @@
 }
 
 @media (max-width: 640px) {
+  /* 宽控件行:label 与控件上下堆叠,避免挤压 label 成竖排 */
+  .cell:has(.settings-select--wide),
+  .cell:has(.settings-model-status) {
+    flex-wrap: wrap;
+  }
+
+  .cell:has(.settings-select--wide) .cell-main,
+  .cell:has(.settings-model-status) .cell-main {
+    flex: 1 0 100%;
+  }
+
   .settings-select--wide,
   .settings-model-status {
+    width: 100%;
     max-width: 100%;
   }
 

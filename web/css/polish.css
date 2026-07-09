@@ -99,9 +99,16 @@ input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
 [role="button"]:focus-visible {
-  outline: 2px solid var(--ui-focus);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
-  box-shadow: var(--ui-ring);
+}
+
+/* 复合输入容器内的控件不再单独描边,焦点态由容器 :focus-within 呈现 */
+.chat-input-wrap textarea:focus-visible,
+.memories-search input:focus-visible,
+.settings-input:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 .title,
@@ -515,8 +522,8 @@ select:focus-visible,
 
 .form-input:focus,
 .soul-editor:focus {
-  border-color: rgba(13, 13, 13, 0.28);
-  box-shadow: var(--ui-ring);
+  border-color: rgba(13, 13, 13, 0.14);
+  box-shadow: 0 0 0 3px rgba(255, 159, 90, 0.16);
 }
 
 .style-chip.selected {
@@ -530,7 +537,7 @@ select:focus-visible,
 }
 
 .gender-card:focus-visible {
-  outline-color: var(--ui-focus);
+  outline-color: var(--accent);
 }
 
 .gender-card.is-selected {
@@ -1079,9 +1086,9 @@ select:focus-visible,
 .memory-edit-text:focus,
 .memory-edit-type:focus,
 .settings-select:focus {
-  border-color: rgba(13, 13, 13, 0.22);
+  border-color: rgba(13, 13, 13, 0.14);
   background: #ffffff;
-  box-shadow: var(--ui-ring);
+  box-shadow: 0 0 0 3px rgba(255, 159, 90, 0.16);
 }
 
 .ana-skel-card,

@@ -243,7 +243,7 @@
   width: 100%;
 }
 
-.gender-card {
+.onboarding-view .gender-card {
   display: grid;
   justify-items: center;
   gap: 8px;
@@ -263,35 +263,35 @@
     transform var(--ui-fast, 120ms) var(--ui-ease-out, var(--ease));
 }
 
-.gender-card:active {
+.onboarding-view .gender-card:active {
   transform: scale(.99);
 }
 
-.gender-card:focus-visible {
+.onboarding-view .gender-card:focus-visible {
   outline: 2px solid var(--ui-focus, rgba(13, 13, 13, 0.72));
   outline-offset: 2px;
 }
 
-.gender-card-art {
+.onboarding-view .gender-card-art {
   display: grid;
   place-items: center;
   width: 58px;
   height: 58px;
 }
 
-.gender-card-art svg {
+.onboarding-view .gender-card-art svg {
   width: 58px;
   height: 58px;
 }
 
-.gender-card-pronoun {
+.onboarding-view .gender-card-pronoun {
   color: var(--ui-ink, var(--text));
   font-size: 24px;
   font-weight: 650;
   line-height: 1;
 }
 
-.gender-card-roman {
+.onboarding-view .gender-card-roman {
   color: var(--ui-ink-3, var(--text-3));
   font-size: 11px;
   font-weight: 650;
@@ -299,26 +299,26 @@
   text-transform: none;
 }
 
-.gender-card.is-selected {
+.onboarding-view .gender-card.is-selected {
   border-color: rgba(13, 13, 13, 0.32);
   background: var(--ui-ink, #0d0d0d);
   color: #fff;
 }
 
-.gender-card.is-selected .gender-card-pronoun,
-.gender-card.is-selected .gender-card-roman {
+.onboarding-view .gender-card.is-selected .gender-card-pronoun,
+.onboarding-view .gender-card.is-selected .gender-card-roman {
   color: #fff;
 }
 
 @media (hover: hover) {
   .onboarding-choice:hover,
-  .gender-card:hover {
+  .onboarding-view .gender-card:hover {
     border-color: rgba(13, 13, 13, 0.18);
     background: var(--ui-surface-raised, #fdfdfd);
   }
 
   .onboarding-choice.selected:hover,
-  .gender-card.is-selected:hover {
+  .onboarding-view .gender-card.is-selected:hover {
     background: #2a2a2a;
   }
 
@@ -358,7 +358,7 @@
 
 @media (max-width: 340px) {
   .onboarding-choices,
-  .gender-picker {
+  .onboarding-view .gender-picker {
     grid-template-columns: 1fr;
   }
 }
@@ -383,7 +383,7 @@
   .onboarding-progress-track > i,
   .onboarding-choice,
   .onboarding-next,
-  .gender-card {
+  .onboarding-view .gender-card {
     transition-duration: 0.01ms;
   }
 }

@@ -9,7 +9,7 @@
  */
 
 import { join } from 'node:path';
-import { CORE_IDENTITY } from './templates.js';
+import { IDENTITY } from './templates.js';
 import type { PromptCtx } from '../types.js';
 
 // ─── Tool Config ───
@@ -153,9 +153,9 @@ export const SUBAGENT_TOOL_CONFIG: Record<string, SubagentToolConfig> = {
  */
 function subagentSoulBlock(_gender: 'male' | 'female'): string {
   // Subagents that inherit mod context will read the full soul.md from the bank.
-  // We only inject the minimal CORE_IDENTITY here — the soul is loaded separately
+  // We only inject the minimal IDENTITY here — the soul is loaded separately
   // by the subagent spawner when inheritModContext is true.
-  return CORE_IDENTITY;
+  return IDENTITY;
 }
 
 /**

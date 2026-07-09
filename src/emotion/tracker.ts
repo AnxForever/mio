@@ -18,7 +18,7 @@
 import type { EmotionState } from '../types.js';
 import { readEmotionState, updateEmotionState, syncPADToEmotionState } from './state.js';
 import { recordInteraction, recordEmotionalDepth } from '../relationship/progression.js';
-import { classifyIntent, intentLabel, type IntentResult } from './classifier.js';
+import { classifyIntent, classifyIntentLLM, intentLabel, type IntentResult } from './classifier.js';
 import {
   isPADEnabled,
   applyDecay,
@@ -219,4 +219,4 @@ function inferMyMood(intent: IntentResult, affection: number): string {
 }
 
 // Re-export for convenience
-export { classifyIntent, intentLabel };
+export { classifyIntent, classifyIntentLLM, intentLabel };

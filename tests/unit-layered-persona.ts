@@ -26,8 +26,9 @@ const {
   userWantsProactiveChat,
 } =
   await import('../dist/memory/persona-delta.js');
-const { buildKernel, applyPersonaDelta, buildDeltaFragment, buildPreferencePrompt } = await import('../dist/persona/layered.js');
+const { applyPersonaDelta, buildDeltaFragment, buildPreferencePrompt, buildCharacterNote } = await import('../dist/persona/layered.js');
 const { ContextEngine } = await import('../dist/prompt/context-engine.js');
+const { IDENTITY } = await import('../dist/prompt/templates.js');
 const { detectDirectives, captureExplicitDirectives } = await import('../dist/persona/directive-capture.js');
 const prog2 = await import('../dist/relationship/progression.js');
 const { buildRelationshipContext } = await import('../dist/prompt/templates.js');
@@ -113,18 +114,12 @@ console.log('\n\x1b[1mMio — layered persona tests\x1b[0m\n');
   }
 }
 
-// --- Task 2: L0 Kernel + 不可裁 ---
+// --- Task 2: Character Note (post-history anchor) ---
 {
-  const kernel = buildKernel();
-  ok(kernel.length > 0 && /真实的人/.test(kernel), 'kernel non-empty and contains identity floor');
-
-  const engine = new ContextEngine();
-  engine.register('kernel', { type: 'kernel', content: kernel, priority: 'critical' });
-  // 一个超大 high soul，逼出 hard-cap
-  engine.register('soul', { type: 'persona', content: 'S'.repeat(40000), priority: 'high' });
-  const out = engine.assemble(2000);
-  ok(out.includes(kernel), 'kernel survives hard-cap (critical never trimmed)');
-  ok(!engine.getTrimmedSections().includes('kernel'), 'kernel not in trimmed list');
+  const note = buildCharacterNote({ userId: 'default', personaOverride: '开酒吧的', tone: 'teasing', updatedAt: '', history: [] });
+  ok(note !== null && note.includes('开酒吧的'), 'character note contains persona override');
+  ok(buildCharacterNote(null) === null, 'null delta → null note');
+  ok(buildCharacterNote({ userId: 'default', tone: 'gentle', updatedAt: '', history: [] }) !== null, 'tone-only delta produces note');
 }
 
 // --- Task 3: L1→L2 合成 ---
@@ -144,10 +139,11 @@ console.log('\n\x1b[1mMio — layered persona tests\x1b[0m\n');
   ok(rendered.includes('皮一点别老哄我'), 'preference rule rendered');
 
   const engine = new ContextEngine();
-  engine.register('kernel', { type: 'kernel', content: buildKernel(), priority: 'critical' });
+  engine.register('identity', { type: 'identity', content: IDENTITY, priority: 'critical' });
   engine.register('preference', { type: 'preference', content: rendered, priority: 'critical' });
   engine.register('soul', { type: 'persona', content: 'S'.repeat(40000), priority: 'high' });
   const out = engine.assemble(2000);
+  ok(out.includes(IDENTITY), 'identity survives hard-cap (critical)');
   ok(out.includes('皮一点别老哄我'), 'preference survives hard-cap (critical)');
 }
 

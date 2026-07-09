@@ -142,30 +142,25 @@ export class ConsoleView extends BaseView {
     }
 
     this.content.innerHTML = '';
-    this.content.appendChild(this.hero(status));
-    this.content.appendChild(this.quickStats(status, notify));
+    this.content.appendChild(this.hero(status, notify));
     this.content.appendChild(this.characterShelf(status, characters));
     this.content.appendChild(this.controlGrid(status, notify));
   }
 
-  hero(status) {
+  hero(status, notify) {
     const rel = status?.relationship ? relationshipVM(status.relationship) : null;
     const activeMod = status?.config?.activeMod || status?.config?.gender || '—';
+    const [notifyValue] = notifyLabel(notify);
     return el('section', { className: 'console-hero admin-panel' }, [
       el('div', { className: 'console-hero-main' }, [
-        el('div', { className: 'admin-kicker', textContent: 'Workspace' }),
-        el('h2', { className: 'console-hero-title', textContent: '运行、人格、渠道和记忆的控制台' }),
-        el('p', {
-          className: 'console-hero-copy',
-          textContent: '从这里检查 Mio 是否可用，进入聊天，配置人格，把 ClawBot / OpenAI 客户端 / OneBot 接到同一个 turn loop。',
-        }),
+        el('h2', { className: 'admin-section-title', textContent: '现在的 Mio' }),
         this.emotionalCore(status),
       ]),
       el('div', { className: 'console-hero-side' }, [
-        this.statusLine('Provider', providerLabel(status)),
-        this.statusLine('Bridge', 'OpenAI-compatible'),
-        this.statusLine('Persona', valueOrDash(activeMod)),
-        this.statusLine('Relationship', rel ? `${rel.label} · ${rel.count}` : '—'),
+        this.statusLine('模型', providerLabel(status)),
+        this.statusLine('人格', valueOrDash(activeMod)),
+        this.statusLine('关系', rel ? `${rel.label} · ${rel.count}` : '—'),
+        this.statusLine('通知', notifyValue),
       ]),
     ]);
   }
@@ -173,10 +168,10 @@ export class ConsoleView extends BaseView {
   emotionalCore(status) {
     const emotion = status?.emotion ?? {};
     const affection = clampPercent(emotion.affection ?? 0);
-    return el('div', { className: 'console-core-strip', 'aria-label': 'Mio emotional core' }, [
-      this.coreSignal('Mood', valueOrDash(emotion.myMood || '平静')),
-      this.coreSignal('Energy', energyLabel(emotion.energy)),
-      this.coreSignal('Affinity', `${affection}/100`, affection),
+    return el('div', { className: 'console-core-strip', 'aria-label': 'Mio 情绪状态' }, [
+      this.coreSignal('心情', valueOrDash(emotion.myMood || '平静')),
+      this.coreSignal('精力', energyLabel(emotion.energy)),
+      this.coreSignal('亲密度', `${affection}/100`, affection),
     ]);
   }
 
@@ -191,25 +186,6 @@ export class ConsoleView extends BaseView {
       ]));
     }
     return el('div', { className: 'console-core-item' }, children);
-  }
-
-  quickStats(status, notify) {
-    const rel = status?.relationship ? relationshipVM(status.relationship) : null;
-    const [notifyValue, notifyHint] = notifyLabel(notify);
-    const cards = [
-      ['模型', providerLabel(status), status?.provider?.available ? '可用' : '检查密钥'],
-      ['人格', valueOrDash(status?.config?.activeMod || status?.config?.gender), '当前激活'],
-      ['关系', rel ? rel.label : '—', rel ? `${rel.count} 次互动` : '暂无状态'],
-      ['通知', notifyValue, notifyHint],
-    ];
-
-    return el('section', { className: 'admin-stat-grid' }, cards.map(([label, value, hint]) =>
-      el('div', { className: 'admin-stat admin-panel' }, [
-        el('div', { className: 'admin-stat-label', textContent: label }),
-        el('div', { className: 'admin-stat-value', textContent: value }),
-        el('div', { className: 'admin-stat-hint', textContent: hint }),
-      ]),
-    ));
   }
 
   characterShelf(status, characters) {
@@ -356,7 +332,6 @@ export class ConsoleView extends BaseView {
     return el('section', { className: 'admin-section' }, [
       el('div', { className: 'admin-section-head' }, [
         el('h2', { className: 'admin-section-title', textContent: '工作区' }),
-        el('p', { className: 'admin-section-copy', textContent: '按真实工作流组织入口：先运行，再配置，再接入，再观察。' }),
       ]),
       el('div', { className: 'admin-control-grid' }, items.map((item) => this.controlCard(item))),
     ]);
