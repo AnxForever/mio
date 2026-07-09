@@ -1,15 +1,17 @@
 :root {
-  /* Editorial monochrome palette */
-  --bg: #F9F8F6;
-  --text: #1C1C1C;
-  --text-60: rgba(28, 28, 28, 0.60);
-  --text-40: rgba(28, 28, 28, 0.40);
-  --text-10: rgba(28, 28, 28, 0.10);
-  --hairline: rgba(28, 28, 28, 0.10);
+  /* Warm editorial palette — inspired by Dribbble AI companion designs */
+  --bg: #FAF8F5;
+  --text: #2C2420;
+  --text-60: rgba(44, 36, 32, 0.55);
+  --text-40: rgba(44, 36, 32, 0.35);
+  --text-10: rgba(44, 36, 32, 0.08);
+  --hairline: rgba(44, 36, 32, 0.08);
   --surface: #FFFFFF;
-  --bubble-them: #F2F0ED;
-  --bubble-me: #1C1C1C;
-  --accent: #1C1C1C;
+  --bubble-them: #F5F2EE;
+  --bubble-me: #2C2420;
+  --accent: #E8816C;           /* warm terracotta — send button, active states */
+  --accent-soft: rgba(232, 129, 108, 0.12);
+  --glow: 0 0 40px rgba(232, 129, 108, 0.08);
 
   /* Typography */
   --font-serif: "Noto Serif SC", "Georgia", serif;

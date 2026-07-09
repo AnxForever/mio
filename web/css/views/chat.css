@@ -23,7 +23,16 @@
 }
 .chat-header-status {
   font-size: 11px; color: var(--text-40); text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.1em; display: flex; align-items: center; gap: 6px;
+}
+.status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 8px rgba(232, 129, 108, 0.4);
+  animation: statusPulse 3s ease-in-out infinite;
+}
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .5; }
 }
 
 /* ─── Messages ─── */
@@ -91,11 +100,13 @@
 
 .chat-send {
   width: 40px; height: 40px; display: grid; place-items: center;
-  background: var(--text); color: var(--bg);
-  flex-shrink: 0; transition: opacity .15s;
+  background: var(--accent); color: #fff;
+  flex-shrink: 0; transition: all .2s var(--ease);
+  box-shadow: 0 2px 12px rgba(232, 129, 108, 0.25);
 }
-.chat-send:hover { opacity: .85; }
-.chat-send:disabled { opacity: .3; }
+.chat-send:hover { transform: scale(1.05); box-shadow: 0 4px 20px rgba(232, 129, 108, 0.35); }
+.chat-send:disabled { opacity: .3; transform: none; box-shadow: none; }
+.chat-send:active:not(:disabled) { transform: scale(.95); }
 
 /* ─── Typing indicator ─── */
 

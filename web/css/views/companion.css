@@ -33,11 +33,8 @@
   border: none; background: var(--bg); transition: background .2s;
 }
 .companion-char-card:hover { background: var(--text-10); }
-.companion-char-card.active { background: var(--text); }
-.companion-char-card.active .companion-char-name,
-.companion-char-card.active .companion-char-tag,
-.companion-char-card.active .companion-char-desc { color: var(--bg); }
-.companion-char-card.active .companion-char-avatar { background: rgba(255,255,255,.15); color: var(--bg); }
+.companion-char-card.active { background: var(--accent-soft); border: 1px solid var(--accent); }
+.companion-char-card.active .companion-char-name { color: var(--accent); }
 
 .companion-char-avatar {
   width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
@@ -62,10 +59,9 @@
   cursor: pointer; border: none; background: var(--bg); transition: background .15s;
 }
 .companion-pill:hover { background: var(--text-10); }
-.companion-pill.active { background: var(--text); }
-.companion-pill.active .companion-pill-label,
-.companion-pill.active .companion-pill-desc { color: var(--bg); }
-.companion-pill.active .companion-pill-dot { background: var(--bg); }
+.companion-pill.active { background: var(--accent-soft); border: 1px solid var(--accent); }
+.companion-pill.active .companion-pill-label { color: var(--accent); }
+.companion-pill.active .companion-pill-dot { background: var(--accent); }
 
 .companion-pill-dot {
   width: 6px; height: 6px; flex-shrink: 0;
