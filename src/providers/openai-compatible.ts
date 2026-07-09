@@ -285,6 +285,8 @@ export class OpenAICompatibleProvider implements StreamingProvider {
     if (stream) {
       body['stream'] = true;
       body['stream_options'] = { include_usage: false };
+    } else {
+      body['stream'] = false;
     }
 
     const msgs: OpenAIMessage[] = [];

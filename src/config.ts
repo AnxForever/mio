@@ -183,6 +183,24 @@ export const PROVIDER_PRESETS: Record<string, ProviderPresetConfig> = {
       { id: 'Pro/zai-org/GLM-4.7', label: 'GLM-4.7 (托管)' },
     ],
   },
+  grok: {
+    name: 'grok',
+    label: 'Grok (FreeAPI 中转)',
+    baseUrl: 'https://freeapi.dgbmc.top/v1',
+    apiKeyEnv: 'GROK_API_KEY',
+    // Fast/Non-Reasoning 最适合陪伴聊天——低延迟、自然对话流。
+    // Multi-Agent 对日常聊天是 overkill，会增加延迟和 token 消耗。
+    // 参考: Grok 4.20 community feedback + xAI docs (2026).
+    defaultModel: 'grok-4.20-fast',
+    authHeader: 'Bearer ${apiKey}',
+    supportsVision: false,
+    supportsToolCalling: true,
+    models: [
+      { id: 'grok-4.20-fast', label: 'Grok 4.20 Fast — 推荐，日常聊天首选' },
+      { id: 'grok-4.20-0309-non-reasoning', label: 'Grok 4.20 Non-Reasoning — 纯聊天，无思考链' },
+      { id: 'grok-4.3-high', label: 'Grok 4.3 High — 深度/情绪时刻备选' },
+    ],
+  },
   lora: {
     name: 'lora',
     label: 'Local LoRA Adapter',

@@ -26,6 +26,7 @@ export type ProviderPreset =
   | 'doubao'
   | 'siliconflow'
   | 'hybgzs'
+  | 'grok'
   | 'lora'
   | 'mock';
 
