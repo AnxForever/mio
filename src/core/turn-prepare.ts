@@ -40,7 +40,17 @@ export async function prepareTurnContext(
   // that has an API key set. Gated by the providerFallback feature flag
   // (default on); buildChain filters out providers without keys, so a single-key
   // setup just has no fallback available — it never breaks.
-  const provider = opts.provider ?? selectProvider(config.provider, config.model, config.features.providerFallback);
+  // Grok model tiering: fast model for daily chat, high model for emotional depth.
+  // Gated by modelRouter feature flag (MIO_FEATURE_MODEL_ROUTER=true).
+  // When enabled + Grok provider: auto-switch grok-4.3-high for crisis/high-emotion,
+  // keep grok-4.20-fast for normal chat. Other providers unaffected.
+  const baseModel = config.model ?? '';
+  const tieredModel = config.features.modelRouter && config.provider === 'grok'
+    ? resolveGrokChatModel(baseModel, input.text ?? '')
+    : baseModel;
+
+  const model = tieredModel || config.model || '';
+  const provider = opts.provider ?? selectProvider(config.provider, model, config.features.providerFallback);
   const turnInput = await prepareTurnInput(input);
   const sessionId = turnInput.sessionId ?? randomUUID().slice(0, 12);
 
@@ -96,6 +106,47 @@ function trackTurnActivity(input: TurnInput, sessionId: string): void {
   } catch {
     // best-effort — never break the turn on activity tracking failure
   }
+}
+
+/**
+ * Grok model tiering: use grok-4.3-high for emotionally intense turns
+ * (crisis, deep distress, seeking comfort), grok-4.20-fast otherwise.
+ *
+ * Detection: keyword-based crisis/emotion screening on user input.
+ * False positives are harmless — the high model just gives a slightly
+ * more thoughtful response. False negatives use the fast model, which
+ * is still adequate for most turns.
+ *
+ * Other providers pass through unchanged.
+ */
+function resolveGrokChatModel(baseModel: string, userText: string): string {
+  if (!userText) return baseModel;
+
+  // Crisis keywords — user is in distress, needs deeper response
+  const crisisPatterns = [
+    /想死|不想活|自杀|结束生命|活不下去|撑不下去|崩溃|绝望/,
+    /kill myself|suicide|end my life|want to die|can'?t go on/,
+  ];
+  // Deep emotion keywords — user is vulnerable, needs thoughtful presence
+  const deepPatterns = [
+    /分手|失恋|离婚|出轨|背叛|被甩/,
+    /确诊|生病|癌症|手术|住院|大病/,
+    /家人.*(?:去世|走了|没了|病|出事)/,
+    /(?:被|让人).*(?:欺负|排挤|孤立|霸凌)/,
+    /撑不住了|受不了了|我真的.*(?:累|难|痛)/,
+  ];
+
+  const text = userText.toLowerCase();
+  const isCrisis = crisisPatterns.some((p) => p.test(text));
+  const isDeep = deepPatterns.some((p) => p.test(text));
+
+  if (isCrisis || isDeep) {
+    const grokHigh = 'grok-4.3-high';
+    // Only override if on a Grok model (avoid breaking other providers)
+    if (baseModel.includes('grok')) return grokHigh;
+  }
+
+  return baseModel;
 }
 
 function maybeReindexBookmarks(): void {
