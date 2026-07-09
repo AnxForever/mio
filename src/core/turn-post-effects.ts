@@ -234,6 +234,12 @@ function persistTurnMemorySideEffects(
         ? `matched: ${crisisResult.matchedKeywords.join(', ')}`
         : `agent replied: "${truncate(text, 80)}"`,
     });
+
+    // Periodic LLM-based semantic extraction (every 5 turns).
+    // Regex extraction catches structured patterns but misses everyday
+    // conversation ("学吉他", "养猫"). LLM extraction understands semantics.
+    // Non-blocking — extraction failure never breaks the turn.
+    maybeRefreshStructuredMemory();
   }
 
   const hint = truncate(
@@ -250,6 +256,45 @@ function persistTurnMemorySideEffects(
 
   if (isNewSession) {
     markSessionDone(sessionId);
+  }
+}
+
+/** Run LLM semantic extraction every 5 turns. Regex fallback if provider unavailable. */
+let _turnSinceLastExtraction = 0;
+const EXTRACTION_INTERVAL = 5;
+
+function maybeRefreshStructuredMemory(): void {
+  _turnSinceLastExtraction++;
+  if (_turnSinceLastExtraction % EXTRACTION_INTERVAL !== 0) return;
+
+  // Fire-and-forget — never block the turn
+  refreshStructuredMemoryAsync().catch(() => {});
+}
+
+async function refreshStructuredMemoryAsync(): Promise<void> {
+  try {
+    const { readStructuredMemoryFile, writeStructuredMemoryFile, readBookmarks } = await import('../memory/bank.js');
+    const { extractStructuredMemoryLLM } = await import('../memory/structured-memory.js');
+    const { selectProvider } = await import('../providers/index.js');
+    const { getConfig } = await import('../config.js');
+
+    const config = getConfig();
+    if (!config.provider || config.provider === 'mock') return;
+
+    const bookmarksContent = readBookmarks();
+    if (!bookmarksContent || bookmarksContent.split('\n').filter(l => l.startsWith('- <time=')).length < 3) return;
+
+    const existingRaw = readStructuredMemoryFile();
+    const { deserializeMemory } = await import('../memory/structured-memory.js');
+    const existing = existingRaw ? deserializeMemory(existingRaw) : undefined;
+    const provider = selectProvider(config.provider, config.model) as unknown as import('../types.js').AIProvider;
+
+    const enriched = await extractStructuredMemoryLLM(bookmarksContent, existing, { provider });
+    if (enriched) {
+      writeStructuredMemoryFile(JSON.stringify(enriched, null, 2));
+    }
+  } catch {
+    // Best-effort — regex extraction already ran during prompt assembly
   }
 }
 

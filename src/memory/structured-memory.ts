@@ -133,16 +133,27 @@ function classifyTopic(text: string): string {
 // ─── Pattern matching for entity extraction ───
 
 const FACT_PATTERNS: RegExp[] = [
+  // Project/study context
   /(?:用户|他|她|你)?(?:现在|最近|这几天)?(?:不做|暂停|先不管)(论文|简历|毕设|项目|报告|考试|面试)了?.{0,12}(?:改做|在做|忙|准备)(论文|简历|毕设|项目|报告|考试|面试)/,
   /(?:用户|他|她|你)?(?:现在|最近|这几天|今天)(?:在做|忙|准备|主要弄|主要做)(论文|简历|毕设|项目|报告|考试|面试)/,
-  // "用户住在上海" / "用户搬到上海"
+  // Location
   /(?:用户|他|她|你)(?:现在|目前)?(?:住在|在)(\S{2,20})(?:住|居住)?/,
   /(?:用户|他|她|你)(?:搬到|搬去|搬进)(\S{2,20})/,
+  // Work/school
   /(?:用户|他|她|你)(?:现在|目前)?在(\S{2,30})(?:工作|上班|上学|读书|学习)/,
-  // "用户今年25岁" / "他是程序员"
   /(?:用户|他|她|你)(?:今年|现在|是|有)?(\S*(?:岁|年|岁数|生日|工作|职业|专业|学校|公司|城市))/,
-  // "在XX上班"
   /在(\S+(?:公司|上班|工作|上学|读书))/,
+  // ── Expanded patterns (v2) for everyday conversation ──
+  // Hobbies & learning: "学吉他", "在学画画", "最近迷上摄影"
+  /(?:用户|他|她|你)?(?:最近|在|开始|重新)?(?:学|练|玩|搞|做|画|写|拍)(?:了)?(吉他|钢琴|画画|摄影|烹饪|健身|跑步|游泳|瑜伽|跳舞|编程|书法|陶艺|乐器|运动|音乐|画画|插画|速写|设计)/,
+  // Pets: "养了一只猫", "养了只叫糯米的布偶猫"
+  /(?:用户|他|她|你)?(?:养了|养|家里有)(?:一只?|只|个)?(?:(?:叫|名字叫)(\S{2,10})的)?(\S{2,10}(?:猫|狗|仓鼠|兔|鱼|鸟|龟|宠物))/,
+  // Food/drink habits: "每天喝咖啡", "喜欢吃辣"
+  /(?:用户|他|她|你)?(?:每天|经常|爱|喜欢|习惯)(?:喝|吃|做)(\S{2,20})/,
+  // Health & wellbeing: "最近失眠", "腰痛", "过敏"
+  /(?:用户|他|她|你)?(?:最近|一直|经常|有点)(失眠|头痛|腰痛|过敏|感冒|咳嗽|不舒服|累|焦虑|压力大|情绪不好)/,
+  // Life events: "想换工作", "打算搬家", "准备结婚"
+  /(?:用户|他|她|你)?(?:想|打算|准备|计划|决定)(?:换|找|辞|搬)(\S{2,20})/,
 ];
 
 const PREFERENCE_PATTERNS: RegExp[] = [
@@ -1075,6 +1086,13 @@ function isMultiDayTopic(topic: TopicSegment): boolean {
 }
 
 function isCurrentFactSignal(entity: MemoryEntity): boolean {
+  // Recent facts (last 7 days) are always "current" — they were just observed.
+  // Older facts need explicit keywords to confirm they're still valid.
+  if (entity.lastSeen) {
+    const daysSince = (Date.now() - new Date(entity.lastSeen).getTime()) / 86400000;
+    if (daysSince <= 7) return true;
+  }
+
   const text = entity.content.replace(/\s+/g, '');
   if (entity.type === 'fact') {
     return /(?:现在|目前|当前|住在|搬到|搬去|搬进|在\S{2,30}(?:工作|上班|上学|读书|学习))/.test(text);
