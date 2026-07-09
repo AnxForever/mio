@@ -20,11 +20,15 @@ import { ICONS } from '../utils/icons.js';
 // ─── 数据 ───
 
 const CHARACTERS = [
-  { id: 'female',   name: 'Mio',  tag: '温柔姐姐', desc: '24岁·有主见·慢热',     hue: 12 },
-  { id: 'male',     name: 'Mio',  tag: '沉稳男友', desc: '26岁·嘴硬心软·行动派',  hue: 140 },
-  { id: 'a-yao',    name: '阿曜', tag: '年下直球', desc: '23岁·音乐人·藏不住',    hue: 35 },
-  { id: 'si-nian',  name: '司念', tag: '傲娇毒舌', desc: '25岁·插画师·嘴硬心软',  hue: 330 },
-  { id: 'lu-shen',  name: '陆深', tag: '爹系霸总', desc: '30岁·CEO·掌控温柔',     hue: 260 },
+  { id: 'female',   name: 'Mio',  tag: '温柔姐姐', desc: '24岁·有主见·慢热',        hue: 12 },
+  { id: 'male',     name: 'Mio',  tag: '沉稳男友', desc: '26岁·嘴硬心软·行动派',     hue: 140 },
+  { id: 'a-yao',    name: '阿曜', tag: '年下直球', desc: '23岁·独立音乐人',           hue: 35 },
+  { id: 'si-nian',  name: '司念', tag: '傲娇毒舌', desc: '25岁·插画师·嘴硬心软',     hue: 330 },
+  { id: 'lu-shen',  name: '陆深', tag: '爹系霸总', desc: '30岁·CEO·掌控温柔',        hue: 260 },
+  { id: 'linxia',   name: '林夏', tag: '成熟温柔', desc: '27岁·稳定可靠·照顾者',     hue: 160 },
+  { id: 'shenlan',  name: '沈岚', tag: '冷淡可靠', desc: '26岁·话少但关键时在',      hue: 200 },
+  { id: 'nanyue',   name: '南月', tag: '活泼敏感', desc: '22岁·情绪丰富·需要被懂',   hue: 45 },
+  { id: 'zhouhe',   name: '周和', tag: '稳重克制', desc: '29岁·医疗从业者·分寸感',   hue: 190 },
 ];
 
 const VOICES = [
