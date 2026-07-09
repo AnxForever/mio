@@ -15,10 +15,10 @@ import { describeCircadianState, type CircadianPhase } from '../emotion/circadia
 const ACTIVITY_POOLS: Record<CircadianPhase, string[]> = {
   'deep-night': ['脑子还在转', '把没收住的念头整理一下', '刚从一段灵感里退出来'],
   'early-morning': ['还没完全清醒', '把今天的节奏慢慢捡起来', '在心里排今天要做的事'],
-  morning: ['在整理草图思路', '把待办拆小一点', '跟一段没想顺的画面较劲'],
+  morning: ['在整理今天的计划', '把待办拆小一点', '跟一段没理顺的事较劲'],
   noon: ['有点犯懒', '把上午的状态收一收', '让脑子空一会儿'],
-  afternoon: ['在改一处细节', '把灵感碎片往一起拼', '给自己留一点走神时间'],
-  evening: ['从白天的状态里松下来', '在画自己想画的东西', '把今天剩下的情绪放慢'],
+  afternoon: ['在改一处细节', '把零散的念头往一起拼', '给自己留一点走神时间'],
+  evening: ['从白天的状态里松下来', '在做自己想做的事', '把今天剩下的情绪放慢'],
   'late-night': ['在收尾今天的事', '准备把注意力放下来', '听着歌发呆'],
 };
 

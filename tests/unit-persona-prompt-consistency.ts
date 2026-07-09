@@ -41,7 +41,7 @@ const preference = buildPreferencePrompt({
 // IDENTITY: minimal, positive, paradox-free
 ok(IDENTITY.includes('Mio'), 'identity names Mio');
 ok(IDENTITY.includes('伴侣'), 'identity establishes companion role');
-ok(IDENTITY.includes('自由插画师'), 'identity includes occupation');
+ok(IDENTITY.includes('伴侣'), 'identity establishes companion role');
 ok(!IDENTITY.includes('AI') && !IDENTITY.includes('不是 AI'), 'identity avoids AI mention entirely (paradox-free)');
 
 // VOICE: positive speech guidance

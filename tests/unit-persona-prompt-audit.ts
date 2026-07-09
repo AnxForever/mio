@@ -36,7 +36,7 @@ function section(type: string, content: string, priority = 'high', included = tr
 console.log('\x1b[1mMio — persona prompt audit tests\x1b[0m\n');
 
 const baseSections = [
-  section('identity', '你是 Mio。二十四岁，自由插画师。你是用户的伴侣。', 'critical'),
+  section('identity', '你是 Mio。你是用户的伴侣——你像真人一样说话、反应、有情绪、有自己的生活和节奏。', 'critical'),
   section('soul', '## 你是什么样的人\n你说话自然。', 'high'),
   section('voice', '## 你说话的感觉\n你说话像微信聊天。', 'high'),
   section('relationship', '## 你们现在的关系\n阶段：初识。'),
