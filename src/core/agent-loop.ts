@@ -669,6 +669,7 @@ function buildPersonaFragment(ctx: PromptCtx): string | null {
       intent: ctx.initialTask ?? '',
       stage: ctx.isolatedMemory ? 'acquaintance' : ctx.relationshipState.stage,
       recentBookmarks: ctx.isolatedMemory ? [] : readRecentBookmarks(8).map((b) => b.what),
+      mood: ctx.emotionState.myMood || undefined,
     };
 
     // Retrieve only the most relevant nodes

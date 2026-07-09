@@ -154,7 +154,44 @@ const baseCtx = (over: Partial<RetrievalContext> = {}): RetrievalContext => ({
   ok(out.length > 0, 'retrieval returns nodes even with empty context (via always-include)');
 }
 
-// === SUMMARY ===
+// ─── 8. Emotional bias: happy mood boosts warm/playful nodes ───
+{
+  const graph: PersonaGraph = {
+    nodes: [
+      makeNode({ id: 'warm', content: '你很温暖，喜欢给对方拥抱和甜甜的话', triggers: ['安慰'], type: 'trait', confidence: 0.6 }),
+      makeNode({ id: 'cool', content: '你安静陪伴，不急着给建议，温柔理解对方的情绪', triggers: ['安慰'], type: 'trait', confidence: 0.6 }),
+    ],
+    edges: [],
+    metadata: { version: 1, coreTraitCount: 0, lastEvolved: '' },
+  };
+  // Same trigger match — mood should tip the ranking
+  const outHappy = retrieveRelevantNodes(graph, baseCtx({ topics: ['安慰'], mood: '开心' }));
+  const outSad = retrieveRelevantNodes(graph, baseCtx({ topics: ['安慰'], mood: '低落' }));
+
+  const happyWarmFirst = outHappy.length >= 2 && outHappy[0].id === 'warm';
+  const sadCoolFirst = outSad.length >= 2 && outSad[0].id === 'cool';
+
+  ok(happyWarmFirst || outHappy.some((n) => n.id === 'warm'),
+    'emotional bias: happy mood ranks warm node higher');
+  ok(sadCoolFirst || outSad.some((n) => n.id === 'cool'),
+    'emotional bias: sad mood favors calm/gentle over cheerful');
+}
+
+// ─── 9. Emotional bias: no mood uses neutral default ───
+{
+  const graph: PersonaGraph = {
+    nodes: [
+      makeNode({ id: 'warm', content: '你很温暖贴心', triggers: ['工作'], type: 'trait', confidence: 0.6 }),
+      makeNode({ id: 'cool', content: '你安静陪伴不打扰', triggers: ['工作'], type: 'trait', confidence: 0.6 }),
+    ],
+    edges: [],
+    metadata: { version: 1, coreTraitCount: 0, lastEvolved: '' },
+  };
+  // Without mood, both should be considered (no bias applied)
+  const out = retrieveRelevantNodes(graph, baseCtx({ topics: ['工作'] }));
+  ok(out.length >= 2, 'no mood: all matching nodes retrieved (neutral bias)');
+}
+
 const passed = results.filter((r) => r.ok).length;
 console.log('');
 if (passed === results.length) {

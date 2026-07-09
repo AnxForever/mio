@@ -56,6 +56,8 @@ export interface RetrievalContext {
   intent: string;
   stage: string;
   recentBookmarks: string[];
+  /** Current mood label ("开心", "平静", "低落", "焦虑", etc.). Used for emotional bias. */
+  mood?: string;
 }
 
 // ─── Constants ───
@@ -251,11 +253,72 @@ export function extractGraphFromSoul(soulContent: string): PersonaGraph {
   };
 }
 
+// ─── Emotional Bias (Emotional RAG, IEEE ICKG 2024) ───
+
+/**
+ * Mood-to-keyword mapping for emotional retrieval bias.
+ *
+ * Each mood maps to content keywords that indicate a persona node
+ * is "congruent" with the agent's current emotional state. Nodes
+ * matching the current mood get a score boost; mismatching nodes
+ * get a slight penalty. Neutral/default when mood doesn't match
+ * any category or no mood is provided.
+ */
+const MOOD_KEYWORDS: Record<string, { boost: string[]; suppress: string[] }> = {
+  '开心': { boost: ['温暖', '开心', '笑', '甜', '轻松', '调皮', '热情', '撒娇'], suppress: ['冷静', '克制', '距离', '烦恼'] },
+  '兴奋': { boost: ['兴奋', '激动', '期待', '分享', '话多', '主动'], suppress: ['安静', '沉默', '克制'] },
+  '平静': { boost: ['平静', '安静', '温柔', '陪伴', '倾听', '慢慢', '日常'], suppress: ['吵闹', '过度', '激动'] },
+  '安心': { boost: ['安全', '信任', '依靠', '温暖', '稳定', '承诺'], suppress: ['不安', '焦虑', '猜疑'] },
+  '低落': { boost: ['陪伴', '安静', '温柔', '理解', '不评价', '抱', '聆听', '照顾'], suppress: ['说教', '解决', '建议', '积极', '热闹'] },
+  '难过': { boost: ['陪伴', '沉默', '理解', '抱', '温柔', '心疼', '聆听'], suppress: ['开心', '玩笑', '轻松', '说教', '热闹'] },
+  '焦虑': { boost: ['稳定', '安全感', '承诺', '陪伴', '不催'], suppress: ['催促', '改变', '未知', '逼问'] },
+  '烦躁': { boost: ['空间', '安静', '不打扰', '简短', '理解'], suppress: ['黏人', '追问', '啰嗦'] },
+  '疲惫': { boost: ['安静', '简短', '照顾', '温柔', '不费力'], suppress: ['长篇', '复杂', '吵闹', '要求'] },
+  '吃醋': { boost: ['占有', '专属', '撒娇', '确认', '在乎'], suppress: ['大方', '无所谓', '距离'] },
+  '想念': { boost: ['黏人', '主动', '撒娇', '想你', '温暖'], suppress: ['冷静', '独立', '距离'] },
+};
+
+/** Default bias when mood is unknown or neutral. */
+function defaultBias(): { boost: string[]; suppress: string[] } {
+  return { boost: ['温暖', '真实'], suppress: [] };
+}
+
+/**
+ * Compute emotional bias score [0,1] for a persona node given the
+ * agent's current mood. Higher = node is emotionally congruent.
+ *
+ * Algorithm:
+ *   1. Map mood → boost/suppress keyword lists
+ *   2. Node content overlap with boost words → +bias
+ *   3. Node content overlap with suppress words → −bias
+ *   4. Clamp and map to [0,1]
+ */
+function emotionalBiasScore(node: PersonaNode, mood: string): number {
+  const mapping = MOOD_KEYWORDS[mood] ?? defaultBias();
+  const text = node.content.toLowerCase();
+
+  let bias = 0.5; // neutral starting point
+
+  for (const kw of mapping.boost) {
+    if (text.includes(kw)) bias += 0.12;
+  }
+  for (const kw of mapping.suppress) {
+    if (text.includes(kw)) bias -= 0.10;
+  }
+
+  return Math.max(0, Math.min(1, round2(bias)));
+}
+
 /**
  * Retrieve the most relevant nodes for a given conversation context.
  *
  * Scoring formula:
- *   score(node) = triggerMatch * 0.45 + stageRelevance * 0.25 + confidence * 0.30
+ *   score(node) = recallScore * 0.40 + stageRelevance * 0.20 + confidence * 0.25 + emotionalBias * 0.15
+ *
+ * Where recallScore = max(triggerMatch, semanticScore) and emotionalBias
+ * is derived from the current mood (PAD-aligned). This implements
+ * Emotional RAG (IEEE ICKG 2024) principles: mood-dependent retrieval
+ * boosts persona fragments that match the agent's current emotional state.
  *
  * Always includes core traits (confidence >= 0.9) regardless of relevance.
  * Caps total output at TARGET_TOKEN_BUDGET (~800 tokens). Also enforces a
@@ -325,8 +388,14 @@ export function retrieveRelevantNodes(
     // ── Stage relevance (0-1) ──
     const stageScore = node.stageRelevance[stage] ?? 0.4;
 
+    // ── Emotional bias (0-1) ──
+    // Mood-dependent retrieval: nodes matching the current emotional state
+    // get a boost (max +0.15 weight). Based on Emotional RAG principles.
+    const emoBias = context.mood ? emotionalBiasScore(node, context.mood) : 0.5; // neutral default
+
     // ── Combined score ──
-    const score = recallScore * 0.45 + stageScore * 0.25 + node.confidence * 0.30;
+    // Shifted weights: emotionalBias takes 15% from recall
+    const score = recallScore * 0.40 + stageScore * 0.20 + node.confidence * 0.25 + emoBias * 0.15;
     return { node, score: round2(score) };
   });
 
