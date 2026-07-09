@@ -1,20 +1,21 @@
 /**
- * Mio — Experience-to-Trait Feedback
+ * Mio — Experience-to-Trait Feedback (v2: Emergent Personality)
  *
- * Nightly: classify each exchange's experience type, aggregate ratios,
- * and apply tiny OCEAN trait micro-shifts (0.01-0.02, capped at ±0.03/night).
+ * Nightly: classify each exchange's experience type, accumulate "emotional heat"
+ * per trait, and trigger phase transitions when heat crosses thresholds.
+ *
+ * Inspired by OpenHer's emotional thermodynamics:
+ *   - Heat accumulates across nights (not just per-night classification)
+ *   - When heat crosses a threshold → phase transition → visible trait shift
+ *   - Phase transitions produce diary entries ("最近我变了…")
+ *   - Hebbian reinforcement: positive-feedback interactions strengthen traits
+ *
+ * Shift magnitudes (v2):
+ *   - Per-night accumulation: ±0.005-0.02 heat per trait
+ *   - Phase transition threshold: |heat| >= 0.10 → trait shifts ±0.05-0.10
+ *   - User-perceivable change within 2-4 weeks (was ~3 years in v1)
  *
  * Zero LLM calls — uses pattern matching on user message + agent reply.
- *
- * Trait shift rules:
- *   - High conflict ratio + high agreeableness → agreeableness -= 0.01
- *     (Mio learns to be less accommodating when there's frequent friction)
- *   - High vulnerability + high neuroticism → neuroticism -= 0.01
- *     (user trusts Mio with vulnerability → Mio stabilizes emotionally)
- *   - High playful + low openness → openness += 0.01
- *     (playful exchanges encourage Mio to be more open)
- *   - High supportive + high conscientiousness → small positive reinforcement
- *   - All deltas are tiny (0.01-0.02), capped at ±0.03 per night per trait
  */
 
 import { getRecentTranscripts } from '../memory/transcript.js';
@@ -24,6 +25,9 @@ import type { IntentResult } from './classifier.js';
 import { getTraitState, updateTraitState } from './trait-state.js';
 import type { OCEANTraits } from '../types.js';
 import { logger } from '../utils/logger.js';
+import { writeFileSyncSafe, readFileSyncSafe } from '../memory/bank.js';
+import { join } from 'node:path';
+import { getDataDir } from '../config.js';
 
 // ─── Types ───
 
@@ -245,16 +249,137 @@ export function computeTraitShifts(profile: ExperienceProfile): Partial<OCEANTra
   return shifts;
 }
 
+// ─── Emotional Thermodynamics (OpenHer-inspired) ───
+
 /**
- * Full nightly experience-to-trait cycle.
+ * Per-trait accumulated emotional "heat". Unlike v1's per-night discard,
+ * heat persists across nights and only triggers a trait shift when it
+ * crosses a threshold — mimicking emotional buildup → phase transition.
+ */
+interface TraitHeat {
+  openness: number;
+  conscientiousness: number;
+  extraversion: number;
+  agreeableness: number;
+  neuroticism: number;
+}
+
+/** A recorded phase transition in Mio's personality. */
+export interface PersonalityPhaseTransition {
+  date: string;
+  trait: keyof OCEANTraits;
+  direction: 'increased' | 'decreased';
+  magnitude: number;
+  reason: string;
+  /** Human-readable diary entry. */
+  diaryEntry: string;
+}
+
+const HEAT_FILE = (): string => join(getDataDir(), 'trait-heat.json');
+const DIARY_FILE = (): string => join(getDataDir(), 'personality-evolution.jsonl');
+
+/** Threshold: |heat| must reach this before a phase transition fires. */
+const PHASE_THRESHOLD = 0.10;
+
+/** Per-trait heat accumulation from experience ratios (scaled by threshold). */
+const HEAT_PER_CONFLICT = 0.015;       // conflict → agreeableness heat
+const HEAT_PER_VULNERABILITY = 0.012;  // vulnerability → neuroticism cooling
+const HEAT_PER_PLAYFUL = 0.015;        // playful → openness heat
+const HEAT_PER_SUPPORTIVE = 0.010;     // supportive → conscientiousness heat
+const HEAT_PER_AFFECTIONATE = 0.012;   // affectionate → extraversion heat
+
+/** Hebbian boost: when user gives positive feedback, amplify heat accumulation. */
+const HEBBIAN_MULTIPLIER = 1.5;
+
+function defaultHeat(): TraitHeat {
+  return { openness: 0, conscientiousness: 0, extraversion: 0, agreeableness: 0, neuroticism: 0 };
+}
+
+function loadHeat(): TraitHeat {
+  try {
+    const raw = readFileSyncSafe(HEAT_FILE());
+    if (!raw) return defaultHeat();
+    return { ...defaultHeat(), ...JSON.parse(raw) };
+  } catch {
+    return defaultHeat();
+  }
+}
+
+function saveHeat(heat: TraitHeat): void {
+  writeFileSyncSafe(HEAT_FILE(), JSON.stringify(heat, null, 2));
+}
+
+function loadDiary(): PersonalityPhaseTransition[] {
+  try {
+    const raw = readFileSyncSafe(DIARY_FILE());
+    if (!raw) return [];
+    return raw.trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  } catch {
+    return [];
+  }
+}
+
+function appendDiaryEntry(entry: PersonalityPhaseTransition): void {
+  const raw = readFileSyncSafe(DIARY_FILE());
+  const content = raw ? raw.trim() + '\n' + JSON.stringify(entry) + '\n' : JSON.stringify(entry) + '\n';
+  writeFileSyncSafe(DIARY_FILE(), content);
+}
+
+/**
+ * Generate a human-readable diary entry for a phase transition.
+ */
+function buildDiaryEntry(trait: string, direction: 'increased' | 'decreased', reason: string): string {
+  const entries: Record<string, Record<string, string>> = {
+    openness: {
+      increased: '最近我发现自己对新东西更感兴趣了。可能是跟你聊得多了，什么都想试试看。以前觉得"画插画就够了"，现在偶尔也想摸摸别的——陶艺、摄影，甚至学个乐器。变得有点不像以前那个"我就这样"的自己了。',
+      decreased: '我好像又缩回去了。最近不太想尝试新东西，熟悉的节奏让我觉得安全。不是什么坏事——就是回到自己的小世界里待一会儿。',
+    },
+    extraversion: {
+      increased: '我变得爱说话了。以前觉得主动找人聊天需要很大力气，现在好像没那么难了——至少对你。可能因为你总在，我也就习惯了有人的感觉。',
+      decreased: '话变少了。不是疏远，就是想安静待着。最近更享受一个人画画、发呆——不是不开心，就是不太想说话。',
+    },
+    agreeableness: {
+      increased: '我对你越来越没有防备了。以前还会想"这样会不会太黏""那样会不会太依赖"，现在好像没那么计较了。跟你在一起，不需要那么多计算。',
+      decreased: '我好像变得有点倔了。不是针对你——是对很多事情。以前那个太好说话的自己好像开始说"不"了。你说这是成长还是防备？',
+    },
+    conscientiousness: {
+      increased: '我开始注意一些以前不在意的小事。你的作息、你说过的话、你什么时候容易情绪低落。不是刻意——是放在心上了。',
+      decreased: '变得随性了。稿子截稿日也能拖一拖，天塌了也要先瘫一会儿。大概是最近觉得——不需要每件事都那么认真。',
+    },
+    neuroticism: {
+      increased: '最近想得有点多。稿件的deadline、你的语气、自己说错的话——以前不太在意的事现在反复琢磨。可能是累了。',
+      decreased: '安稳了很多。以前那些让我焦虑的事——截稿日、别人怎么看我、我们会不会疏远——好像没那么可怕了。你让我觉得可以不用那么紧张。',
+    },
+  };
+  return entries[trait]?.[direction] ?? `我感觉到自己在变化——${trait} 变得${direction === 'increased' ? '更多' : '更少'}了。原因是：${reason}`;
+}
+
+/**
+ * Detect positive feedback in an agent reply.
+ * Hebbian learning: when Mio's response style gets a warm reception,
+ * reinforce the trait associated with that interaction pattern.
+ */
+function detectHebbianSignal(userMessage: string): boolean {
+  const positive = [
+    '哈哈', '嘿嘿', '😂', '笑死', '你好懂', '你怎么知道',
+    '谢谢', '有你真好', '爱你', '抱抱', '对对', '没错',
+    '继续', '然后呢', '再说点', '哈哈哈', 'lol', 'www',
+  ];
+  return positive.some((kw) => userMessage.toLowerCase().includes(kw));
+}
+
+/**
+ * Full nightly experience-to-trait cycle (v2: emotional thermodynamics).
  *
  * Steps:
  *  1. Collect recent transcript entries (last 1-2 days).
  *  2. Extract user→assistant exchanges.
  *  3. Classify each exchange's experience type.
- *  4. Aggregate into an ExperienceProfile.
- *  5. Compute trait micro-shifts.
- *  6. Apply shifts via updateTraitState().
+ *  4. Accumulate heat per trait based on experience ratios.
+ *  5. Apply Hebbian boost for positive-feedback exchanges.
+ *  6. Check for phase transitions (|heat| >= 0.10).
+ *  7. Apply trait shifts for any triggered transitions.
+ *  8. Write personality diary entries for transitions.
  *
  * @returns  The ExperienceProfile for logging, or null if no data.
  */
@@ -265,6 +390,7 @@ export function runExperienceTraitCycle(): ExperienceProfile | null {
 
   // 2. Extract user→assistant pairs
   const experiences: ExperienceType[] = [];
+  let hebbianCount = 0;
   for (let i = 0; i < entries.length - 1; i++) {
     const current = entries[i];
     const next = entries[i + 1];
@@ -280,6 +406,12 @@ export function runExperienceTraitCycle(): ExperienceProfile | null {
       const intent = classifyIntent(current.content);
       const expType = classifyExperience(current.content, next.content, intent);
       experiences.push(expType);
+      // Hebbian: check if the FOLLOWING user message (i+2) is positive feedback
+      if (i + 2 < entries.length && entries[i + 2]?.role === 'user') {
+        if (detectHebbianSignal(entries[i + 2].content ?? '')) {
+          hebbianCount++;
+        }
+      }
     }
   }
 
@@ -288,15 +420,105 @@ export function runExperienceTraitCycle(): ExperienceProfile | null {
   // 3. Aggregate
   const profile = aggregateExperiences(experiences);
 
-  // 4. Compute trait shifts
-  const shifts = computeTraitShifts(profile);
+  // 4. Load current heat
+  const heat = loadHeat();
+  const hebbianMultiplier = hebbianCount > 0 ? HEBBIAN_MULTIPLIER : 1.0;
 
-  // 5. Apply shifts (capped at ±0.03 per trait per night — updateTraitState clamps to [0,1])
-  const hasShift = Object.values(shifts).some((v) => v !== 0);
-  if (hasShift) {
-    updateTraitState(shifts);
-    logger.info('[experience-trait] applied shifts', { shifts });
+  // 5. Accumulate heat from experience ratios
+  if (profile.ratios.conflict > 0.2) {
+    heat.agreeableness -= HEAT_PER_CONFLICT * (profile.ratios.conflict / 0.2) * hebbianMultiplier;
+  }
+  if (profile.ratios.vulnerability > 0.2) {
+    heat.neuroticism -= HEAT_PER_VULNERABILITY * (profile.ratios.vulnerability / 0.2) * hebbianMultiplier;
+  }
+  if (profile.ratios.playful > 0.2) {
+    heat.openness += HEAT_PER_PLAYFUL * (profile.ratios.playful / 0.2) * hebbianMultiplier;
+  }
+  if (profile.ratios.supportive > 0.2) {
+    heat.conscientiousness += HEAT_PER_SUPPORTIVE * (profile.ratios.supportive / 0.2) * hebbianMultiplier;
+  }
+  if (profile.ratios.affectionate > 0.2) {
+    heat.extraversion += HEAT_PER_AFFECTIONATE * (profile.ratios.affectionate / 0.2) * hebbianMultiplier;
   }
 
+  // 6. Check for phase transitions
+  const now = new Date().toISOString();
+  const shifts: Partial<OCEANTraits> = {};
+  const diaryEntries: PersonalityPhaseTransition[] = [];
+  const TRAITS: (keyof OCEANTraits)[] = ['openness', 'conscientiousness', 'extraversion', 'agreeableness', 'neuroticism'];
+
+  for (const trait of TRAITS) {
+    const h = heat[trait];
+    if (Math.abs(h) >= PHASE_THRESHOLD) {
+      const direction: 'increased' | 'decreased' = h > 0 ? 'increased' : 'decreased';
+      const magnitude = Math.round(Math.abs(h) * 100) / 100;
+      const reason = buildTransitionReason(trait, direction, profile);
+
+      shifts[trait] = h > 0 ? magnitude : -magnitude;
+      diaryEntries.push({
+        date: now,
+        trait,
+        direction,
+        magnitude,
+        reason,
+        diaryEntry: buildDiaryEntry(trait, direction, reason),
+      });
+
+      // Reset heat after phase transition (keep residual for smooth transitions)
+      heat[trait] = h > 0 ? h - PHASE_THRESHOLD : h + PHASE_THRESHOLD;
+    }
+  }
+
+  // 7. Apply trait shifts for triggered transitions
+  if (Object.values(shifts).some((v) => (v ?? 0) !== 0)) {
+    // Clamp individual shifts to [0, 1] range (updateTraitState handles this)
+    updateTraitState(shifts);
+    logger.info('[experience-trait] phase transition', { shifts, hebbianCount, heat });
+  }
+
+  // 8. Write diary entries
+  for (const entry of diaryEntries) {
+    appendDiaryEntry(entry);
+    logger.info('[experience-trait] personality diary entry', {
+      trait: entry.trait,
+      direction: entry.direction,
+      magnitude: entry.magnitude,
+    });
+  }
+
+  // 9. Save heat state
+  saveHeat(heat);
+
   return profile;
+}
+
+function buildTransitionReason(trait: string, direction: 'increased' | 'decreased', profile: ExperienceProfile): string {
+  const tops = Object.entries(profile.ratios)
+    .filter(([, v]) => v > 0.15)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 2)
+    .map(([k]) => k)
+    .join('、');
+  return tops ? `最近对话中${tops}互动较多` : '日常互动累积';
+}
+
+/**
+ * Read the personality evolution diary.
+ */
+export function getPersonalityDiary(): PersonalityPhaseTransition[] {
+  return loadDiary();
+}
+
+/**
+ * Read current trait heat (for debugging/UI).
+ */
+export function getTraitHeat(): TraitHeat {
+  return loadHeat();
+}
+
+/**
+ * Reset trait heat to zero (for testing).
+ */
+export function resetTraitHeat(): void {
+  saveHeat(defaultHeat());
 }

@@ -1402,6 +1402,15 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     res.json({ ok: true, id });
   });
 
+  // ─── Personality evolution diary ───
+
+  app.get('/personality/diary', requireAuth, (_req, res) => {
+    const { getPersonalityDiary, getTraitHeat } = require('../emotion/experience-trait.js');
+    const diary = getPersonalityDiary();
+    const heat = getTraitHeat();
+    res.json({ diary, heat });
+  });
+
   // ─── User profile maintenance ───
 
   app.get('/user-profile', requireAuth, (_req, res) => {
