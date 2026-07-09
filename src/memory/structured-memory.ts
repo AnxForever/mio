@@ -995,23 +995,45 @@ function filterStateViewByRelevance(
   // 0 overlap with any entity → no memory injection (avoid noise)
   const noneRelevant = Object.keys(queryVec).length === 0;
 
+  // Always include recent items (recency boost) — even without topic overlap,
+  // recent memories should be available. The LLM decides whether to use them.
+  // This ensures new users can feel Mio "remembering" them from day 1.
+  const RECENT_ALWAYS_KEEP = 3;
+
   const isRelevant = (entity: { content: string; pinned?: boolean }): boolean => {
-    if ('pinned' in entity && entity.pinned) return true; // pinned always passes
-    if (noneRelevant) return true; // empty query → keep everything (fallback)
+    if ('pinned' in entity && entity.pinned) return true;
+    if (noneRelevant) return true;
     const entityVec = embed(tokenize(entity.content));
-    if (Object.keys(entityVec).length === 0) return true; // unparseable entity → keep
+    if (Object.keys(entityVec).length === 0) return true;
     return cosine(queryVec, entityVec) > 0;
+  };
+
+  // Sort by recency (lastSeen descending) and always keep the most recent N
+  const byRecency = <T extends { lastSeen?: string }>(items: T[]): T[] => {
+    return [...items].sort((a, b) => {
+      const da = a.lastSeen ? new Date(a.lastSeen).getTime() : 0;
+      const db = b.lastSeen ? new Date(b.lastSeen).getTime() : 0;
+      return db - da;
+    });
   };
 
   return {
     pinned: view.pinned.filter(isRelevant),
-    currentFacts: view.currentFacts.filter(isRelevant),
+    currentFacts: [
+      ...view.currentFacts.filter(isRelevant),
+      // Always keep most recent facts regardless of topic
+      ...byRecency(view.currentFacts).filter((e) => !isRelevant(e)).slice(0, RECENT_ALWAYS_KEEP),
+    ],
     multiDayArcs: view.multiDayArcs.filter((topic) => {
       const topicVec = embed(tokenize(topic.topic + ' ' + topic.summary));
       if (Object.keys(topicVec).length === 0 || noneRelevant) return true;
       return cosine(queryVec, topicVec) > 0;
     }),
-    recentEvents: view.recentEvents.filter(isRelevant),
+    recentEvents: [
+      ...view.recentEvents.filter(isRelevant),
+      // Always show most recent events
+      ...byRecency(view.recentEvents).filter((e) => !isRelevant(e)).slice(0, RECENT_ALWAYS_KEEP),
+    ],
     recentEmotions: view.recentEmotions.filter(isRelevant),
   };
 }

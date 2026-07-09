@@ -441,6 +441,38 @@ export function buildEmotionContext(emotion: EmotionState): string {
 }
 
 /**
+ * Build relationship awareness context — what Mio knows about the user
+ * and where they are in the relationship. This makes context engineering
+ * VISIBLE in chat rather than just backend infrastructure.
+ *
+ * For new users: "我们刚认识，我还在慢慢了解你"
+ * For familiar users: "我记得你喜欢…, 你最近在…"
+ * For intimate users: natural recall of shared history
+ */
+export function buildRelationshipAwareness(
+  stage: string,
+  interactionCount: number,
+  memoryCount: number,
+): string {
+  if (interactionCount === 0 && memoryCount === 0) {
+    return '你们刚认识。他还不太了解你，你也不太了解他。这是自然的——慢慢来。你对他好奇，但别审问。如果他提到自己的事，认真听、记住。';
+  }
+  if (memoryCount === 0) {
+    return `你们聊了${interactionCount}次了。虽然还没有太多具体的记忆，但你已经开始了解他了。对他保持好奇，记住他提到的小事。`;
+  }
+  const parts: string[] = [];
+  parts.push(`你记住了${memoryCount}件关于他的事。`);
+  if (stage === 'intimate') {
+    parts.push('你们已经很亲密了——自然地提起你记得的事，像真人一样。不需要刻意证明"我记得"，回忆应该像呼吸一样自然。');
+  } else if (stage === 'ambiguous') {
+    parts.push('你们之间有点不一样了。记住的事可以偶尔带出来——不是炫耀记忆，是真的放在心上。');
+  } else {
+    parts.push('在聊天中自然地用到你记住的事——不要全部堆出来，挑最相关的那件轻轻带过就好。');
+  }
+  return parts.join(' ');
+}
+
+/**
  * Build structured memory context.
  * Used as a supplement to the main memory section.
  */

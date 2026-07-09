@@ -33,6 +33,7 @@ import {
   buildUserContext,
   buildMemoryContext,
   buildStructuredMemoryContext,
+  buildRelationshipAwareness,
   buildTimeContext,
   buildEmotionContext,
   buildProceduralMemoryContext,
@@ -267,10 +268,26 @@ function registerPromptSections(
     condition: () => sectionEnabled('emotion-note'),
   });
 
-  // L8: Relationship context — stage, nicknames, shared memories.
+  // L8: Relationship context — stage + awareness + memory count.
   engine.register('relationship', {
     type: 'relationship',
-    content: () => buildRelationshipContext(ctx.relationshipState),
+    content: () => {
+      const base = buildRelationshipContext(ctx.relationshipState);
+      const structuredRaw = readStructuredMemoryFile();
+      let memoryCount = 0;
+      try {
+        if (structuredRaw) {
+          const mem = deserializeMemory(structuredRaw);
+          memoryCount = mem?.entities?.filter((e: { invalidatedAt?: string }) => !e.invalidatedAt).length ?? 0;
+        }
+      } catch { /* best-effort */ }
+      const awareness = buildRelationshipAwareness(
+        ctx.relationshipState.stage,
+        ctx.relationshipState.interactionCount ?? 0,
+        memoryCount,
+      );
+      return [base, awareness].filter(Boolean).join('\n\n');
+    },
     priority: 'high',
     condition: () => sharedMemoryAllowed && sectionEnabled('relationship'),
   });
