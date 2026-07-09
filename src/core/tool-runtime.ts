@@ -103,6 +103,16 @@ export function ensureToolsRegistered(): ToolRegistryLike {
   registerEmotionTools(reg as unknown as { register: (def: unknown, handler: unknown) => void });
   registerRecallTools(reg as unknown as { register: (def: unknown, handler: unknown) => void });
   registerKnowledgeTools(reg as unknown as { register: (def: unknown, handler: unknown) => void });
+  // External MCP tools (web search, image gen, voice, etc.)
+  try {
+    const { registerMcpTools } = require('../tools/mcp.js');
+    registerMcpTools(reg as unknown as {
+      register: (def: unknown, handler: unknown) => void;
+      listDefs: () => Array<{ name: string }>;
+    });
+  } catch {
+    // MCP tools are optional — don't break the turn on registration failure
+  }
   toolsRegistered = true;
   return reg;
 }

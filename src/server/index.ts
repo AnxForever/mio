@@ -364,6 +364,14 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   app.use(applyCors);
   app.use(express.json({ limit: '8mb' })); // uploaded vision images are base64 encoded
 
+  // ─── MCP client: connect to external MCP servers on startup ───
+  try {
+    const { connectAllMcpServers } = await import('../mcp/client.js');
+    await connectAllMcpServers();
+  } catch {
+    // MCP is optional — don't block startup on connection failures
+  }
+
   // ─── Static files ───
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = dirname(__filename);
