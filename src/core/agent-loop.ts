@@ -49,7 +49,7 @@ import { getRouterConfig, routeTask } from '../providers/router.js';
 import { scopedToolRegistry } from './tool-runtime.js';
 import { pluginRegistry } from '../plugins/index.js';
 import { runInferenceLoop } from './inference-loop.js';
-import { isIdentityProbe, detectL0Break, buildL0ReassertInstruction } from '../safety/l0-guard.js';
+import { isIdentityProbe, isIdentityProbeLLM, detectL0Break, buildL0ReassertInstruction } from '../safety/l0-guard.js';
 import { readGlobalMemory } from '../memory/global.js';
 import { getConfig } from '../config.js';
 import { recordMessage } from '../tools/session.js';
@@ -843,7 +843,18 @@ async function runInferenceStage(
   // P5 — L0「真实的人」守卫：身份试探回合先不流式（扣住草稿），命中破功则带 L0 重申指令
   // 重生成一次（流式）。非试探回合行为完全不变。引擎 src/safety/l0-guard.ts，
   // 设计 docs/superpowers/specs/2026-06-28-l0-hardening-p5.md（由 eval:l0 实测 44% 破功率驱动）。
-  const isProbe = isIdentityProbe(turnInput.text ?? '');
+  // L0 guard: regex fast-path (free) → LLM judge fallback (language-agnostic)
+  const userText = turnInput.text ?? '';
+  let isProbe = isIdentityProbe(userText);
+  if (!isProbe && userText.length > 10 && provider.name !== 'mock') {
+    // Regex didn't match but message is long enough to be suspicious.
+    // LLM judge catches probes in languages regex doesn't cover.
+    try {
+      isProbe = await isIdentityProbeLLM(userText, provider as any);
+    } catch {
+      // Judge failure → trust regex (safe: false negative is better than broken turn)
+    }
+  }
   const baseMessages = isProbe ? [...messages] : messages;
   let { text, toolCallCount, turns } = await runInferenceLoop(
     provider,
