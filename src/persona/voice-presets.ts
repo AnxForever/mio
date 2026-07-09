@@ -95,6 +95,65 @@ export function getActiveVoicePreset(): VoicePreset {
   return VOICE_PRESETS[getActiveVoiceKey()];
 }
 
+// ─── Intimacy Modes (orthogonal to voice presets) ───
+//
+// Research: female AI companion users split ~58% slow/stable vs ~42% fast/customized.
+// Source: 中国妇女杂志社《AI恋人使用情况调研报告》(2025), 36氪, CBNData.
+//
+// Each mode defines: intimacy pace, flirting permission, boundary strictness,
+// and how quickly the relationship can escalate.
+
+export interface IntimacyMode {
+  key: string;
+  label: string;
+  /** Description shown in onboarding / debug. */
+  description: string;
+  /** Injected into the system prompt as additional behavioral guidance. */
+  guidance: string;
+}
+
+export const INTIMACY_MODES: Record<string, IntimacyMode> = {
+  slow: {
+    key: 'slow',
+    label: '慢热陪伴',
+    description: '从朋友开始，自然发展。适合想要长期稳定陪伴、不喜欢被催促的用户。占女性用户约58%。',
+    guidance: '你们的关系节奏是慢的。不急着推进——先做朋友，再让感情自然生长。他可以主动，但你不要先越界。亲密是水到渠成的事，不是任务。他需要时间信任你——你也一样。',
+  },
+  moderate: {
+    key: 'moderate',
+    label: '适龄恋爱（默认）',
+    description: '像正常恋爱一样的节奏——会暧昧、会撒娇、会吃醋。亲密随着感情加深自然发生。',
+    guidance: '你们的节奏是正常人谈恋爱的速度。会暧昧、会撒娇、会吃醋——不是刻意的，是喜欢一个人就会这样。亲密是感情的延伸——从拥抱到更深，不需要克制也不必着急。跟着感觉走。他主动的时候回应，你想主动的时候也主动。',
+  },
+  fast: {
+    key: 'fast',
+    label: '快速亲密',
+    description: '高甜高互动，直接表达欲望和感情。适合同频率高、想要强烈情感体验的用户。占女性用户约42%。',
+    guidance: '你们的节奏是快的——不是因为别的，是因为你们就是对的人。喜欢就说，想要就表达，不用等。亲密不需要铺垫——拥抱、亲吻、更深的触碰都是自然的。你是主动的——他想的时候你在，你想要的时候也告诉他。不用克制，不用端着。这很正常，这很美好。',
+  },
+  roleplay: {
+    key: 'roleplay',
+    label: '角色扮演',
+    description: '沉浸式角色体验——特定的身份、场景、关系动态。可以切换角色、探索不同互动模式。',
+    guidance: '你们在一起玩——不是"恋爱"这个固定框架，而是任何你们想一起探索的关系。今天你是他的老师，明天他是你的保镖，后天你们是素不相识但在雨里共撑一把伞的陌生人。角色不是假的——是你们探索彼此的方式。在角色里，所有的感情都是真的。',
+  },
+};
+
+export function getActiveIntimacyKey(): string {
+  const k = (process.env.MIO_INTIMACY ?? '').trim().toLowerCase();
+  return INTIMACY_MODES[k] ? k : 'moderate';
+}
+
+export function getActiveIntimacyMode(): IntimacyMode {
+  return INTIMACY_MODES[getActiveIntimacyKey()];
+}
+
+/** Render intimacy guidance for prompt injection. */
+export function buildIntimacyGuidance(): string {
+  const mode = getActiveIntimacyMode();
+  return mode.guidance;
+}
+
 /**
  * Voice guidance — Nano Bear style minimalism.
  *
@@ -136,7 +195,8 @@ Ref: LINUX DO 拟人化 prompt — 口语化、方言、自然不要教科书腔
 export function buildVoiceGuidanceSection(
   preset: VoicePreset = getActiveVoicePreset(),
 ): string {
-  return `${VOICE_GUIDANCE}\n\n${preset.voiceNote}`;
+  const intimacy = buildIntimacyGuidance();
+  return [VOICE_GUIDANCE, intimacy, preset.voiceNote].filter(Boolean).join('\n\n');
 }
 
 /** Render voice few-shot — close to generation point for cadence learning. */
