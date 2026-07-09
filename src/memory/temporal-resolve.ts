@@ -9,9 +9,16 @@
  *
  * 引擎 resolveContradictions 是纯函数（矛盾判定 contradicts 注入）：
  *   - 单测注入确定性 fake（可复现）；
- *   - 生产注入 makeLLMContradicts（真 provider，语义判定，像 Zep 的 per-edge 矛盾检查）。
+ *   - 生产注入 combineContradicts(ruleBased, llmBased)（规则优先，LLM 兜底）。
  *
- * 接线（待续）：structured-memory.ts 的 LLM 提取路径 assembleMemory 后调用本 resolver。
+ * 矛盾判定分三级（按成本从低到高）：
+ *   1. Slot-based（确定性，零成本）：7 个单值槽位 regex 提取 → 同槽异值 = 取代
+ *   2. Content-key（确定性，零成本）：同 type + 同内容键（前几个有意义的词）→ 内容不同 = 取代
+ *   3. LLM（语义判定，有成本）：前两级无法判定时兜底
+ *
+ * MemStrata (arXiv:2606.26511) 定理：基于相似度的过期检测在结构上不可能
+ * （cosine AUROC 仅 0.59）。正确做法是 S-R-O key matching——同 subject+relation、
+ * 不同 object → 自动取代。本模块的 slot + content-key 两层实现此原理。
  */
 
 import type { MemoryEntity } from './structured-memory.js';
@@ -77,9 +84,16 @@ export function makeRuleBasedContradicts(): Contradicts {
     const oldText = normalizeText(older.content);
     const newText = normalizeText(newer.content);
 
+    // L1: 显式槽位匹配（7 个单值槽位，regex 提取）
     const oldSlot = extractSingleValueSlot(oldText);
     const newSlot = extractSingleValueSlot(newText);
     if (oldSlot && newSlot && oldSlot.slot === newSlot.slot && oldSlot.value !== newSlot.value) {
+      return true;
+    }
+
+    // L2: 内容键匹配（同 type + 同内容键 → 内容不同 = 取代）
+    // MemStrata S-R-O 原理：同 subject(用户)+同 relation(内容键)、不同 object(值) → supersede
+    if (contentKeyBasedContradiction(older, newer)) {
       return true;
     }
 
@@ -89,6 +103,82 @@ export function makeRuleBasedContradicts(): Contradicts {
 
     return false;
   };
+}
+
+/**
+ * 基于内容键的确定性矛盾检测（S-R-O key matching 的泛化实现）。
+ *
+ * 原理 (MemStrata, arXiv:2606.26511)：
+ * - 所有实体 subject = "用户"（Mio 的记忆都是关于用户的）
+ * - "Relation" = 两个实体共享的最长公共前缀 (LCP)
+ * - LCP ≥ 2 CJK chars + 内容在原前缀之外不同 → 同一 relation，不同 object → 取代
+ *
+ * 这不是 similarity-based detection（MemStrata 警告的结构性错误做法），
+ * 而是 key-matching：LCP 精确字符匹配，不依赖向量相似度。
+ *
+ * 安全限制：仅对持久状态类型 (fact/preference/decision/intention) 做 content-key 判定。
+ * event/emotion 是瞬态的，多条可共存，不做自动取代。
+ */
+function contentKeyBasedContradiction(older: MemoryEntity, newer: MemoryEntity): boolean {
+  if (older.type !== newer.type) return false;
+  if (older.content === newer.content) return false; // 完全相同，不矛盾
+
+  // 仅持久状态类型可自动取代；event/emotion 是瞬态的，多条可共存
+  const persistentTypes: MemoryEntity['type'][] = ['fact', 'preference', 'decision', 'intention'];
+  if (!persistentTypes.includes(older.type)) return false;
+
+  const oldText = normalizeText(older.content);
+  const newText = normalizeText(newer.content);
+
+  // LCP: 两个实体共享的最长公共前缀
+  const lcp = longestCommonPrefix(oldText, newText);
+
+  // 要求 LCP ≥ 4 chars（过滤 "用户" 这种公共前缀误杀），
+  // 且至少有一方在前缀之外还有额外内容
+  if (lcp.length < 4) return false;
+  if (oldText.length <= lcp.length && newText.length <= lcp.length) return false;
+
+  // 去掉 "用户" 公共前缀后的 LCP 也必须 ≥ 2（进一步过滤 "用户N号事实" 误杀）
+  const oldStripped = oldText.replace(/^用户/, '');
+  const newStripped = newText.replace(/^用户/, '');
+  if (oldStripped === newStripped) return false; // 去掉用户后完全相同，不矛盾
+  const strippedLcp = longestCommonPrefix(oldStripped, newStripped);
+  if (strippedLcp.length < 2) return false;
+
+  return true;
+}
+
+/**
+ * 两个字符串的最长公共前缀长度（字符数）。
+ */
+function longestCommonPrefix(a: string, b: string): string {
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  return a.slice(0, i);
+}
+
+/**
+ * 从实体内容中提取内容键（S-R-O 里的 R: relation），用于分组优化。
+ *
+ * 策略：
+ * 1. 从 slot 提取器中拿到的 slot 名是最精确的键
+ * 2. 回退：取内容的前 N 个有意义的字符
+ */
+function extractContentKey(text: string): string | null {
+  const normalized = text.replace(/\s+/g, '').replace(/[。！？!?，,、.]/g, '');
+
+  // L1: slot 名作为键（最精确）
+  const slot = extractSingleValueSlot(normalized);
+  if (slot) return slot.slot;
+
+  // L2: 去掉"用户"前缀，取前几个有意义的字符
+  const stripped = normalized.replace(/^用户/, '');
+  if (stripped.length < 2) return null;
+  if (stripped.length <= 6) return stripped;
+
+  // L3: 在第一个语义边界截断
+  const m = stripped.match(/^(.{2,8}?)(?:[在了的到过]|$)/);
+  return m ? m[1] : stripped.slice(0, 8);
 }
 
 export function combineContradicts(primary: Contradicts, fallback: Contradicts): Contradicts {

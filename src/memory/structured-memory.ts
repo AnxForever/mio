@@ -30,6 +30,7 @@ import {
   makeRuleBasedContradicts,
   resolveContradictions,
   resolveContradictionsSync,
+  type Contradicts,
 } from './temporal-resolve.js';
 
 // ─── Types ───
@@ -685,23 +686,43 @@ export async function extractStructuredMemoryLLM(
 
 /**
  * B-1：LLM 提取后对合并实体跑 bi-temporal 矛盾消解，标记被取代的旧事实并重新派生状态。
- * 仅在有 provider 时启用；实体数 > 60 时跳过(控 O(n²) LLM 成本，留人工/夜间专项)；失败保守保留原记忆。
+ *
+ * 分两级：
+ *   L1 确定性（slot + content-key，零 LLM 成本）——永远运行
+ *   L2 LLM 语义兜底——仅当实体数 ≤ 60 时启用（控 O(n²) LLM 成本，留人工/夜间专项）
+ *
+ * MemStrata (arXiv:2606.26511) 定理：基于相似度的过期检测结构上不可能。
+ * 正确做法是 S-R-O key matching——本函数的 L1 实现了此原理。
+ *
+ * 失败保守保留原记忆。
  */
 async function resolveMemoryContradictions(
   memory: StructuredMemory,
   now: string,
   opts?: { provider?: AIProvider; model?: string },
 ): Promise<StructuredMemory> {
-  if (memory.entities.length > 60) return memory; // 控 O(n²) LLM 成本
+  if (memory.entities.length === 0) return memory;
+
   try {
-    const { provider, model } = await resolveSummarizeProvider(opts);
+    const useLLM = memory.entities.length <= 60;
+    // L1 确定性永远运行；L2 LLM 只在实体数 ≤ 60 时启用
+    let contradicts: Contradicts = makeRuleBasedContradicts();
+    if (useLLM) {
+      const { provider, model } = await resolveSummarizeProvider(opts);
+      contradicts = combineContradicts(makeRuleBasedContradicts(), makeLLMContradicts(provider, model));
+    }
+
     const { entities, supersededCount } = await resolveContradictions(
       memory.entities,
-      combineContradicts(makeRuleBasedContradicts(), makeLLMContradicts(provider, model)),
+      contradicts,
       now,
     );
     if (supersededCount === 0) return memory;
-    logger.info('[structured-memory] B-1 矛盾消解', { supersededCount });
+    logger.info('[structured-memory] B-1 矛盾消解', {
+      supersededCount,
+      totalEntities: memory.entities.length,
+      llmFallback: useLLM,
+    });
     return deriveStructuredState(entities, now, memory.extractionState);
   } catch (err) {
     logger.warn('[structured-memory] 矛盾消解失败，保留原记忆', { error: String(err) });
