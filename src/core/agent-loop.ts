@@ -23,25 +23,25 @@
  */
 
 import {
-  CORE_IDENTITY,
+  IDENTITY,
+  VOICE,
   EMOTION_NOTE,
   COMPACTION_RECOVERY,
   NEW_SESSION_RECOVERY,
-  FEWSHOT as FEWSHOT_TEMPLATE,
+  FEWSHOT,
   buildRelationshipContext,
   buildUserContext,
   buildMemoryContext,
   buildStructuredMemoryContext,
   buildTimeContext,
   buildEmotionContext,
-  buildPADEmotionContext,
   buildProceduralMemoryContext,
 } from '../prompt/templates.js';
 import { buildXmlContext } from '../prompt/xml-context.js';
 import type { ContextSections } from '../prompt/xml-context.js';
 import { ContextEngine, getContextEngine } from '../prompt/context-engine.js';
 import { getEvaluationGraph, getBuilderChain, type EvaluationResult } from '../prompt/builder-chain.js';
-import { buildKernel, applyPersonaDelta, buildPreferencePrompt } from '../persona/layered.js';
+import { applyPersonaDelta, buildPreferencePrompt, buildCharacterNote } from '../persona/layered.js';
 import { buildVoiceExampleSection, buildVoiceGuidanceSection } from '../persona/voice-presets.js';
 import { buildOwnLifeSection } from '../persona/own-life.js';
 import { getRouterConfig, routeTask } from '../providers/router.js';
@@ -60,18 +60,14 @@ import { deserializeMemory } from '../memory/structured-memory.js';
 import { search as searchMemory } from '../memory/vector.js';
 import { rerankByLLM } from '../memory/rerank.js';
 import { appendMemoryUsefulnessTrace, collectMemoryUsefulnessCandidates } from '../memory/usefulness.js';
-import { getRelationContext } from '../memory/entity-graph.js';
+
 import { getLorebookContext, commitLorebookState } from '../memory/lorebook.js';
 import { PromptBudget } from '../utils/prompt-budget.js';
-import { getMirrorHint } from '../learning/mirror.js';
-import { getFeedbackHint } from '../learning/feedback.js';
-import { getDynamicFewShot } from '../learning/dynamic-fewshot.js';
+
 import { logger } from '../utils/logger.js';
 import { screenForCrisis } from '../safety/crisis.js';
 import { markReplied } from '../emotion/ghost.js';
-import { getAffinityContext } from '../emotion/affinity.js';
-import { getAttachmentContext } from '../emotion/frustration.js';
-import { getRitualContext, getCardboardContext } from '../emotion/ritual.js';
+
 import {
   ensurePersonaGraph,
   loadPersonaGraph,
@@ -87,7 +83,6 @@ import {
 import { getCurrentMode, shouldSwitchMode, executeSwitch, recordTurn as recordDualModeTurn, getDualModePrompt } from '../persona/dual-mode.js';
 import {
   updatePersonalityFromContext,
-  getPersonalityContext,
   getResponseStyle,
   rotateActivity,
   applyIgnoredEffect,
@@ -155,8 +150,13 @@ function buildSystemPrompt(
   const engine = getContextEngine();
   registerPromptSections(engine, ctx, recovery);
 
-  // Assemble the prompt using priority-based ordering and budget
-  const prompt = engine.assemble(6000);
+  // Model-aware budget: strong models (Claude, GPT-4o, Grok) get more room
+  // for richer context; weaker models get tighter budget to avoid dilution.
+  const maxTokens = isStrongModel()
+    ? 8000   // Claude / GPT-4o / Grok — trust them with more context
+    : 6000;  // MiniMax / DeepSeek / GLM — tighter to avoid rule dilution
+
+  const prompt = engine.assemble(maxTokens);
 
   // Backward compat: populate budget if tracking is enabled
   if (budget) {
@@ -187,21 +187,17 @@ function registerPromptSections(
   const sectionEnabled = (section: string): boolean => !isEvalSectionDisabled(section);
   const sharedMemoryAllowed = !ctx.isolatedMemory;
 
-  // L1: Core identity — critical, always included
-  engine.register('core', {
+  // ─── Critical tier: identity, preferences, privacy ───
+
+  // L1: Identity — merged old CORE_IDENTITY + KERNEL into single paradox-free block.
+  // Soul.md does the heavy personality lifting; this is just the anchor.
+  engine.register('identity', {
     type: 'identity',
-    content: CORE_IDENTITY,
+    content: IDENTITY,
     priority: 'critical',
   });
 
-  // L0: Kernel — 不可变内核，永远注入、不可裁剪（critical）
-  engine.register('kernel', {
-    type: 'kernel',
-    content: buildKernel(),
-    priority: 'critical',
-  });
-
-  // L3: Preference — 用户显式偏好，critical 不可裁（根治"个性化最先被砍"）
+  // L2: User preferences — critical so personalization is never trimmed.
   engine.register('preference', {
     type: 'preference',
     content: () => buildPreferencePrompt(ctx.preferences),
@@ -209,6 +205,7 @@ function registerPromptSections(
     condition: () => !!ctx.preferences && ctx.preferences.explicit.length > 0,
   });
 
+  // Isolated session privacy guard.
   engine.register('session-privacy', {
     type: 'session-privacy',
     content: () => buildIsolatedSessionPrivacyContext(),
@@ -216,25 +213,26 @@ function registerPromptSections(
     condition: () => ctx.isolatedMemory === true,
   });
 
-  // L2: Persona (ID-RAG) — high priority, the main personality
-  // Uses lazy eval so the persona fragment is computed only when included
+  // ─── High tier: soul, voice, relationship, user, time, emotion ───
+
+  // L3: Soul (ID-RAG personality fragment + mod soul.md).
+  // The single source of personality truth. Highest non-critical priority.
   engine.register('soul', {
     type: 'persona',
     content: () => {
       const fragment = buildPersonaFragment(ctx);
       const base = fragment ?? ctx.soulContent ?? '';
-      return applyPersonaDelta(base, ctx.personaDelta);  // L1 ⊕ L2，在 ID-RAG 输出之后
+      return applyPersonaDelta(base, ctx.personaDelta);
     },
     priority: 'high',
     condition: () => {
       if (!sectionEnabled('soul')) return false;
-      // Only include if we have content
       const fragment = buildPersonaFragment(ctx);
       return fragment !== null || (ctx.soulContent != null && ctx.soulContent.trim().length > 0);
     },
   });
 
-  // 可选「人味」声音预设（warm/bold，经 MIO_VOICE 选）——准则靠前，示例靠近生成点
+  // L4: Voice guidance — positive, minimal (~150 tokens, Nano Bear style).
   engine.register('voice', {
     type: 'voice',
     content: () => buildVoiceGuidanceSection(),
@@ -242,7 +240,7 @@ function registerPromptSections(
     condition: () => sectionEnabled('voice'),
   });
 
-  // L3: Relationship context — high priority
+  // L5: Relationship context — stage, nicknames, shared memories.
   engine.register('relationship', {
     type: 'relationship',
     content: () => buildRelationshipContext(ctx.relationshipState),
@@ -250,7 +248,7 @@ function registerPromptSections(
     condition: () => sharedMemoryAllowed && sectionEnabled('relationship'),
   });
 
-  // L4: User context — high priority
+  // L6: User context — profile, recent topics.
   engine.register('user', {
     type: 'user',
     content: () => buildUserContext(readUserProfile(), ctx.emotionState.recentTopics),
@@ -258,73 +256,17 @@ function registerPromptSections(
     condition: () => sharedMemoryAllowed && sectionEnabled('user'),
   });
 
-  // L5: Memory context — medium priority, may be trimmed.
-  // Semantically-relevant memories (prefetched onto ctx for this input) plus a
-  // short recency anchor. See buildMemorySection / prefetchSemanticMemories.
-  engine.register('memory', {
-    type: 'memory',
-    content: () => buildMemorySection(ctx),
-    priority: 'medium',
-    condition: () => sharedMemoryAllowed && sectionEnabled('memory') && buildMemorySection(ctx).length > 0,
-  });
-
-  // L5b: Structured memory — medium priority, best-effort
-  engine.register('structured-memory', {
-    type: 'structured-memory',
-    content: () => {
-      try {
-        const structuredRaw = readStructuredMemoryFile();
-        if (structuredRaw && structuredRaw.trim().length > 0) {
-          const structured = deserializeMemory(structuredRaw);
-          return buildStructuredMemoryContext(structured) ?? '';
-        }
-      } catch {
-        // Best-effort
-      }
-      return '';
-    },
-    priority: 'medium',
-    condition: () => {
-      if (!sharedMemoryAllowed || !sectionEnabled('structured-memory')) return false;
-      try {
-        const raw = readStructuredMemoryFile();
-        return raw !== null && raw.trim().length > 0;
-      } catch {
-        return false;
-      }
-    },
-  });
-
-  // L6: Lorebook — keyword-triggered memory context (medium priority)
-  // Only included when the lorebook feature is enabled and entries match
-  engine.register('lorebook', {
-    type: 'lorebook',
-    content: () => {
-      if (!getConfig().features.lorebook) return '';
-      const recentTexts: string[] = [];
-      if (ctx.initialTask) recentTexts.push(ctx.initialTask);
-      return getLorebookContext(recentTexts) ?? '';
-    },
-    priority: 'medium',
-    condition: () => sharedMemoryAllowed && sectionEnabled('lorebook'),
-  });
-
-  // L6b: Entity relations (temporal knowledge graph) — current-state facts
-  engine.register('relations', {
-    type: 'relations',
-    content: () => getRelationContext(),
-    priority: 'medium',
-    condition: () => sharedMemoryAllowed && sectionEnabled('relations') && getRelationContext().trim().length > 0,
-  });
-
-  // L7: Time context — high priority
+  // L7: Time context — time of day, circadian, days since last chat.
   engine.register('time', {
     type: 'time',
-    content: () => buildTimeContext(ctx.isolatedMemory ? null : ctx.emotionState.lastInteraction || null),
+    content: () => buildTimeContext(
+      ctx.isolatedMemory ? null : ctx.emotionState.lastInteraction || null,
+    ),
     priority: 'high',
     condition: () => sectionEnabled('time'),
   });
 
+  // L8: Temporal state — critical for continuity across sessions.
   engine.register('temporal-state', {
     type: 'temporal-state',
     content: () => ctx.temporalContext ?? '',
@@ -332,116 +274,29 @@ function registerPromptSections(
     condition: () => sectionEnabled('temporal-state') && !!ctx.temporalContext,
   });
 
-  // 独立生活流露 — medium：让 Mio 偶尔自然带一句自己的近况（人味研究最强调的"有自己的生活"）
-  engine.register('own-life', {
-    type: 'own-life',
-    content: () => buildOwnLifeSection(),
-    priority: 'medium',
-    condition: () => sectionEnabled('own-life'),
-  });
-
-  // L7: Emotional context — high priority
+  // L9: Emotion — merged old emotion + pad-emotion + affinity + attachment + personality.
+  // One unified "how Mio feels right now" block instead of 5 separate sections.
   engine.register('emotion', {
     type: 'emotion',
-    content: () => ctx.isolatedMemory ? buildIsolatedEmotionContext(ctx.emotionState) : buildEmotionContext(ctx.emotionState),
+    content: () => ctx.isolatedMemory
+      ? buildIsolatedEmotionContext(ctx.emotionState)
+      : buildEmotionContext(ctx.emotionState),
     priority: 'high',
     condition: () => sectionEnabled('emotion'),
   });
 
-  // L7b: PAD emotional context — medium priority
-  engine.register('pad-emotion', {
-    type: 'pad-emotion',
-    content: () => buildPADEmotionContext() ?? '',
+  // ─── Medium tier: memory, procedural memory, own-life ───
+
+  // L10: Memory — merged old memory + structured-memory + lorebook + entity relations.
+  // One unified "what Mio remembers" block.
+  engine.register('memory', {
+    type: 'memory',
+    content: () => buildMemorySection(ctx),
     priority: 'medium',
-    condition: () => sharedMemoryAllowed && sectionEnabled('pad-emotion') && buildPADEmotionContext() !== null,
+    condition: () => sharedMemoryAllowed && sectionEnabled('memory') && buildMemorySection(ctx).length > 0,
   });
 
-  // L7c: Personality driver context — medium priority
-  // Injects natural behavior hints derived from Mio's internal state
-  engine.register('personality', {
-    type: 'personality',
-    content: () => {
-      if (!isPersonalityDriverEnabled()) return '';
-      const ctx = getPersonalityContext();
-      return ctx || '';
-    },
-    priority: 'medium',
-    condition: () => {
-      if (!sharedMemoryAllowed || !sectionEnabled('personality')) return false;
-      if (!isPersonalityDriverEnabled()) return false;
-      return getPersonalityContext() !== null;
-    },
-  });
-
-  // L8: Affinity context — medium priority
-  engine.register('affinity', {
-    type: 'affinity',
-    content: () => {
-      const affinityCtx = getAffinityContext();
-      return affinityCtx ? `## 亲密\n${affinityCtx}` : '';
-    },
-    priority: 'medium',
-    condition: () => sharedMemoryAllowed && sectionEnabled('affinity') && getAffinityContext() !== null,
-  });
-
-  // L9: Attachment context — medium priority
-  engine.register('attachment', {
-    type: 'attachment',
-    content: () => {
-      const attachCtx = getAttachmentContext();
-      return attachCtx ? `## 依赖\n${attachCtx}` : '';
-    },
-    priority: 'medium',
-    condition: () => sharedMemoryAllowed && sectionEnabled('attachment') && getAttachmentContext() !== null,
-  });
-
-  // L9b: Plugin-provided prompt fragments — low priority extension point.
-  engine.register('plugin-context', {
-    type: 'plugin-context',
-    content: () => buildPluginPromptContext(ctx),
-    priority: 'low',
-    condition: () => sharedMemoryAllowed && sectionEnabled('plugin-context') && buildPluginPromptContext(ctx).length > 0,
-  });
-
-  // L10: Ritual context — low priority (trimmed first)
-  engine.register('ritual', {
-    type: 'ritual',
-    content: () => {
-      const ritualCtx = getRitualContext();
-      return ritualCtx ? `## 习惯\n${ritualCtx}` : '';
-    },
-    priority: 'low',
-    condition: () => sharedMemoryAllowed && sectionEnabled('ritual') && getRitualContext() !== null,
-  });
-
-  // L10b: Cardboard context — low priority
-  engine.register('cardboard', {
-    type: 'cardboard',
-    content: () => {
-      const cardboardCtx = getCardboardContext();
-      return cardboardCtx ? `## 对话状态\n${cardboardCtx}` : '';
-    },
-    priority: 'low',
-    condition: () => sharedMemoryAllowed && sectionEnabled('cardboard') && getCardboardContext() !== null,
-  });
-
-  // L10c: Mirroring hint — low priority
-  engine.register('mirror', {
-    type: 'mirror',
-    content: () => getMirrorHint() ?? '',
-    priority: 'low',
-    condition: () => sharedMemoryAllowed && sectionEnabled('mirror') && getMirrorHint() !== null,
-  });
-
-  // L10d: Feedback hint — low priority
-  engine.register('feedback', {
-    type: 'feedback',
-    content: () => getFeedbackHint() ?? '',
-    priority: 'low',
-    condition: () => sharedMemoryAllowed && sectionEnabled('feedback') && getFeedbackHint() !== null,
-  });
-
-  // L10e: Procedural memory — medium priority (learned interaction patterns)
+  // L11: Procedural memory — learned interaction patterns (feature-gated).
   engine.register('procedural-memory', {
     type: 'procedural-memory',
     content: () => buildProceduralMemoryContext() ?? '',
@@ -449,61 +304,44 @@ function registerPromptSections(
     condition: () => sharedMemoryAllowed && sectionEnabled('procedural-memory') && buildProceduralMemoryContext() !== null,
   });
 
-  // L11: Emotion tracking note — medium priority (important for feature function)
-  // Life events — character's own life (autonomous + user interactions)
-  engine.register('life-events', {
-    type: 'life-events',
-    content: () => {
-      if (!getConfig().features.lifeEngine) return '';
-      const name = readActiveCharacter();
-      if (!name) return '';
-      return getMemoryContext(name, '', 3);
-    },
+  // L12: Own life — Mio's daily activities, natural surface (medium priority).
+  engine.register('own-life', {
+    type: 'own-life',
+    content: () => buildOwnLifeSection(),
     priority: 'medium',
-    condition: () => sharedMemoryAllowed && sectionEnabled('life-events') && getConfig().features.lifeEngine && readActiveCharacter() !== null,
+    condition: () => sectionEnabled('own-life'),
   });
 
+  // ─── Low tier: few-shot, voice examples, emotion-note ───
+
+  // L13: Emotion note — quiet reminder to track feelings.
   engine.register('emotion-note', {
     type: 'emotion-note',
     content: EMOTION_NOTE,
-    priority: 'medium',
+    priority: 'low',
     condition: () => sectionEnabled('emotion-note'),
   });
 
-  // Few-shot examples — low priority
+  // L14: Static few-shot — 24 natural conversation examples.
+  // Registered as HIGH priority (was low) — few-shot is the #1 quality driver
+  // per Character.AI/SillyTavern research. Must not be trimmed.
   engine.register('fewshot', {
     type: 'fewshot',
-    content: FEWSHOT_TEMPLATE,
-    priority: 'low',
+    content: FEWSHOT,
+    priority: 'high',
     condition: () => sectionEnabled('fewshot'),
   });
 
-  // Dynamic few-shot — low priority, complements static fewshot
-  engine.register('dynamic-fewshot', {
-    type: 'dynamic-fewshot',
-    content: () => {
-      if (!getConfig().features.dynamicFewShot) return '';
-      return getDynamicFewShot() ?? '';
-    },
-    priority: 'low',
-    condition: () => {
-      if (!sharedMemoryAllowed || !sectionEnabled('dynamic-fewshot')) return false;
-      if (!getConfig().features.dynamicFewShot) return false;
-      return getDynamicFewShot() !== null;
-    },
-  });
-
-  // Voice examples are deliberately registered at the end of low-priority
-  // examples. External persona/chat projects put examples close to generation,
-  // so they teach cadence after dynamic state has been injected.
+  // L15: Voice examples — per-preset few-shot (12 pairs), close to generation.
   engine.register('voice-examples', {
     type: 'voice-examples',
     content: () => buildVoiceExampleSection(),
-    priority: 'low',
+    priority: 'high',
     condition: () => sectionEnabled('voice-examples') && buildVoiceExampleSection().length > 0,
   });
 
-  // Recovery hint — varies by recovery type
+  // ─── Recovery hint (conditional) ───
+
   engine.register('recovery', {
     type: 'recovery',
     content: () => {
@@ -514,27 +352,39 @@ function registerPromptSections(
       }
       return '';
     },
-    priority: 'high',
+    priority: 'critical',
     condition: () => sectionEnabled('recovery') && recovery !== 'none',
   });
 }
 
 function buildPluginPromptContext(ctx: PromptCtx): string {
-  const directSections = new Set([
-    buildPADEmotionContext() ?? '',
-    getAffinityContext() ? `## 亲密\n${getAffinityContext()}` : '',
-    getAttachmentContext() ? `## 依赖\n${getAttachmentContext()}` : '',
-  ].filter(Boolean));
-
   const fragments = pluginRegistry()
     .getPromptFragments(ctx)
     .map((fragment) => fragment.trim())
     .filter(Boolean)
-    .filter((fragment, index, all) => all.indexOf(fragment) === index)
-    .filter((fragment) => !directSections.has(fragment));
+    .filter((fragment, index, all) => all.indexOf(fragment) === index);
 
   if (fragments.length === 0) return '';
   return ['## 插件上下文', ...fragments].join('\n\n');
+}
+
+/**
+ * Detect strong models that handle character simulation natively.
+ * Strong models = higher budget + less rule scaffolding.
+ */
+function isStrongModel(): boolean {
+  try {
+    const config = getConfig();
+    const provider = config.provider?.toLowerCase() ?? '';
+    const model = config.model?.toLowerCase() ?? '';
+    // Strong model indicators
+    if (provider === 'anthropic') return true; // Claude
+    if (provider === 'openai' && (model.includes('gpt-4') || model.includes('o1') || model.includes('o3'))) return true;
+    if (provider === 'xai' || provider === 'grok') return true; // Grok
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 function buildIsolatedSessionPrivacyContext(): string {
@@ -659,7 +509,7 @@ function buildPostPrompt(
 
   if (config.features.xmlContext) {
     const sections: ContextSections = {
-      identity: CORE_IDENTITY,
+      identity: IDENTITY,
       soul: ctx.soulContent,
       relationship: ctx.relationshipState,
       user: {
@@ -717,7 +567,7 @@ function buildPostPrompt(
     const structuredRaw = readStructuredMemoryFile();
     if (structuredRaw && structuredRaw.trim().length > 0) {
       const structured = deserializeMemory(structuredRaw);
-      const structuredCtx = buildStructuredMemoryContext(structured);
+      const structuredCtx = buildStructuredMemoryContext(structured, ctx.initialTask);
       if (structuredCtx) parts.push(structuredCtx);
     }
   } catch {
@@ -771,7 +621,7 @@ function buildPrePrompt(recovery: 'new' | 'compact' | 'none', colaDir: string): 
   const parts: string[] = [];
 
   // Minimal core identity — just enough to establish role
-  parts.push(CORE_IDENTITY);
+  parts.push(IDENTITY);
 
   // Time context — lightweight, factual
   parts.push(buildTimeContext(null));

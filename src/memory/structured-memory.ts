@@ -18,6 +18,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { logger } from '../utils/logger.js';
 import { readFileSyncSafe, writeFileSyncSafe } from './bank.js';
+import { tokenize, embed, cosine } from './vector.js';
 import {
   structuredMemoryPath,
   midTermDir,
@@ -969,8 +970,50 @@ function structuredResponseAnchors(view: StructuredStateView): string[] {
  * Format:
  *   关于用户: <durable facts> | 偏好: <preferences> | 最近事件: <events>
  */
-export function memoryToContext(structured: StructuredMemory): string {
-  return renderStructuredStateView(deriveStructuredStateView(structured)) ?? '';
+export function memoryToContext(structured: StructuredMemory, userMessage?: string): string {
+  const view = deriveStructuredStateView(structured);
+  const filtered = userMessage ? filterStateViewByRelevance(view, userMessage) : view;
+  return renderStructuredStateView(filtered) ?? '';
+}
+
+/**
+ * Topic relevance filter: only keep memory entities that share lexical overlap
+ * with the current user message (Chinese bigram TF cosine > 0).
+ *
+ * Rationale: avoids injecting irrelevant memories ("用户喝美式") into completely
+ * unrelated conversations (user asking about work stress). This matches Open WebUI's
+ * query-memory pattern and DAM-LLM's entropy-driven compression.
+ *
+ * When nothing matches the user message → returns empty view (no memory injection).
+ * Safety: pinned memories bypass the filter (user explicitly wants them kept).
+ */
+function filterStateViewByRelevance(
+  view: StructuredStateView,
+  userMessage: string,
+): StructuredStateView {
+  const queryVec = embed(tokenize(userMessage));
+  // 0 overlap with any entity → no memory injection (avoid noise)
+  const noneRelevant = Object.keys(queryVec).length === 0;
+
+  const isRelevant = (entity: { content: string; pinned?: boolean }): boolean => {
+    if ('pinned' in entity && entity.pinned) return true; // pinned always passes
+    if (noneRelevant) return true; // empty query → keep everything (fallback)
+    const entityVec = embed(tokenize(entity.content));
+    if (Object.keys(entityVec).length === 0) return true; // unparseable entity → keep
+    return cosine(queryVec, entityVec) > 0;
+  };
+
+  return {
+    pinned: view.pinned.filter(isRelevant),
+    currentFacts: view.currentFacts.filter(isRelevant),
+    multiDayArcs: view.multiDayArcs.filter((topic) => {
+      const topicVec = embed(tokenize(topic.topic + ' ' + topic.summary));
+      if (Object.keys(topicVec).length === 0 || noneRelevant) return true;
+      return cosine(queryVec, topicVec) > 0;
+    }),
+    recentEvents: view.recentEvents.filter(isRelevant),
+    recentEmotions: view.recentEmotions.filter(isRelevant),
+  };
 }
 
 function entityKey(entity: MemoryEntity): string {
