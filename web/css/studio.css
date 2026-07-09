@@ -553,15 +553,9 @@
 }
 
 /* ═══ 加载 / 空 / 完成 状态 ═══ */
-.studio-state {
-  text-align: center;
-  padding: var(--s8) var(--s4);
-}
-
-.studio-state-text {
-  font-size: 15px;
-  color: var(--text-2);
-}
+/* Visual treatment is owned by `.ui-empty` (components.css).
+   `.studio-state` / `.studio-state-text` className hooks remain
+   available on the JS side for semantic targeting. */
 
 .studio-mascot {
   width: 72px;

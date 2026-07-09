@@ -272,14 +272,15 @@ select:focus-visible,
   }
 }
 
+/* Empty/loading slots now render through `.ui-empty` (components.css).
+   `.memories-state` and `.studio-state` className hooks remain for
+   semantic targeting and are no longer styled by this rule. */
 .settings-card,
 .mod-detail-card,
 .character-card,
 .memory-card,
 .memories-result-card,
-.memories-state,
 .analytics-view .card,
-.studio-state,
 .soul-preview,
 .mode-switch {
   background: var(--ui-surface);
@@ -817,9 +818,8 @@ select:focus-visible,
   height: 16px;
 }
 
-.studio-state--compact {
-  padding: 28px 16px;
-}
+/* `.studio-state--compact` className hook reserved for semantic
+   targeting; layout is owned by `.ui-empty--sm`. */
 
 .character-badge,
 .memory-type,

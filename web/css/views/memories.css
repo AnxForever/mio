@@ -92,21 +92,9 @@
   font-weight: 700;
 }
 
-.memories-state {
-  padding: var(--s6) var(--s4);
-  border-radius: var(--r-card);
-  background: var(--bg);
-  border: .5px solid var(--hairline);
-  color: var(--text-2);
-  font-size: 14px;
-  line-height: 1.5;
-  text-align: center;
-}
-
-.memories-state--compact {
-  padding: var(--s4);
-  margin-bottom: var(--s4);
-}
+/* Empty/loading slots in memories use `.ui-empty` (components.css) —
+   `.memories-state` / `.memories-state--compact` className hooks are
+   kept on the JS side for semantic targeting. */
 
 .memories-result-card,
 .memory-card,

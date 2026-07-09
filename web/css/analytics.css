@@ -601,32 +601,9 @@
   white-space: nowrap;
 }
 
-.ana-empty {
-  padding: var(--s2) 0;
-  color: var(--text-3);
-  font-size: 14px;
-  line-height: 1.45;
-}
-
-.ana-blank {
-  margin: auto;
-  max-width: 360px;
-  padding: var(--s8) var(--s4);
-  text-align: center;
-}
-
-.ana-blank-title {
-  color: var(--text);
-  font-size: 16px;
-  font-weight: 650;
-}
-
-.ana-blank-sub {
-  margin-top: var(--s2);
-  color: var(--text-2);
-  font-size: 14px;
-  line-height: 1.5;
-}
+/* Inline / full-page empty slots now render through `.ui-empty`.
+   `.ana-empty` / `.ana-blank` className hooks remain on the JS side
+   for semantic targeting. */
 
 .ana-skeleton {
   display: grid;

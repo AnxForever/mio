@@ -526,14 +526,9 @@
   flex: 1;
 }
 
-.console-character-empty {
-  min-height: 74px;
-  display: flex;
-  align-items: center;
-  padding: 16px;
-  color: var(--admin-ink-2);
-  font-size: 13px;
-}
+/* Empty/error visual treatment is owned by `.ui-empty` (components.css).
+   `.console-character-empty` className hook kept on the JS side for
+   semantic targeting if we need future overrides. */
 
 .admin-tabs {
   display: inline-flex;
@@ -1464,24 +1459,8 @@
   line-height: 1.4;
 }
 
-.channels-empty {
-  display: grid;
-  gap: 6px;
-  padding: 18px;
-  color: var(--admin-ink-2);
-}
-
-.channels-empty strong {
-  color: var(--admin-ink);
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.channels-empty span {
-  color: var(--admin-ink-3);
-  font-size: 13px;
-  line-height: 1.45;
-}
+/* `.channels-empty` className hook kept on the JS side.
+   Visual treatment is owned by `.ui-empty` (components.css). */
 
 .channels-flow {
   display: grid;
