@@ -43,7 +43,7 @@ import type { ContextSections } from '../prompt/xml-context.js';
 import { ContextEngine, getContextEngine } from '../prompt/context-engine.js';
 import { getEvaluationGraph, getBuilderChain, type EvaluationResult } from '../prompt/builder-chain.js';
 import { applyPersonaDelta, buildPreferencePrompt, buildCharacterNote } from '../persona/layered.js';
-import { buildVoiceExampleSection, buildVoiceGuidanceSection } from '../persona/voice-presets.js';
+import { buildVoiceExampleSection, buildVoiceGuidanceSection, getActiveVoicePreset } from '../persona/voice-presets.js';
 import { buildOwnLifeSection } from '../persona/own-life.js';
 import { getRouterConfig, routeTask } from '../providers/router.js';
 import { scopedToolRegistry } from './tool-runtime.js';
@@ -245,9 +245,21 @@ function registerPromptSections(
   // Must come BEFORE dynamic sections (time, emotion) for prompt caching
   // (arXiv 2601.06007: "order most-to-least stable"). Few-shot text is
   // completely static across turns — cache hit saves ~1300 tokens.
+  // Generic few-shot — only used as fallback. When a voice preset is active,
+  // its beginDialogs are the primary few-shot (closer to generation, per
+  // SillyTavern research). Generic FEWSHOT is trimmed to avoid contradicting
+  // the voice preset's personality.
   engine.register('fewshot', {
     type: 'fewshot',
-    content: FEWSHOT,
+    content: () => {
+      const vp = getActiveVoicePreset();
+      // If voice preset has >=10 dialogs, it's self-sufficient — trim generic
+      if (vp.beginDialogs.length >= 10) {
+        // Keep only 3 neutral examples (scenarios voice presets don't cover)
+        return `## 像这样聊天\n\n<示例>\n用户：早\n你：早啊。你今天倒是起得挺早。\n</示例>\n\n<示例>\n用户：我升职了\n你：！！真的假的\n我就说你行。什么时候请客\n</示例>\n\n<示例>\n用户：哈哈哈哈哈\n你：笑成这样\n什么好事快说\n</示例>`;
+      }
+      return FEWSHOT;
+    },
     priority: 'high',
     condition: () => sectionEnabled('fewshot'),
   });
